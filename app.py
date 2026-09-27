@@ -1,19 +1,19 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import yfinance as yf
 import plotly.graph_objects as grp
 from plotly.subplots import make_subplots
 
 # Impostazione della pagina web a tutto schermo e tema scuro nativo
-st.set_page_config(layout="wide", page_title="Dashboard Finanziaria Triple-POC")
+st.set_page_config(layout="wide", page_title="Dashboard Finanziaria Triple-POC & Backtest")
 
-st.title("📐 Dashboard Finanziaria — Analisi Triple-POC")
+st.title("📐 Dashboard Finanziaria — Analisi & Backtesting")
 
 # Creazione delle schede interattive web
 tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram"])
 
-# --- DATABASE INTERNO DEI PANIERI (S&P 500, NASDAQ 100 e FTSE MIB completi) ---
-
+# --- DATABASE INTERNO DEI PANIERI ---
 SP500_FULL = (
     "MMM,AOS,ABT,ABBV,ACN,ADBE,AMD,AES,AFL,A,APD,ABNB,AKAM,ALB,ARE,ALGN,ALLE,LNT,ALL,GOOGL,GOOG,MO,AMZN,AMCR,AEE,"
     "AEP,AXP,AIG,AMT,AWK,AMP,AME,AMGN,APH,ADI,AON,APA,APO,AAPL,AMAT,APP,APTV,ACGL,ADM,ARES,ANET,AJG,AIZ,T,ATO,ADSK,"
@@ -52,12 +52,9 @@ FTSEMIB_FULL = (
 )
 
 def ottieni_paniere(nome_paniere):
-    if nome_paniere == "S&P 500":
-        return SP500_FULL
-    elif nome_paniere == "NASDAQ 100":
-        return NASDAQ_FULL
-    elif nome_paniere == "FTSE MIB (FIB)":
-        return FTSEMIB_FULL
+    if nome_paniere == "S&P 500": return SP500_FULL
+    elif nome_paniere == "NASDAQ 100": return NASDAQ_FULL
+    elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
     return "AAPL,MSFT"
 
 # --- Funzione helper per il calcolo del Volume Profile e del POC ---
@@ -94,67 +91,46 @@ def calc_vp(df, div=40):
 # --- TAB 1: ANALISI TRIPLE-POC ---
 with tab1:
     st.subheader("Configurazione Parametri di Scansione")
-    
     col1, col2, col3 = st.columns(3)
-    
     with col1:
-        paniere_selezionato = st.selectbox("Seleziona Indice/Paniere:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)"])
-        # Carica istantaneamente la stringa corretta dal database locale
+        paniere_selezionato = st.selectbox("Seleziona Indice/Paniere:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)"], key="an_paniere")
         ticker_caricati = ottieni_paniere(paniere_selezionato)
-        
     with col2:
-        asset_type = st.selectbox("Tipo Asset:", ["Azione", "Criptovaluta"])
-        
+        asset_type = st.selectbox("Tipo Asset:", ["Azione", "Criptovaluta"], key="an_type")
     with col3:
-        period_label = st.selectbox("Periodo Analisi Recente:", ["1 Mese", "3 Mesi", "6 Mesi"])
+        period_label = st.selectbox("Periodo Analisi Recente:", ["1 Mese", "3 Mesi", "6 Mesi"], key="an_period")
         period_map = {"1 Mese": "1mo", "3 Mesi": "3mo", "6 Mesi": "6mo"}
         period_value = period_map[period_label]
 
-    # Il box di testo mostra l'elenco completo e nativo del paniere scelto
-    tickers_input = st.text_area("Modifica o verifica i Tickers estratti (separati da virgola):", value=ticker_caricati, height=150)
+    tickers_input = st.text_area("Modifica o verifica i Tickers estratti (separati da virgola):", value=ticker_caricati, height=150, key="an_area")
 
     if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
         tickers = [t.strip().upper() for t in tickers_input.split(',') if t.strip()]
-        
         if not tickers:
             st.warning("Inserisci almeno un ticker valido.")
         else:
-            st.success(f"Analisi avviata per {len(tickers)} elementi. I grafici appariranno in sequenza qui sotto.")
-            
+            st.success(f"Analisi avviata per {len(tickers)} elementi. Grafici in caricamento...")
             for ticker in tickers:
                 tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
-                st.write(f"🔄 Download dati storici in corso per: **{tk_yf}**...")
-                
                 df_c = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=True, progress=False)
-                
                 if df_c is not None and not df_c.empty:
-                    if isinstance(df_c.columns, pd.MultiIndex):
-                        df_c.columns = df_c.columns.get_level_values(0)
-                        
+                    if isinstance(df_c.columns, pd.MultiIndex): df_c.columns = df_c.columns.get_level_values(0)
                     close_series = df_c["Close"]
                     p_att = float(close_series.values[-1] if hasattr(close_series, 'values') else close_series.iloc[-1])
                     g3 = {"1mo": 30, "3mo": 90, "6mo": 180}.get(period_value, 90)
-                    
-                    df1 = df_c.copy()
-                    d_ath = df_c["High"].idxmax()
-                    df2 = df_c.loc[d_ath:].copy()
-                    df3 = df_c.tail(g3).copy()
-                    
+                    df1, d_ath = df_c.copy(), df_c["High"].idxmax()
+                    df2, df3 = df_c.loc[d_ath:].copy(), df_c.tail(g3).copy()
                     p1, vh1, vl1, prz1, vl_v1 = calc_vp(df1)
                     p2, vh2, vl2, prz2, vl_v2 = calc_vp(df2)
                     p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
-                    
-                    if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]:
-                        continue
+                    if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]: continue
                     
                     fig = make_subplots(rows=3, cols=1, subplot_titles=(f"1. STORICO COMPLETO ({ticker})", f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')})", f"3. ULTIMI {g3} GIORNI"), vertical_spacing=0.06)
                     cfg = [(1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")]
                     
                     for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
                         if df_s.empty: continue
-                        
                         fig.add_trace(grp.Candlestick(x=df_s.index, open=df_s["Open"].astype(float), high=df_s["High"].astype(float), low=df_s["Low"].astype(float), close=df_s["Close"].astype(float), name=nm), row=r_idx, col=1)
-                        
                         if v_vp and max(v_vp) > 0:
                             m_v, d_i, d_f = max(v_vp), df_s.index.min(), df_s.index.max()
                             ext = (d_f - d_i).days
@@ -162,30 +138,139 @@ with tab1:
                                 w = (float(v_vp[i]) / m_v) * (ext * 0.12) if m_v > 0 else 0
                                 x1_date = d_i + pd.Timedelta(days=int(w) if w > 0 else 1)
                                 fig.add_shape(type="rect", x0=d_i, x1=x1_date, y0=float(p_vp[i])*0.997, y1=float(p_vp[i])*1.003, fillcolor="rgba(0,165,181,0.1)", line=dict(width=0), row=r_idx, col=1)
-                        
                         dir_s, ic, sl, tp, col_z = ("LONG", "🟢", p_vl*0.985, p_vh, "rgba(40,167,69,0.12)") if p_att >= p_poc else ("SHORT", "🔴", p_vh*1.015, p_vl, "rgba(220,53,69,0.12)")
                         rr = round(abs(tp - p_poc) / abs(p_poc - sl), 2) if abs(p_poc - sl) > 0 else 0
-                        
                         fig.add_shape(type="rect", x0=df_s.index.min(), x1=df_s.index.max(), y0=min(p_poc, tp), y1=max(p_poc, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
                         fig.add_shape(type="line", x0=df_s.index.min(), x1=df_s.index.max(), y0=p_poc, y1=p_poc, line=dict(color="red", width=2, dash="dash"), row=r_idx, col=1)
                         fig.add_shape(type="line", x0=df_s.index.min(), x1=df_s.index.max(), y0=sl, y1=sl, line=dict(color="orange", width=1.5, dash="dot"), row=r_idx, col=1)
                         fig.add_shape(type="line", x0=df_s.index.min(), x1=df_s.index.max(), y0=tp, y1=tp, line=dict(color="cyan", width=1.5), row=r_idx, col=1)
-                        
                         fig.add_annotation(x=df_s.index.max(), y=p_poc, text=f"ENTRY: {round(p_poc,2)}", showarrow=False, bgcolor="red", font=dict(color="white", size=8), row=r_idx, col=1)
                         fig.add_annotation(x=df_s.index.max(), y=sl, text=f"STOP: {round(sl,2)}", showarrow=False, bgcolor="orange", font=dict(color="white", size=8), row=r_idx, col=1)
                         fig.add_annotation(x=df_s.index.max(), y=tp, text=f"TARGET: {round(tp,2)}", showarrow=False, bgcolor="cyan", font=dict(color="black", size=8), row=r_idx, col=1)
-                        
                         txt_leg = f"<b>📊 {nm.upper()}</b><br>Dir: {ic} {dir_s}<br>R/R: 1:{rr}<br>🔴 ENTRY: {round(p_poc,2)}<br>🟠 STOP: {round(sl,2)}<br>🔵 TARGET: {round(tp,2)}"
                         fig.add_annotation(xref="paper", yref="paper", x=0.01, y=0.93 if r_idx==1 else (0.59 if r_idx==2 else 0.26), text=txt_leg, showarrow=False, align="left", bgcolor="rgba(15,18,24,0.93)", bordercolor="rgba(0,165,181,0.6)", borderwidth=1.5, borderpad=8, font=dict(color="white", size=10))
-                    
                     fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, height=1300, showlegend=False)
                     st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.error(f"❌ Impossibile scaricare o elaborare i dati per {ticker}.")
-
-# --- TAB 2 & 3: SEZIONI WIP ---
+# --- TAB 2: SVILUPPO MOTORE BACKTESTING ---
 with tab2:
-    st.info("📊 Sezione Backtesting: Lo sviluppo dell'algoritmo è attualmente in corso (WIP).")
+    st.subheader("⚙️ Motore di Simulazione Storica (Backtest)")
+    
+    b_col1, b_col2, b_col3 = st.columns(3)
+    with b_col1:
+        bt_ticker = st.text_input("Inserisci un singolo Ticker da testare:", value="AAPL")
+        capitale_iniziale = st.number_input("Capitale iniziale ($):", min_value=100, value=10000, step=500)
+    with b_col2:
+        bt_periodo = st.selectbox("Orizzonte temporale dei dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"])
+        mappa_periodi = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
+        rischio_trade = st.slider("Rischio percentuale per operazione (%):", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
+    with b_col3:
+        p_div = st.number_input("Risoluzione Volume Profile (Divisioni):", min_value=10, max_value=100, value=40)
+        comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5)
 
+    if st.button("🚀 Esegui Backtest Strategia", type="primary"):
+        st.info(f"Elaborazione della simulazione algoritmica per {bt_ticker}...")
+        df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=True, progress=False)
+        
+        if df_bt is not None and len(df_bt) > 60:
+            if isinstance(df_bt.columns, pd.MultiIndex): df_bt.columns = df_bt.columns.get_level_values(0)
+            
+            capitale = capitale_iniziale
+            in_posizione = False
+            posizione_tipo = None
+            prezzo_ingresso = 0
+            livello_sl = 0
+            livello_tp = 0
+            equity_curve = [capitale_iniziale]
+            date_curve = [df_bt.index[0]]
+            trade_history = []
+
+            for i in range(50, len(df_bt)):
+                df_storico_finora = df_bt.iloc[:i]
+                riga_attuale = df_bt.iloc[i]
+                prezzo_corrente = float(riga_attuale["Close"])
+                data_corrente = df_bt.index[i]
+
+                if not in_posizione:
+                    p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora, div=p_div)
+                    if p_poc is None: continue
+                    
+                    if prezzo_corrente >= p_poc:
+                        posizione_tipo = "LONG"
+                        prezzo_ingresso = prezzo_corrente
+                        livello_sl = p_vl * 0.985
+                        livello_tp = p_vh
+                    else:
+                        posizione_tipo = "SHORT"
+                        prezzo_ingresso = prezzo_corrente
+                        livello_sl = p_vh * 1.015
+                        livello_tp = p_vl
+
+                    if livello_sl > 0 and abs(prezzo_ingresso - livello_sl) > 0:
+                        in_posizione = True
+                        rischio_monetario = capitale * (rischio_trade / 100)
+                        dist_sl = abs(prezzo_ingresso - livello_sl)
+                        size_contratti = rischio_monetario / dist_sl
+                else:
+                    high_g = float(riga_attuale["High"])
+                    low_g = float(riga_attuale["Low"])
+                    uscito = False
+                    p_chiusura = 0
+
+                    if posizione_tipo == "LONG":
+                        if low_g <= livello_sl: uscito, p_chiusura = True, livello_sl
+                        elif high_g >= livello_tp: uscito, p_chiusura = True, livello_tp
+                    elif posizione_tipo == "SHORT":
+                        if high_g >= livello_sl: uscito, p_chiusura = True, livello_sl
+                        elif low_g >= livello_tp: uscito, p_chiusura = True, livello_tp
+
+                    if uscito:
+                        pnl_lordo = (p_chiusura - prezzo_ingresso) * size_contratti if posizione_tipo == "LONG" else (prezzo_ingresso - p_chiusura) * size_contratti
+                        pnl_netto = pnl_lordo - (comun_fee * 2)
+                        capitale += pnl_netto
+                        
+                        trade_history.append({
+                            "Data": data_corrente.strftime("%d/%m/%Y"),
+                            "Tipo": posizione_tipo,
+                            "Ingresso": round(prezzo_ingresso, 2),
+                            "Uscita": round(p_chiusura, 2),
+                            "PnL ($)": round(pnl_netto, 2),
+                            "Capitale": round(capitale, 2)
+                        })
+                        equity_curve.append(capitale)
+                        date_curve.append(data_corrente)
+                        in_posizione = False
+
+            st.subheader("📊 Statistiche di Performance Log")
+            if trade_history:
+                df_trades = pd.DataFrame(trade_history)
+                profitti = df_trades[df_trades["PnL ($)"] > 0]["PnL ($)"].sum()
+                perdite = abs(df_trades[df_trades["PnL ($)"] < 0]["PnL ($)"].sum())
+                
+                win_rate = round((len(df_trades[df_trades["PnL ($)"] > 0]) / len(df_trades)) * 100, 2)
+                profit_factor = round(profitti / perdite, 2) if perdite > 0 else float('inf')
+                ritorno_totale = round(((capitale - capitale_iniziale) / capitale_iniziale) * 100, 2)
+                
+                peaks = np.maximum.accumulate(equity_curve)
+                drawdowns = (np.array(equity_curve) - peaks) / peaks
+                max_dd = round(abs(drawdowns.min()) * 100, 2)
+
+                m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+                m_col1.metric("Ritorno Totale (%)", f"{ritorno_totale} %")
+                m_col2.metric("Percentuale Win Rate", f"{win_rate} %")
+                m_col3.metric("Profit Factor", f"{profit_factor}")
+                m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
+
+                fig_eq = grp.Figure()
+                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines', name='Equity', line=dict(color='#28a745', width=2)))
+                fig_eq.update_layout(title=f"📈 Andamento dell'Equity Line — {bt_ticker}", template="plotly_dark", height=400, xaxis_title="Data", yaxis_title="Capitale ($)")
+                st.plotly_chart(fig_eq, use_container_width=True)
+
+                st.dataframe(df_trades, use_container_width=True)
+            else:
+                st.warning("La simulazione non ha generato nessun trade chiuso nell'orizzonte selezionato.")
+        else:
+            st.error("Dati storici insufficienti o ticker errato. Impossibile avviare il simulatore.")
+
+# --- TAB 3: ALERT TELEGRAM ---
 with tab3:
     st.info("🔔 Sezione Telegram Bot: Configurazione dei canali di alert automatici in corso (WIP).")
