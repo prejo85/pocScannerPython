@@ -73,7 +73,7 @@ def calc_vp(df, div=40):
 with tab1:
     st.subheader("Configurazione Parametri di Scansione")
     
-    col1, col2, col3 = st.columns()
+    col1, col2, col3 = st.columns(3)
     with col1:
         # Ora il valore iniziale è popolato automaticamente con la stringa di tutti i 503 ticker dell'S&P 500
         tickers_input = st.text_area("Tickers (separati da virgola):", value=sp500_string, height=150)
