@@ -3,8 +3,6 @@ import pandas as pd
 import yfinance as yf
 import plotly.graph_objects as grp
 from plotly.subplots import make_subplots
-import requests
-from io import StringIO
 
 # Impostazione della pagina web a tutto schermo e tema scuro nativo
 st.set_page_config(layout="wide", page_title="Dashboard Finanziaria Triple-POC")
@@ -13,8 +11,10 @@ st.title("📐 Dashboard Finanziaria — Analisi Triple-POC")
 
 # Creazione delle schede interattive web
 tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram"])
-# --- Lista Ufficiale Completa S&P 500 pre-caricata staticamente ---
-SP500_FULL_LIST = (
+
+# --- DATABASE INTERNO DEI PANIERI (S&P 500, NASDAQ 100 e FTSE MIB completi) ---
+
+SP500_FULL = (
     "MMM,AOS,ABT,ABBV,ACN,ADBE,AMD,AES,AFL,A,APD,ABNB,AKAM,ALB,ARE,ALGN,ALLE,LNT,ALL,GOOGL,GOOG,MO,AMZN,AMCR,AEE,"
     "AEP,AXP,AIG,AMT,AWK,AMP,AME,AMGN,APH,ADI,AON,APA,APO,AAPL,AMAT,APP,APTV,ACGL,ADM,ARES,ANET,AJG,AIZ,T,ATO,ADSK,"
     "ADP,AZO,AVY,AXON,BKR,BALL,BAC,BAX,BDX,BRK-B,BBY,TECH,BIIB,BLK,BX,BE,BNY,BA,BKNG,BSX,BMY,AVGO,BR,BRO,BF-B,BG,"
@@ -36,48 +36,29 @@ SP500_FULL_LIST = (
     "VTRS,VICI,V,VST,VMC,WRB,GWW,WAB,WMT,DIS,WBD,WM,WAT,WEC,WFC,WELL,WST,WDC,WY,WSM,WMB,WTW,WDAY,WYNN,XEL,XYL,YUM,"
     "ZBRA,ZBH,ZTS"
 )
-# --- FUNZIONI DI RECUPERO AUTOMATICO DEI PANIERI DA WIKIPEDIA ---
 
-@st.cache_data(ttl=86400)  # Memorizza i dati per 24 ore per velocizzare il sito
-def carica_paniere_automatico(indice_scelto):
-    """Preleva i ticker aggiornati da Wikipedia senza inserirli a mano."""
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    
-    if indice_scelto == "S&P 500":
-        url = "https://wikipedia.org"
-        try:
-            r = requests.get(url, headers=headers, timeout=10)
-            df = pd.read_html(StringIO(r.text))[0]
-            # Sostituisce i punti con i trattini richiesti da yFinance (es. BRK.B -> BRK-B)
-            lista = [t.replace('.', '-') for t in df['Symbol'].tolist()]
-            return ",".join(lista)
-        except:
-            return "AAPL,MSFT,GOOGL"
+NASDAQ_FULL = (
+    "MDLZ,ADI,ADP,ADSK,AAL,ALGN,AMAT,AMD,AMGN,AMZN,ANSS,ASML,TEAM,ADBE,BIIB,BMRN,BKNG,AVGO,CDNS,CDW,CERN,CHTR,"
+    "CHKP,CTAS,CSCO,CTSH,CMCSA,CPRT,COST,CRWD,DLTR,DXCM,EBAY,EA,EXPE,FAST,FB,FISV,FOXA,FOX,GILD,GOOGL,GOOG,"
+    "IDXX,ILMN,INCY,INTC,INTU,ISRG,JBHT,JD,KDP,KLAC,KHC,LRCX,LULU,MELI,MAR,MTCH,MCHP,MU,MSFT,MRNA,MDLO,MNST,"
+    "NTES,NFLX,NVDA,NXPI,ORLY,OKTA,ODFL,PCAR,PAYX,PYPL,PEP,PDD,REGN,ROST,SIRI,SWKS,SPLK,SBUX,SNPS,TMUS,TSLA,"
+    "TXN,TCOM,VRSN,VRSK,VRTX,WBA,WDAY,XEL,XLNX,ZM"
+)
 
-    elif indice_scelto == "NASDAQ 100":
-        url = "https://wikipedia.org"
-        try:
-            r = requests.get(url, headers=headers, timeout=10)
-            # Cerca la tabella corretta dei componenti nella pagina del Nasdaq-100
-            tabelle = pd.read_html(StringIO(r.text))
-            for tab in tabelle:
-                if 'Ticker' in tab.columns:
-                    return ",".join(tab['Ticker'].tolist())
-        except:
-            return "AAPL,MSFT,NVDA"
+FTSEMIB_FULL = (
+    "A2A.MI,AMP.MI,AZM.MI,BAMI.MI,BCA.MI,BMED.MI,BPER.MI,CPR.MI,DIA.MI,ENI.MI,ERG.MI,EVO.MI,FBK.MI,G.MI,"
+    "HER.MI,INW.MI,ISP.MI,LDO.MI,MB.MI,MONC.MI,NEXI.MI,PIRC.MI,PRY.MI,PST.MI,RACE.MI,REC.MI,SGO.MI,SRG.MI,"
+    "STLAM.MI,STMMI.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,YSVP.MI"
+)
 
-    elif indice_scelto == "FTSE MIB (FIB)":
-        url = "https://wikipedia.org"
-        try:
-            r = requests.get(url, headers=headers, timeout=10)
-            df = pd.read_html(StringIO(r.text))[1] # Generalmente la seconda tabella
-            # Aggiunge il suffisso .MI richiesto da yFinance per la borsa di Milano (es. ENI -> ENI.MI)
-            lista = [f"{t.strip()}.MI" for t in df['Ticker'].tolist()]
-            return ",".join(lista)
-        except:
-            return "ENI.MI,RACE.MI,UCG.MI"
-            
-    return ""
+def ottieni_paniere(nome_paniere):
+    if nome_paniere == "S&P 500":
+        return SP500_FULL
+    elif nome_paniere == "NASDAQ 100":
+        return NASDAQ_FULL
+    elif nome_paniere == "FTSE MIB (FIB)":
+        return FTSEMIB_FULL
+    return "AAPL,MSFT"
 
 # --- Funzione helper per il calcolo del Volume Profile e del POC ---
 def calc_vp(df, div=40):
@@ -117,10 +98,9 @@ with tab1:
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        # Selettore dinamico del paniere di mercato
         paniere_selezionato = st.selectbox("Seleziona Indice/Paniere:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)"])
-        # Scarica i dati in background basandosi sulla selezione
-        ticker_caricati = carica_paniere_automatico(paniere_selezionato)
+        # Carica istantaneamente la stringa corretta dal database locale
+        ticker_caricati = ottieni_paniere(paniere_selezionato)
         
     with col2:
         asset_type = st.selectbox("Tipo Asset:", ["Azione", "Criptovaluta"])
@@ -130,7 +110,7 @@ with tab1:
         period_map = {"1 Mese": "1mo", "3 Mesi": "3mo", "6 Mesi": "6mo"}
         period_value = period_map[period_label]
 
-    # Il box di testo mostra l'elenco estratto e permette modifiche manuali prima dell'invio
+    # Il box di testo mostra l'elenco completo e nativo del paniere scelto
     tickers_input = st.text_area("Modifica o verifica i Tickers estratti (separati da virgola):", value=ticker_caricati, height=150)
 
     if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
