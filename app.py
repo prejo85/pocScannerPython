@@ -62,7 +62,6 @@ def ottieni_paniere(nome_paniere):
     elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
     return "AAPL,MSFT"
 
-# --- Funzione helper per inviare messaggi su Telegram ---
 def invia_messaggio_telegram(token, chat_id, testo):
     url_tg = f"https://telegram.org{token}/sendMessage"
     payload = {"chat_id": chat_id, "text": testo, "parse_mode": "HTML"}
@@ -72,7 +71,6 @@ def invia_messaggio_telegram(token, chat_id, testo):
     except Exception:
         return False
 
-# --- Funzione helper per il calcolo del Volume Profile e del POC ---
 def calc_vp(df, div=40):
     if df.empty: return None, None, None, [], []
     p_min, p_max = float(df['Low'].min()), float(df['High'].max())
@@ -128,7 +126,9 @@ with tab1:
                 tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
                 df_c = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=True, progress=False)
                 if df_c is not None and not df_c.empty:
-                    if isinstance(df_c.columns, pd.MultiIndex): df_c.columns = df_c.columns.get_level_values(0)
+                    if isinstance(df_c.columns, pd.MultiIndex):
+                        df_c.columns = df_c.columns.get_level_values(0)
+                    
                     close_series = df_c["Close"]
                     p_att = float(close_series.values[-1] if hasattr(close_series, 'values') else close_series.iloc[-1])
                     g3 = {"1mo": 30, "3mo": 90, "6mo": 180}.get(period_value, 90)
@@ -184,7 +184,8 @@ with tab2:
         st.info(f"Elaborazione della simulazione algoritmica per {bt_ticker}...")
         df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=True, progress=False)
         if df_bt is not None and len(df_bt) > 60:
-            if isinstance(df_bt.columns, pd.MultiIndex): df_bt.columns = df_bt.columns.get_level_values(0)
+            if isinstance(df_bt.columns, pd.MultiIndex):
+                df_bt.columns = df_bt.columns.get_level_values(0)
             capitale, in_posizione, prezzo_ingresso, livello_sl, livello_tp = capitale_iniziale, False, 0, 0, 0
             equity_curve, date_curve, trade_history = [capitale_iniziale], [df_bt.index], []
 
@@ -243,18 +244,14 @@ with tab2:
 # --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
 with tab3:
     st.subheader("🔔 Canale Notifiche in Tempo Reale via Telegram")
-    
     t_col1, t_col2 = st.columns(2)
     with t_col1:
-        # Pre-popolato col tuo token automatico
-        tg_token = st.text_input("Token del tuo Bot Telegram:", value=TELEGRAM_TOKEN_DEFAULT, type="password", help="Configurato in automatico")
+        tg_token = st.text_input("Token del tuo Bot Telegram:", value=TELEGRAM_TOKEN_DEFAULT, type="password", key="tg_tok")
     with t_col2:
-        # Pre-popolato col tuo chat id automatico
-        tg_chat_id = st.text_input("Il tuo Chat ID Telegram:", value=TELEGRAM_CHAT_ID_DEFAULT, type="password", help="Configurato in automatico")
+        tg_chat_id = st.text_input("Il tuo Chat ID Telegram:", value=TELEGRAM_CHAT_ID_DEFAULT, type="password", key="tg_chat")
         
     st.markdown("---")
     st.subheader("📡 Avvia Scanner di Mercato in Tempo Reale")
-    
     p_selezionato_alert = st.selectbox("Seleziona il paniere da scansionare per i segnali live:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)"], key="tg_paniere")
     lista_ticker_alert = ottieni_paniere(p_selezionato_alert).split(",")
     
@@ -262,24 +259,20 @@ with tab3:
         if not tg_token or not tg_chat_id:
             st.error("❌ Errore: Credenziali mancanti.")
         else:
-            st.info(f"Avvio scansione sui mercati correnti per il paniere {p_selezionato_alert}... (I segnali validi verranno inviati direttamente su Telegram)")
-            
-            test_success = invia_messaggio_telegram(tg_token, tg_chat_id, "🤖 <b>Scanner Attivo!</b>\nIl sistema di controllo dei nodi Triple-POC è ufficialmente connesso alla tua dashboard.")
+            st.info(f"Avvio scansione sui mercati correnti per il paniere {p_selezionato_alert}...")
+            test_success = invia_messaggio_telegram(tg_token, tg_chat_id, "🤖 <b>Scanner Attivo!</b>\nDashboard POC online e sincronizzata.")
             if not test_success:
-                st.error("❌ Impossibile comunicare con Telegram. Verifica che il Bot sia avviato con /start.")
+                st.error("❌ Impossibile comunicare con Telegram. Premi 'Avvia' sul tuo Bot.")
             else:
-                st.success("✅ Test di connessione completato! Messaggio di avvio inviato sul tuo telefono.")
+                st.success("✅ Connessione stabilita con successo!")
                 segnali_trovati = 0
-                
-                # Scansiona i primi 25 elementi per stabilità cloud
                 for ticker in lista_ticker_alert[:25]:
                     df_live = yf.download(tickers=ticker, period="6mo", interval="1d", auto_adjust=True, progress=False)
                     if df_live is not None and not df_live.empty:
-                        if isinstance(df_live.columns, pd.MultiIndex): df_live.columns = df_live.columns.get_level_values(0)
-                        
+                        if isinstance(df_live.columns, pd.MultiIndex):
+                            df_live.columns = df_live.columns.get_level_values(0)
                         p_attuale = float(df_live["Close"].iloc[-1])
                         p_poc, p_vh, p_vl, _, _ = calc_vp(df_live)
-                        
                         if p_poc is None: continue
                         distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
                         
@@ -288,17 +281,6 @@ with tab3:
                             direzione = "🟢 LONG SETUP" if p_attuale >= p_poc else "🔴 SHORT SETUP"
                             stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
                             take_p = p_vh if p_attuale >= p_poc else p_vl
-                            
-                            messaggio_alert = (
-                                f"📐 <b>%0A SEGNALE OPERATIVO TRIPLE-POC</b>\n\n"
-                                f"🎯 <b>Strumento:</b> {ticker}\n"
-                                f"⚡ <b>Direzione:</b> {direzione}\n\n"
-                                f"📊 <b>Prezzo Attuale:</b> {round(p_attuale, 2)}\n"
-                                f"🔴 <b>Livello Entry (POC):</b> {round(p_poc, 2)}\n"
-                                f"🟠 <b>Stop Loss (VAL/VAH):</b> {round(stop_l, 2)}\n"
-                                f"🔵 <b>Take Profit (VAH/VAL):</b> {round(take_p, 2)}\n\n"
-                                f"ℹ️ <i>Il prezzo è vicino allo snodo volumetrico principale ({round(distanza_percentuale, 2)}%).</i>"
-                            )
+                            messaggio_alert = f"📐 <b>SEGNALE TRIPLE-POC</b>\n\n🎯 <b>Ticker:</b> {ticker}\n⚡ <b>Setup:</b> {direzione}\n📊 <b>Prezzo:</b> {round(p_attuale, 2)}\n🔴 <b>Entry POC:</b> {round(p_poc, 2)}\n🟠 <b>Stop Loss:</b> {round(stop_l, 2)}\n🔵 <b>Take Profit:</b> {round(take_p, 2)}"
                             invia_messaggio_telegram(tg_token, tg_chat_id, messaggio_alert)
-                
-                st.success(f" Scansione completata! Inviati {segnali_trovati} segnali operativi su Telegram.")
+                st.success(f"Scansione terminata. Inviati {segnali_trovati} segnali.")
