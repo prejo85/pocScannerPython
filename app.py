@@ -4,14 +4,19 @@ import numpy as np
 import yfinance as yf
 import plotly.graph_objects as grp
 from plotly.subplots import make_subplots
+import requests
 
 # Impostazione della pagina web a tutto schermo e tema scuro nativo
-st.set_page_config(layout="wide", page_title="Dashboard Finanziaria Triple-POC & Backtest")
+st.set_page_config(layout="wide", page_title="Dashboard Finanziaria Completa")
 
-st.title("📐 Dashboard Finanziaria — Analisi & Backtesting")
+st.title("📐 Dashboard Finanziaria — Scansione, Backtest & Alert")
 
 # Creazione delle schede interattive web
 tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram"])
+
+# --- CREDENZIALI TELEGRAM PRE-IMPOSTATE AUTOMATICAMENTE ---
+TELEGRAM_TOKEN_DEFAULT = "8887634238:AAFH6eMqMhSTbe3pkUU_u0dpOulZXrud7RE"
+TELEGRAM_CHAT_ID_DEFAULT = "2072895073"
 
 # --- DATABASE INTERNO DEI PANIERI ---
 SP500_FULL = (
@@ -57,6 +62,16 @@ def ottieni_paniere(nome_paniere):
     elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
     return "AAPL,MSFT"
 
+# --- Funzione helper per inviare messaggi su Telegram ---
+def invia_messaggio_telegram(token, chat_id, testo):
+    url_tg = f"https://telegram.org{token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": testo, "parse_mode": "HTML"}
+    try:
+        res = requests.post(url_tg, json=payload, timeout=10)
+        return res.status_code == 200
+    except Exception:
+        return False
+
 # --- Funzione helper per il calcolo del Volume Profile e del POC ---
 def calc_vp(df, div=40):
     if df.empty: return None, None, None, [], []
@@ -70,8 +85,7 @@ def calc_vp(df, div=40):
     for _, r in df.iterrows():
         low_val, high_val, volume_val = float(r['Low']), float(r['High']), float(r['Volume'])
         for i in range(div):
-            if low_val <= gr[i+1] and high_val >= gr[i]:
-                vols[i] += volume_val
+            if low_val <= gr[i+1] and high_val >= gr[i]: vols[i] += volume_val
 
     if not vols or max(vols) == 0:
         return p_min + step/2, p_max, p_min, [(gr[i] + gr[i+1])/2 for i in range(div)], vols
@@ -151,10 +165,9 @@ with tab1:
                         fig.add_annotation(xref="paper", yref="paper", x=0.01, y=0.93 if r_idx==1 else (0.59 if r_idx==2 else 0.26), text=txt_leg, showarrow=False, align="left", bgcolor="rgba(15,18,24,0.93)", bordercolor="rgba(0,165,181,0.6)", borderwidth=1.5, borderpad=8, font=dict(color="white", size=10))
                     fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, height=1300, showlegend=False)
                     st.plotly_chart(fig, use_container_width=True)
-# --- TAB 2: SVILUPPO MOTORE BACKTESTING ---
+# --- TAB 2: BACKTESTING ---
 with tab2:
     st.subheader("⚙️ Motore di Simulazione Storica (Backtest)")
-    
     b_col1, b_col2, b_col3 = st.columns(3)
     with b_col1:
         bt_ticker = st.text_input("Inserisci un singolo Ticker da testare:", value="AAPL")
@@ -170,52 +183,28 @@ with tab2:
     if st.button("🚀 Esegui Backtest Strategia", type="primary"):
         st.info(f"Elaborazione della simulazione algoritmica per {bt_ticker}...")
         df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=True, progress=False)
-        
         if df_bt is not None and len(df_bt) > 60:
             if isinstance(df_bt.columns, pd.MultiIndex): df_bt.columns = df_bt.columns.get_level_values(0)
-            
-            capitale = capitale_iniziale
-            in_posizione = False
-            posizione_tipo = None
-            prezzo_ingresso = 0
-            livello_sl = 0
-            livello_tp = 0
-            equity_curve = [capitale_iniziale]
-            date_curve = [df_bt.index[0]]
-            trade_history = []
+            capitale, in_posizione, prezzo_ingresso, livello_sl, livello_tp = capitale_iniziale, False, 0, 0, 0
+            equity_curve, date_curve, trade_history = [capitale_iniziale], [df_bt.index], []
 
             for i in range(50, len(df_bt)):
                 df_storico_finora = df_bt.iloc[:i]
                 riga_attuale = df_bt.iloc[i]
-                prezzo_corrente = float(riga_attuale["Close"])
-                data_corrente = df_bt.index[i]
+                prezzo_corrente, data_corrente = float(riga_attuale["Close"]), df_bt.index[i]
 
                 if not in_posizione:
                     p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora, div=p_div)
                     if p_poc is None: continue
-                    
-                    if prezzo_corrente >= p_poc:
-                        posizione_tipo = "LONG"
-                        prezzo_ingresso = prezzo_corrente
-                        livello_sl = p_vl * 0.985
-                        livello_tp = p_vh
-                    else:
-                        posizione_tipo = "SHORT"
-                        prezzo_ingresso = prezzo_corrente
-                        livello_sl = p_vh * 1.015
-                        livello_tp = p_vl
+                    posizione_tipo = "LONG" if prezzo_corrente >= p_poc else "SHORT"
+                    prezzo_ingresso = prezzo_corrente
+                    livello_sl, livello_tp = (p_vl * 0.985, p_vh) if posizione_tipo == "LONG" else (p_vh * 1.015, p_vl)
 
                     if livello_sl > 0 and abs(prezzo_ingresso - livello_sl) > 0:
                         in_posizione = True
-                        rischio_monetario = capitale * (rischio_trade / 100)
-                        dist_sl = abs(prezzo_ingresso - livello_sl)
-                        size_contratti = rischio_monetario / dist_sl
+                        size_contratti = (capitale * (rischio_trade / 100)) / abs(prezzo_ingresso - livello_sl)
                 else:
-                    high_g = float(riga_attuale["High"])
-                    low_g = float(riga_attuale["Low"])
-                    uscito = False
-                    p_chiusura = 0
-
+                    high_g, low_g, uscito, p_chiusura = float(riga_attuale["High"]), float(riga_attuale["Low"]), False, 0
                     if posizione_tipo == "LONG":
                         if low_g <= livello_sl: uscito, p_chiusura = True, livello_sl
                         elif high_g >= livello_tp: uscito, p_chiusura = True, livello_tp
@@ -224,18 +213,9 @@ with tab2:
                         elif low_g >= livello_tp: uscito, p_chiusura = True, livello_tp
 
                     if uscito:
-                        pnl_lordo = (p_chiusura - prezzo_ingresso) * size_contratti if posizione_tipo == "LONG" else (prezzo_ingresso - p_chiusura) * size_contratti
-                        pnl_netto = pnl_lordo - (comun_fee * 2)
-                        capitale += pnl_netto
-                        
-                        trade_history.append({
-                            "Data": data_corrente.strftime("%d/%m/%Y"),
-                            "Tipo": posizione_tipo,
-                            "Ingresso": round(prezzo_ingresso, 2),
-                            "Uscita": round(p_chiusura, 2),
-                            "PnL ($)": round(pnl_netto, 2),
-                            "Capitale": round(capitale, 2)
-                        })
+                        pnl = ((p_chiusura - prezzo_ingresso) if posizione_tipo == "LONG" else (prezzo_ingresso - p_chiusura)) * size_contratti - (comun_fee * 2)
+                        capitale += pnl
+                        trade_history.append({"Data": data_corrente.strftime("%d/%m/%Y"), "Tipo": posizione_tipo, "Ingresso": round(prezzo_ingresso, 2), "Uscita": round(p_chiusura, 2), "PnL ($)": round(pnl, 2), "Capitale": round(capitale, 2)})
                         equity_curve.append(capitale)
                         date_curve.append(data_corrente)
                         in_posizione = False
@@ -245,32 +225,80 @@ with tab2:
                 df_trades = pd.DataFrame(trade_history)
                 profitti = df_trades[df_trades["PnL ($)"] > 0]["PnL ($)"].sum()
                 perdite = abs(df_trades[df_trades["PnL ($)"] < 0]["PnL ($)"].sum())
-                
                 win_rate = round((len(df_trades[df_trades["PnL ($)"] > 0]) / len(df_trades)) * 100, 2)
                 profit_factor = round(profitti / perdite, 2) if perdite > 0 else float('inf')
-                ritorno_totale = round(((capitale - capitale_iniziale) / capitale_iniziale) * 100, 2)
+                max_dd = round(abs(((np.array(equity_curve) - np.maximum.accumulate(equity_curve)) / np.maximum.accumulate(equity_curve)).min()) * 100, 2)
                 
-                peaks = np.maximum.accumulate(equity_curve)
-                drawdowns = (np.array(equity_curve) - peaks) / peaks
-                max_dd = round(abs(drawdowns.min()) * 100, 2)
-
                 m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-                m_col1.metric("Ritorno Totale (%)", f"{ritorno_totale} %")
+                m_col1.metric("Ritorno Totale", f"{round(((capitale - capitale_iniziale) / capitale_iniziale) * 100, 2)} %")
                 m_col2.metric("Percentuale Win Rate", f"{win_rate} %")
                 m_col3.metric("Profit Factor", f"{profit_factor}")
                 m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
 
                 fig_eq = grp.Figure()
                 fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines', name='Equity', line=dict(color='#28a745', width=2)))
-                fig_eq.update_layout(title=f"📈 Andamento dell'Equity Line — {bt_ticker}", template="plotly_dark", height=400, xaxis_title="Data", yaxis_title="Capitale ($)")
+                fig_eq.update_layout(title=f"📈 Andamento dell'Equity Line — {bt_ticker}", template="plotly_dark", height=400)
                 st.plotly_chart(fig_eq, use_container_width=True)
-
                 st.dataframe(df_trades, use_container_width=True)
-            else:
-                st.warning("La simulazione non ha generato nessun trade chiuso nell'orizzonte selezionato.")
-        else:
-            st.error("Dati storici insufficienti o ticker errato. Impossibile avviare il simulatore.")
-
-# --- TAB 3: ALERT TELEGRAM ---
+# --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
 with tab3:
-    st.info("🔔 Sezione Telegram Bot: Configurazione dei canali di alert automatici in corso (WIP).")
+    st.subheader("🔔 Canale Notifiche in Tempo Reale via Telegram")
+    
+    t_col1, t_col2 = st.columns(2)
+    with t_col1:
+        # Pre-popolato col tuo token automatico
+        tg_token = st.text_input("Token del tuo Bot Telegram:", value=TELEGRAM_TOKEN_DEFAULT, type="password", help="Configurato in automatico")
+    with t_col2:
+        # Pre-popolato col tuo chat id automatico
+        tg_chat_id = st.text_input("Il tuo Chat ID Telegram:", value=TELEGRAM_CHAT_ID_DEFAULT, type="password", help="Configurato in automatico")
+        
+    st.markdown("---")
+    st.subheader("📡 Avvia Scanner di Mercato in Tempo Reale")
+    
+    p_selezionato_alert = st.selectbox("Seleziona il paniere da scansionare per i segnali live:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)"], key="tg_paniere")
+    lista_ticker_alert = ottieni_paniere(p_selezionato_alert).split(",")
+    
+    if st.button("🚀 Attiva Scansione & Invia Alert su Telegram", type="primary"):
+        if not tg_token or not tg_chat_id:
+            st.error("❌ Errore: Credenziali mancanti.")
+        else:
+            st.info(f"Avvio scansione sui mercati correnti per il paniere {p_selezionato_alert}... (I segnali validi verranno inviati direttamente su Telegram)")
+            
+            test_success = invia_messaggio_telegram(tg_token, tg_chat_id, "🤖 <b>Scanner Attivo!</b>\nIl sistema di controllo dei nodi Triple-POC è ufficialmente connesso alla tua dashboard.")
+            if not test_success:
+                st.error("❌ Impossibile comunicare con Telegram. Verifica che il Bot sia avviato con /start.")
+            else:
+                st.success("✅ Test di connessione completato! Messaggio di avvio inviato sul tuo telefono.")
+                segnali_trovati = 0
+                
+                # Scansiona i primi 25 elementi per stabilità cloud
+                for ticker in lista_ticker_alert[:25]:
+                    df_live = yf.download(tickers=ticker, period="6mo", interval="1d", auto_adjust=True, progress=False)
+                    if df_live is not None and not df_live.empty:
+                        if isinstance(df_live.columns, pd.MultiIndex): df_live.columns = df_live.columns.get_level_values(0)
+                        
+                        p_attuale = float(df_live["Close"].iloc[-1])
+                        p_poc, p_vh, p_vl, _, _ = calc_vp(df_live)
+                        
+                        if p_poc is None: continue
+                        distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
+                        
+                        if abs(distanza_percentuale) <= 0.5:
+                            segnali_trovati += 1
+                            direzione = "🟢 LONG SETUP" if p_attuale >= p_poc else "🔴 SHORT SETUP"
+                            stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
+                            take_p = p_vh if p_attuale >= p_poc else p_vl
+                            
+                            messaggio_alert = (
+                                f"📐 <b>%0A SEGNALE OPERATIVO TRIPLE-POC</b>\n\n"
+                                f"🎯 <b>Strumento:</b> {ticker}\n"
+                                f"⚡ <b>Direzione:</b> {direzione}\n\n"
+                                f"📊 <b>Prezzo Attuale:</b> {round(p_attuale, 2)}\n"
+                                f"🔴 <b>Livello Entry (POC):</b> {round(p_poc, 2)}\n"
+                                f"🟠 <b>Stop Loss (VAL/VAH):</b> {round(stop_l, 2)}\n"
+                                f"🔵 <b>Take Profit (VAH/VAL):</b> {round(take_p, 2)}\n\n"
+                                f"ℹ️ <i>Il prezzo è vicino allo snodo volumetrico principale ({round(distanza_percentuale, 2)}%).</i>"
+                            )
+                            invia_messaggio_telegram(tg_token, tg_chat_id, messaggio_alert)
+                
+                st.success(f" Scansione completata! Inviati {segnali_trovati} segnali operativi su Telegram.")
