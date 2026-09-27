@@ -71,7 +71,14 @@ with tab1:
                 df_c = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=True, progress=False)
                 
                 if df_c is not None and not df_c.empty:
-                    p_att = float(df_c["Close"].iloc[-1])
+                    # Raddrizza eventuali MultiIndex generati dalle nuove versioni di yfinance
+                    if isinstance(df_c.columns, pd.MultiIndex):
+                        df_c.columns = df_c.columns.get_level_values(0)
+                        
+                    # Estrae il prezzo di chiusura più recente in modo sicuro
+                    close_series = df_c["Close"]
+                    p_att = float(close_series.values[-1] if hasattr(close_series, 'values') else close_series.iloc[-1])
+                    
                     g3 = {"1mo": 30, "3mo": 90, "6mo": 180}.get(period_value, 90)
                     
                     df1 = df_c.copy()
@@ -110,10 +117,10 @@ with tab1:
                         rr = round(abs(tp - p_poc) / abs(p_poc - sl), 2) if abs(p_poc - sl) > 0 else 0
                         
                         fig.add_shape(type="rect", x0=df_s.index.min(), x1=df_s.index.max(), y0=min(p_poc, tp), y1=max(p_poc, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
-                        fig.add_shape(type="line", x0=df_s.index.min(), x1=df_s.index.max(), y0=p_poc, y1=p_poc, line=dict(color="red", width=2, dash="dash"), row=r_idx, col=1)
-                        fig.add_shape(type="line", x0=df_s.index.min(), x1=df_s.index.max(), y0=sl, y1=sl, line=dict(color="orange", width=1.5, dash="dot"), row=r_idx, col=1)
-                        fig.add_shape(type="line", x0=df_s.index.min(), x1=df_s.index.max(), y0=tp, y1=tp, line=dict(color="cyan", width=1.5), row=r_idx, col=1)
-
+                        fig.add_shape(type=\"line\", x0=df_s.index.min(), x1=df_s.index.max(), y0=p_poc, y1=p_poc, line=dict(color="red", width=2, dash="dash"), row=r_idx, col=1)
+                        fig.add_shape(type=\"line\", x0=df_s.index.min(), x1=df_s.index.max(), y0=sl, y1=sl, line=dict(color="orange", width=1.5, dash="dot"), row=r_idx, col=1)
+                        fig.add_shape(type=\"line\", x0=df_s.index.min(), x1=df_s.index.max(), y0=tp, y1=tp, line=dict(color="cyan", width=1.5), row=r_idx, col=1)
+                        
                         # Etichette di prezzo sul grafico
                         fig.add_annotation(x=df_s.index.max(), y=p_poc, text=f"ENTRY: {round(p_poc,2)}", showarrow=False, bgcolor="red", font=dict(color="white", size=8), row=r_idx, col=1)
                         fig.add_annotation(x=df_s.index.max(), y=sl, text=f"STOP: {round(sl,2)}", showarrow=False, bgcolor="orange", font=dict(color="white", size=8), row=r_idx, col=1)
