@@ -3,6 +3,8 @@ import pandas as pd
 import yfinance as yf
 import plotly.graph_objects as grp
 from plotly.subplots import make_subplots
+import requests
+from io import StringIO
 
 # Impostazione della pagina web a tutto schermo e tema scuro nativo
 st.set_page_config(layout="wide", page_title="Dashboard Finanziaria Triple-POC")
@@ -11,6 +13,29 @@ st.title("📐 Dashboard Finanziaria — Analisi Triple-POC")
 
 # Creazione delle schede interattive web
 tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram"])
+
+# --- Funzione per recuperare i Ticker S&P 500 in automatico da Wikipedia ---
+@st.cache_data(ttl=86400)  # Mantiene i dati in memoria per 24 ore senza riscaricarli a ogni clic
+def get_sp500_tickers():
+    wiki_url = "https://wikipedia.org"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    try:
+        response = requests.get(wiki_url, headers=headers, timeout=10)
+        response.raise_for_status()
+        tables = pd.read_html(StringIO(response.text))
+        for table in tables:
+            if 'Symbol' in table.columns:
+                # Converte i punti in trattini (es. BRK.B diventa BRK-B) richiesti da Yahoo Finance
+                tickers_list = [t.replace('.', '-') for t in table['Symbol'].tolist()]
+                return ",".join(tickers_list)
+    except Exception as e:
+        return "AAPL,MSFT,GOOGL,AMZN" # Ticker di backup in caso di errore di rete
+    return "AAPL,MSFT,GOOGL,AMZN"
+
+# Scarica l'elenco completo all'avvio
+sp500_string = get_sp500_tickers()
 
 # --- Funzione helper per il calcolo del Volume Profile e del POC ---
 def calc_vp(df, div=40):
@@ -48,9 +73,10 @@ def calc_vp(df, div=40):
 with tab1:
     st.subheader("Configurazione Parametri di Scansione")
     
-    col1, col2, col3 = st.columns([2, 1, 1])
+    col1, col2, col3 = st.columns()
     with col1:
-        tickers_input = st.text_area("Tickers (separati da virgola):", value="AAPL,MSFT,GOOGL,AMZN")
+        # Ora il valore iniziale è popolato automaticamente con la stringa di tutti i 503 ticker dell'S&P 500
+        tickers_input = st.text_area("Tickers (separati da virgola):", value=sp500_string, height=150)
     with col2:
         asset_type = st.selectbox("Tipo Asset:", ["Azione", "Criptovaluta"])
     with col3:
@@ -64,9 +90,11 @@ with tab1:
         if not tickers:
             st.warning("Inserisci almeno un ticker valido.")
         else:
+            st.success(f"Analisi avviata per {len(tickers)} elementi dell'S&P 500. Scorri la pagina verso il basso man mano che i grafici vengono generati.")
+            
             for ticker in tickers:
                 tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
-                st.info(f"🔄 Download dati storici in corso per: **{tk_yf}**...")
+                st.write(f"🔄 Download dati storici in corso per: **{tk_yf}**...")
                 
                 df_c = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=True, progress=False)
                 
@@ -75,10 +103,8 @@ with tab1:
                     if isinstance(df_c.columns, pd.MultiIndex):
                         df_c.columns = df_c.columns.get_level_values(0)
                         
-                    # Estrae il prezzo di chiusura più recente in modo sicuro
                     close_series = df_c["Close"]
                     p_att = float(close_series.values[-1] if hasattr(close_series, 'values') else close_series.iloc[-1])
-                    
                     g3 = {"1mo": 30, "3mo": 90, "6mo": 180}.get(period_value, 90)
                     
                     df1 = df_c.copy()
@@ -91,7 +117,6 @@ with tab1:
                     p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
                     
                     if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]:
-                        st.warning(f"⚠️ Dati insufficienti per calcolare il POC su {ticker}")
                         continue
                     
                     fig = make_subplots(rows=3, cols=1, subplot_titles=("1. STORICO COMPLETO", f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')})", f"3. ULTIMI {g3} GIORNI"), vertical_spacing=0.06)
@@ -120,7 +145,7 @@ with tab1:
                         fig.add_shape(type="line", x0=df_s.index.min(), x1=df_s.index.max(), y0=p_poc, y1=p_poc, line=dict(color="red", width=2, dash="dash"), row=r_idx, col=1)
                         fig.add_shape(type="line", x0=df_s.index.min(), x1=df_s.index.max(), y0=sl, y1=sl, line=dict(color="orange", width=1.5, dash="dot"), row=r_idx, col=1)
                         fig.add_shape(type="line", x0=df_s.index.min(), x1=df_s.index.max(), y0=tp, y1=tp, line=dict(color="cyan", width=1.5), row=r_idx, col=1)
-
+                        
                         # Etichette di prezzo sul grafico
                         fig.add_annotation(x=df_s.index.max(), y=p_poc, text=f"ENTRY: {round(p_poc,2)}", showarrow=False, bgcolor="red", font=dict(color="white", size=8), row=r_idx, col=1)
                         fig.add_annotation(x=df_s.index.max(), y=sl, text=f"STOP: {round(sl,2)}", showarrow=False, bgcolor="orange", font=dict(color="white", size=8), row=r_idx, col=1)
