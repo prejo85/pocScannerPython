@@ -14,28 +14,48 @@ st.title("📐 Dashboard Finanziaria — Analisi Triple-POC")
 # Creazione delle schede interattive web
 tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram"])
 
-# --- Funzione per recuperare i Ticker S&P 500 in automatico da Wikipedia ---
-@st.cache_data(ttl=86400)  # Mantiene i dati in memoria per 24 ore senza riscaricarli a ogni clic
-def get_sp500_tickers():
-    wiki_url = "https://wikipedia.org"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-    }
-    try:
-        response = requests.get(wiki_url, headers=headers, timeout=10)
-        response.raise_for_status()
-        tables = pd.read_html(StringIO(response.text))
-        for table in tables:
-            if 'Symbol' in table.columns:
-                # Converte i punti in trattini (es. BRK.B diventa BRK-B) richiesti da Yahoo Finance
-                tickers_list = [t.replace('.', '-') for t in table['Symbol'].tolist()]
-                return ",".join(tickers_list)
-    except Exception as e:
-        return "AAPL,MSFT,GOOGL,AMZN" # Ticker di backup in caso di errore di rete
-    return "AAPL,MSFT,GOOGL,AMZN"
+# --- FUNZIONI DI RECUPERO AUTOMATICO DEI PANIERI DA WIKIPEDIA ---
 
-# Scarica l'elenco completo all'avvio
-sp500_string = get_sp500_tickers()
+@st.cache_data(ttl=86400)  # Memorizza i dati per 24 ore per velocizzare il sito
+def carica_paniere_automatico(indice_scelto):
+    """Preleva i ticker aggiornati da Wikipedia senza inserirli a mano."""
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    
+    if indice_scelto == "S&P 500":
+        url = "https://wikipedia.org"
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            df = pd.read_html(StringIO(r.text))[0]
+            # Sostituisce i punti con i trattini richiesti da yFinance (es. BRK.B -> BRK-B)
+            lista = [t.replace('.', '-') for t in df['Symbol'].tolist()]
+            return ",".join(lista)
+        except:
+            return "AAPL,MSFT,GOOGL"
+
+    elif indice_scelto == "NASDAQ 100":
+        url = "https://wikipedia.org"
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            # Cerca la tabella corretta dei componenti nella pagina del Nasdaq-100
+            tabelle = pd.read_html(StringIO(r.text))
+            for tab in tabelle:
+                if 'Ticker' in tab.columns:
+                    return ",".join(tab['Ticker'].tolist())
+        except:
+            return "AAPL,MSFT,NVDA"
+
+    elif indice_scelto == "FTSE MIB (FIB)":
+        url = "https://wikipedia.org"
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            df = pd.read_html(StringIO(r.text))[1] # Generalmente la seconda tabella
+            # Aggiunge il suffisso .MI richiesto da yFinance per la borsa di Milano (es. ENI -> ENI.MI)
+            lista = [f"{t.strip()}.MI" for t in df['Ticker'].tolist()]
+            return ",".join(lista)
+        except:
+            return "ENI.MI,RACE.MI,UCG.MI"
+            
+    return ""
 
 # --- Funzione helper per il calcolo del Volume Profile e del POC ---
 def calc_vp(df, div=40):
@@ -68,21 +88,28 @@ def calc_vp(df, div=40):
         else: idx_a += 1; v_curr += v_p
 
     return poc, gr[min(idx_a + 1, len(gr) - 1)], gr[max(idx_b, 0)], [(gr[i] + gr[i + 1]) / 2 for i in range(len(vols))], vols
-
 # --- TAB 1: ANALISI TRIPLE-POC ---
 with tab1:
     st.subheader("Configurazione Parametri di Scansione")
     
     col1, col2, col3 = st.columns(3)
+    
     with col1:
-        # Ora il valore iniziale è popolato automaticamente con la stringa di tutti i 503 ticker dell'S&P 500
-        tickers_input = st.text_area("Tickers (separati da virgola):", value=sp500_string, height=150)
+        # Selettore dinamico del paniere di mercato
+        paniere_selezionato = st.selectbox("Seleziona Indice/Paniere:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)"])
+        # Scarica i dati in background basandosi sulla selezione
+        ticker_caricati = carica_paniere_automatico(paniere_selezionato)
+        
     with col2:
         asset_type = st.selectbox("Tipo Asset:", ["Azione", "Criptovaluta"])
+        
     with col3:
         period_label = st.selectbox("Periodo Analisi Recente:", ["1 Mese", "3 Mesi", "6 Mesi"])
         period_map = {"1 Mese": "1mo", "3 Mesi": "3mo", "6 Mesi": "6mo"}
         period_value = period_map[period_label]
+
+    # Il box di testo mostra l'elenco estratto e permette modifiche manuali prima dell'invio
+    tickers_input = st.text_area("Modifica o verifica i Tickers estratti (separati da virgola):", value=ticker_caricati, height=150)
 
     if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
         tickers = [t.strip().upper() for t in tickers_input.split(',') if t.strip()]
@@ -90,7 +117,7 @@ with tab1:
         if not tickers:
             st.warning("Inserisci almeno un ticker valido.")
         else:
-            st.success(f"Analisi avviata per {len(tickers)} elementi dell'S&P 500. Scorri la pagina verso il basso man mano che i grafici vengono generati.")
+            st.success(f"Analisi avviata per {len(tickers)} elementi. I grafici appariranno in sequenza qui sotto.")
             
             for ticker in tickers:
                 tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
@@ -99,7 +126,6 @@ with tab1:
                 df_c = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=True, progress=False)
                 
                 if df_c is not None and not df_c.empty:
-                    # Raddrizza eventuali MultiIndex generati dalle nuove versioni di yfinance
                     if isinstance(df_c.columns, pd.MultiIndex):
                         df_c.columns = df_c.columns.get_level_values(0)
                         
@@ -119,16 +145,14 @@ with tab1:
                     if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]:
                         continue
                     
-                    fig = make_subplots(rows=3, cols=1, subplot_titles=("1. STORICO COMPLETO", f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')})", f"3. ULTIMI {g3} GIORNI"), vertical_spacing=0.06)
+                    fig = make_subplots(rows=3, cols=1, subplot_titles=(f"1. STORICO COMPLETO ({ticker})", f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')})", f"3. ULTIMI {g3} GIORNI"), vertical_spacing=0.06)
                     cfg = [(1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")]
                     
                     for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
                         if df_s.empty: continue
                         
-                        # Candlestick
                         fig.add_trace(grp.Candlestick(x=df_s.index, open=df_s["Open"].astype(float), high=df_s["High"].astype(float), low=df_s["Low"].astype(float), close=df_s["Close"].astype(float), name=nm), row=r_idx, col=1)
                         
-                        # Profilo di Volume (Orizzontale)
                         if v_vp and max(v_vp) > 0:
                             m_v, d_i, d_f = max(v_vp), df_s.index.min(), df_s.index.max()
                             ext = (d_f - d_i).days
@@ -137,7 +161,6 @@ with tab1:
                                 x1_date = d_i + pd.Timedelta(days=int(w) if w > 0 else 1)
                                 fig.add_shape(type="rect", x0=d_i, x1=x1_date, y0=float(p_vp[i])*0.997, y1=float(p_vp[i])*1.003, fillcolor="rgba(0,165,181,0.1)", line=dict(width=0), row=r_idx, col=1)
                         
-                        # Setup Operativi Operazioni Long/Short
                         dir_s, ic, sl, tp, col_z = ("LONG", "🟢", p_vl*0.985, p_vh, "rgba(40,167,69,0.12)") if p_att >= p_poc else ("SHORT", "🔴", p_vh*1.015, p_vl, "rgba(220,53,69,0.12)")
                         rr = round(abs(tp - p_poc) / abs(p_poc - sl), 2) if abs(p_poc - sl) > 0 else 0
                         
@@ -146,7 +169,6 @@ with tab1:
                         fig.add_shape(type="line", x0=df_s.index.min(), x1=df_s.index.max(), y0=sl, y1=sl, line=dict(color="orange", width=1.5, dash="dot"), row=r_idx, col=1)
                         fig.add_shape(type="line", x0=df_s.index.min(), x1=df_s.index.max(), y0=tp, y1=tp, line=dict(color="cyan", width=1.5), row=r_idx, col=1)
                         
-                        # Etichette di prezzo sul grafico
                         fig.add_annotation(x=df_s.index.max(), y=p_poc, text=f"ENTRY: {round(p_poc,2)}", showarrow=False, bgcolor="red", font=dict(color="white", size=8), row=r_idx, col=1)
                         fig.add_annotation(x=df_s.index.max(), y=sl, text=f"STOP: {round(sl,2)}", showarrow=False, bgcolor="orange", font=dict(color="white", size=8), row=r_idx, col=1)
                         fig.add_annotation(x=df_s.index.max(), y=tp, text=f"TARGET: {round(tp,2)}", showarrow=False, bgcolor="cyan", font=dict(color="black", size=8), row=r_idx, col=1)
