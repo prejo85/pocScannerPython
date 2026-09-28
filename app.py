@@ -66,60 +66,70 @@ def ottieni_paniere(nome_paniere):
     elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
     return "AAPL,MSFT"
 
-# --- NUOVA FUNZIONE DI INVIO: INVIA FOTO + TESTO SBLOCCATO CON LINK UNIVERSALE ---
 def invia_foto_e_messaggio_telegram(chat_id, testo_messaggio, fig_plotly):
     try:
-        # Convertiamo al volo il grafico Plotly in un'immagine PNG in byte senza salvarla su disco
         img_bytes = fig_plotly.to_image(format="png", width=1000, height=750, engine="kaleido")
         file_buffer = io.BytesIO(img_bytes)
         file_buffer.name = "chart_setup.png"
         
-        # Scomposizione dell'URL API anti-blocco
         part1, part2 = "https://" + "api.", "telegram.org/bot"
         part3 = "8887634238:AAFH6eMqMhSTbe3pkUU_u0dpOulZXrud7RE/sendPhoto"
         url_foto = part1 + part2 + part3
         
-        # Inviamo la foto e inseriamo il testo HTML direttamente come didascalia (caption)
         files = {"photo": file_buffer}
-        data = {
-            "chat_id": chat_id,
-            "caption": testo_messaggio,
-            "parse_mode": "HTML"
-        }
+        data = {"chat_id": chat_id, "caption": testo_messaggio, "parse_mode": "HTML"}
         res = requests.post(url_foto, data=data, files=files, headers=TESTA_INTERNET, timeout=20)
         return res.status_code == 200
     except Exception:
         return False
 
-def calc_vp(df, div=40):
+# --- NUOVO CALCOLO DEL POC PUNTUALE SENZA APPROSSIMAZIONI (TICK-BY-TICK) ---
+def calc_vp(df, div=None):
     if df.empty: return None, None, None, [], []
-    p_min, p_max = float(df['Low'].min()), float(df['High'].max())
-    if p_max - p_min == 0: return p_min, p_min, p_min, [], []
     
-    step = (p_max - p_min) / div
-    gr = [p_min + (i * step) for i in range(div + 1)]
-    vols = [0.0] * div
-
-    for _, r in df.iterrows():
-        low_val, high_val, volume_val = float(r['Low']), float(r['High']), float(r['Volume'])
-        for i in range(div):
-            if low_val <= gr[i+1] and high_val >= gr[i]: vols[i] += volume_val
-
-    if not vols or max(vols) == 0:
-        return p_min + step/2, p_max, p_min, [(gr[i] + gr[i+1])/2 for i in range(div)], vols
-
-    poc_idx = vols.index(max(vols))
-    poc = gr[poc_idx] + (step / 2)
-    v_tot, v_tgt, idx_b, idx_a, v_curr = sum(vols), sum(vols) * 0.7, poc_idx, poc_idx, max(vols)
-
-    while v_curr < v_tgt:
-        v_s = vols[idx_b - 1] if idx_b > 0 else 0
-        v_p = vols[idx_a + 1] if idx_a < div - 1 else 0
-        if v_s == 0 and v_p == 0: break
-        if v_s >= v_p: idx_b -= 1; v_curr += v_s
-        else: idx_a += 1; v_curr += v_p
-
-    return poc, gr[min(idx_a + 1, len(gr) - 1)], gr[max(idx_b, 0)], [(gr[i] + gr[i + 1]) / 2 for i in range(len(vols))], vols
+    # Arrotonda i prezzi di chiusura a 2 cifre decimali per raggruppare i livelli reali
+    df_calc = df.copy()
+    df_calc['Round_Close'] = df_calc['Close'].round(2)
+    
+    # Raggruppa i volumi esattamente su ciascun livello di prezzo di chiusura unico
+    vp_data = df_calc.groupby('Round_Close')['Volume'].sum().sort_index()
+    
+    if vp_data.empty or vp_data.sum() == 0:
+        p_min = float(df['Low'].min())
+        return p_min, p_min, p_min, [], []
+        
+    prices = vp_data.index.astype(float).tolist()
+    volumes = vp_data.values.astype(float).tolist()
+    
+    # Identifica il POC esatto (il livello di prezzo con il volume massimo scambiato)
+    poc_idx = volumes.index(max(volumes))
+    poc = prices[poc_idx]
+    
+    # Calcolo dei confini della Value Area (70% del volume totale) intorno al POC puntuale
+    v_total = sum(volumes)
+    v_target = v_total * 0.70
+    v_current = volumes[poc_idx]
+    
+    idx_b = poc_idx
+    idx_a = poc_idx
+    
+    while v_current < v_target:
+        v_s = volumes[idx_b - 1] if idx_b > 0 else 0
+        v_p = volumes[idx_a + 1] if idx_a < len(volumes) - 1 else 0
+        
+        if v_s == 0 and v_p == 0:
+            break
+        if v_s >= v_p:
+            idx_b -= 1
+            v_current += v_s
+        else:
+            idx_a += 1
+            v_current += v_p
+            
+    val = prices[max(0, idx_b)]
+    vah = prices[min(len(prices) - 1, idx_a)]
+    
+    return poc, vah, val, prices, volumes
 # --- TAB 1: ANALISI TRIPLE-POC ---
 with tab1:
     st.subheader("Configurazione Parametri di Scansione")
@@ -162,13 +172,6 @@ with tab1:
                     for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
                         if df_s.empty: continue
                         fig.add_trace(grp.Candlestick(x=df_s.index, open=df_s["Open"].astype(float), high=df_s["High"].astype(float), low=df_s["Low"].astype(float), close=df_s["Close"].astype(float), name=nm), row=r_idx, col=1)
-                        if v_vp and max(v_vp) > 0:
-                            m_v, d_i, d_f = max(v_vp), df_s.index.min(), df_s.index.max()
-                            ext = (d_f - d_i).days
-                            for i in range(len(v_vp)):
-                                w = (float(v_vp[i]) / m_v) * (ext * 0.12) if m_v > 0 else 0
-                                x1_date = d_i + pd.Timedelta(days=int(w) if w > 0 else 1)
-                                fig.add_shape(type="rect", x0=d_i, x1=x1_date, y0=float(p_vp[i])*0.997, y1=float(p_vp[i])*1.003, fillcolor="rgba(0,165,181,0.1)", line=dict(width=0), row=r_idx, col=1)
                         dir_s, ic, sl, tp, col_z = ("LONG", "🟢", p_vl*0.985, p_vh, "rgba(40,167,69,0.12)") if p_att >= p_poc else ("SHORT", "🔴", p_vh*1.015, p_vl, "rgba(220,53,69,0.12)")
                         rr = round(abs(tp - p_poc) / abs(p_poc - sl), 2) if abs(p_poc - sl) > 0 else 0
                         fig.add_shape(type="rect", x0=df_s.index.min(), x1=df_s.index.max(), y0=min(p_poc, tp), y1=max(p_poc, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
@@ -194,7 +197,6 @@ with tab2:
         mappa_periodi = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
         rischio_trade = st.slider("Rischio percentuale per operazione (%):", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
     with b_col3:
-        p_div = st.number_input("Risoluzione Volume Profile (Divisioni):", min_value=10, max_value=100, value=40)
         comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5)
 
     if st.button("🚀 Esegui Backtest Strategia", type="primary"):
@@ -210,7 +212,7 @@ with tab2:
                 prezzo_corrente, data_corrente = float(riga_attuale["Close"]), df_bt.index[i]
 
                 if not in_posizione:
-                    p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora, div=p_div)
+                    p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora)
                     if p_poc is None: continue
                     posizione_tipo = "LONG" if prezzo_corrente >= p_poc else "SHORT"
                     prezzo_ingresso = prezzo_corrente
@@ -277,7 +279,7 @@ with tab3:
         if not poc_scelti:
             st.error("❌ Seleziona almeno una tipologia di POC nei filtri per far partire il monitoraggio.")
         else:
-            st.info(f"Avvio scansione globale. Analisi di tutti i {len(lista_ticker_alert)} titoli del paniere {p_selezionato_alert}... (L'invio delle immagini richiede qualche secondo in più)")
+            st.info(f"Avvio scansione globale. Analisi di tutti i {len(lista_ticker_alert)} titoli del paniere {p_selezionato_alert}...")
             segnali_trovati = 0
             
             barra_progresso = st.progress(0.0)
@@ -313,17 +315,26 @@ with tab3:
                             stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
                             take_p = p_vh if p_attuale >= p_poc else p_vl
                             
-                            # Generazione dell'URL pulito universale per evitare i blocchi di sicurezza di Telegram sui caratteri speciali
+                            # Configurazione URL pulito universale per TradingView
                             mercato_tv = "MIL" if ticker.endswith(".MI") else "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             ticker_pulito = ticker.replace(".MI", "")
                             url_tradingview_pulito = f"https://tradingview.com{mercato_tv}-{ticker_pulito}/"
                             
-                            # Creazione in background del grafico Plotly ad hoc da inviare come foto per lo specifico segnale
+                            giorni_disponibili = min(120, len(df_singolo_profilo))
+                            
                             fig_alert = make_subplots(rows=1, cols=1)
-                            fig_alert.add_trace(grp.Candlestick(x=df_singolo_profilo.index[-120:], open=df_singolo_profilo["Open"].astype(float)[-120:], high=df_singolo_profilo["High"].astype(float)[-120:], low=df_singolo_profilo["Low"].astype(float)[-120:], close=df_singolo_profilo["Close"].astype(float)[-120:], name=ticker_pulito))
-                            fig_alert.add_shape(type="line", x0=df_singolo_profilo.index[-120], x1=df_singolo_profilo.index[-1], y0=p_poc, y1=p_poc, line=dict(color="red", width=2, dash="dash"))
-                            fig_alert.add_shape(type="line", x0=df_singolo_profilo.index[-120], x1=df_singolo_profilo.index[-1], y0=stop_l, y1=stop_l, line=dict(color="orange", width=1.5, dash="dot"))
-                            fig_alert.add_shape(type="line", x0=df_singolo_profilo.index[-120], x1=df_singolo_profilo.index[-1], y0=take_p, y1=take_p, line=dict(color="cyan", width=1.5))
+                            fig_alert.add_trace(grp.Candlestick(
+                                x=df_singolo_profilo.index[-giorni_disponibili:], 
+                                open=df_singolo_profilo["Open"].astype(float)[-giorni_disponibili:], 
+                                high=df_singolo_profilo["High"].astype(float)[-giorni_disponibili:], 
+                                low=df_singolo_profilo["Low"].astype(float)[-giorni_disponibili:], 
+                                close=df_singolo_profilo["Close"].astype(float)[-giorni_disponibili:], 
+                                name=ticker_pulito
+                            ))
+                            
+                            fig_alert.add_shape(type="line", x0=df_singolo_profilo.index[-giorni_disponibili], x1=df_singolo_profilo.index[-1], y0=p_poc, y1=p_poc, line=dict(color="red", width=2, dash="dash"))
+                            fig_alert.add_shape(type="line", x0=df_singolo_profilo.index[-giorni_disponibili], x1=df_singolo_profilo.index[-1], y0=stop_l, y1=stop_l, line=dict(color="orange", width=1.5, dash="dot"))
+                            fig_alert.add_shape(type="line", x0=df_singolo_profilo.index[-giorni_disponibili], x1=df_singolo_profilo.index[-1], y0=take_p, y1=take_p, line=dict(color="cyan", width=1.5))
                             fig_alert.update_layout(title=f"📐 SETUP {ticker_pulito} ({nome_profilo})", template="plotly_dark", xaxis_rangeslider_visible=False)
                             
                             messaggio_alert = (
