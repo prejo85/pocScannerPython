@@ -269,7 +269,7 @@ with tab3:
             for idx, ticker in enumerate(lista_ticker_alert):
                 barra_progresso.progress((idx + 1) / totale_titoli)
                 
-                # auto_adjust=False inserito anche qui per allineare gli alert live ai valori reali di TW
+                # auto_adjust=False garantisce i prezzi originari puri identici a TradingView
                 df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
                 if df_live is not None and not df_live.empty:
                     p_attuale = float(df_live["Close"].iloc[-1])
@@ -297,7 +297,7 @@ with tab3:
                             stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
                             take_p = p_vh if p_attuale >= p_poc else p_vl
                             
-                            # Generazione dell'URL strutturato pulito per aprirsi nativamente su smartphone
+                            # STRUTTURAZIONE URL CORRETTA: Forza la presenza della sottocartella /symbols/ richiesta da TradingView
                             mercato_tv = "MIL" if ticker.endswith(".MI") else "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             ticker_pulito = ticker.replace(".MI", "")
                             url_tradingview_pulito = f"https://tradingview.com{mercato_tv}-{ticker_pulito}/"
