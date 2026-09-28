@@ -66,7 +66,6 @@ def ottieni_paniere(nome_paniere):
     elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
     return "AAPL,MSFT"
 
-# --- RISOLUZIONE BUG LINK TELEGRAM: CORREZIONE SERIALIZZAZIONE DATA JSON PAYLOAD ---
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     payload = {
         "chat_id": int(chat_id),
@@ -78,8 +77,6 @@ def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
         part1, part2 = "https://" + "api.", "telegram.org/bot"
         part3 = "8887634238:AAFH6eMqMhSTbe3pkUU_u0dpOulZXrud7RE/sendMessage"
         url_pulito = part1 + part2 + part3
-        
-        # Forza la codifica in stringa json.dumps mantenendo gli header corretti
         res = requests.post(url_pulito, data=json.dumps(payload), headers=TESTA_INTERNET, timeout=12)
         return res.status_code == 200
     except Exception:
@@ -147,10 +144,7 @@ with tab1:
                     
                     for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
                         if df_s.empty: continue
-                        # Disegno Candele
                         fig.add_trace(grp.Candlestick(x=df_s.index, open=df_s["Open"].astype(float), high=df_s["High"].astype(float), low=df_s["Low"].astype(float), close=df_s["Close"].astype(float), name=nm), row=r_idx, col=1)
-                        
-                        # Disegno Istogramma Orizzontale del Volume Profile reale (Tick-by-Tick)
                         if v_vp and max(v_vp) > 0:
                             m_v, d_i, d_f = max(v_vp), df_s.index.min(), df_s.index.max()
                             ext = (d_f - d_i).days
@@ -158,7 +152,6 @@ with tab1:
                                 w = (float(v_vp[i]) / m_v) * (ext * 0.15) if m_v > 0 else 0
                                 x1_date = d_i + pd.Timedelta(days=int(w) if w > 0 else 1)
                                 fig.add_shape(type="rect", x0=d_i, x1=x1_date, y0=float(p_vp[i])*0.998, y1=float(p_vp[i])*1.002, fillcolor="rgba(0,165,181,0.15)", line=dict(width=0), row=r_idx, col=1)
-                        
                         dir_s, ic, sl, tp, col_z = ("LONG", "🟢", p_vl*0.985, p_vh, "rgba(40,167,69,0.12)") if p_att >= p_poc else ("SHORT", "🔴", p_vh*1.015, p_vl, "rgba(220,53,69,0.12)")
                         rr = round(abs(tp - p_poc) / abs(p_poc - sl), 2) if abs(p_poc - sl) > 0 else 0
                         fig.add_shape(type="rect", x0=df_s.index.min(), x1=df_s.index.max(), y0=min(p_poc, tp), y1=max(p_poc, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
@@ -302,7 +295,6 @@ with tab3:
                             stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
                             take_p = p_vh if p_attuale >= p_poc else p_vl
                             
-                            # Strutturazione URL pulito TradingView approvato dai filtri di parsing HTML di Telegram
                             mercato_tv = "MIL" if ticker.endswith(".MI") else "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             ticker_pulito = ticker.replace(".MI", "")
                             url_tradingview_pulito = f"https://tradingview.com{mercato_tv}-{ticker_pulito}/"
@@ -316,7 +308,7 @@ with tab3:
                                 f"🔴 <b>Entry POC:</b> {round(p_poc, 2)}\n"
                                 f"🟠 <b>Stop Loss:</b> {round(stop_l, 2)}\n"
                                 f"🔵 <b>Take Profit:</b> {round(take_p, 2)}\n\n"
-                                f"➡️ <a href='{url_tradingview_pulito}'><b>APRI GRAFICO TRADINGVIEW</b></a>"
+                                f"🔗 <b>LINK DI TRADINGVIEW:</b>\n{url_tradingview_pulito}"
                             )
                             invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
                             
