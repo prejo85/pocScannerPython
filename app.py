@@ -32,13 +32,13 @@ SP500_FULL = (
     "CSGP,COST,CRH,CRWD,CCI,CSX,CMI,CVS,DHR,DRI,DDOG,DVA,DECK,DE,DELL,DAL,DVN,DXCM,FANG,DLR,DG,DLTR,D,DPZ,DASH,DOV,"
     "DOW,DHI,DTE,DUK,DD,ETN,EBAY,ECHO,ECL,EIX,EW,ELV,EME,EMR,ETR,EOG,EQT,EFX,EQIX,ERIE,ESS,EL,EG,EVRG,P,ES,EXC,EXE,"
     "EXPE,EXPD,EXR,XOM,FFIV,FDS,FICO,FAST,FRT,FDX,FDXF,FERG,FIS,FITB,FSLR,FE,FISV,FLEX,F,FTNT,FTV,FOXA,FOX,BEN,FCX,"
-    "GRMN,IT,GE,GEHC,GEV,GEN,GNRC,GD,GIS,GM,GPC,GILD,GPN,GL,GDDY,GS,HAL,HIG,HAS,HCA,DOC,HSIC,HSY,HPE,HLT,HD,HON,HRL,"
-    "HST,HWM,HPQ,HUBB,HUM,HBAN,HII,IBM,IEX,IDXX,ITW,ILMN,INCY,IR,PODD,INTC,IBKR,ICE,IFF,IP,INTU,ISRG,IVZ,INVH,IQV,"
-    "IRM,JBHT,JBL,JKHY,J,JNJ,JCI,JPM,KVUE,KDP,KEY,KEYS,KMB,KIM,KMI,KKR,KLAC,KHC,KR,LHX,LH,LRCX,LVS,LDOS,LEN,LII,LLY,"
-    "LIN,LYV,LMT,L,LOW,LULU,LITE,LYB,MTB,MPC,MAR,MRSH,MLM,MRVL,MAS,MA,MKC,MCD,MCK,MDT,MRK,META,MET,MTD,MGM,MCHP,MU,"
-    "MSFT,MAA,MRNA,MDLZ,MPWR,MNST,MCO,MS,MOS,MSI,MSCI,NDAQ,NTAP,NFLX,NEM,NWSA,NWS,NEE,NKE,NI,NDSN,NSC,NTRS,NOC,NCLH,"
-    "NRG,NUE,NVDA,NVR,NXPI,ORLY,OXY,ODFL,OMC,ON,OKE,ORCL,OTIS,PCAR,PKG,PLTR,PANW,PSKY,PH,PAYX,PYPL,PNR,PEP,PFE,PCG,"
-    "PM,PSX,PNW,PNC,PPG,PPL,PFG,PG,PGR,PLD,PRU,PEG,PTC,PSA,PHM,PWR,QCOM,DGX,Q,RL,RJF,RDDT,RTX,O,REG,REGN,RF,RSG,"
+    "GRMN,IT,GE,GEHC,GEV,GEN,GNRC,GD,GIS,GM,GPC,GILD,GPN,GL,GDDY,GS,HAL,HIG,HIG,HAS,HCA,DOC,HSIC,HSY,HPE,HLT,HD,HON,"
+    "HRL,HST,HWM,HPQ,HUBB,HUM,HBAN,HII,IBM,IEX,IDXX,ITW,ILMN,INCY,IR,PODD,INTC,IBKR,ICE,IFF,IP,INTU,ISRG,IVZ,INVH,"
+    "IQV,IRM,JBHT,JBL,JKHY,J,JNJ,JCI,JPM,KVUE,KDP,KEY,KEYS,KMB,KIM,KMI,KKR,KLAC,KHC,KR,LHX,LH,LRCX,LVS,LDOS,LEN,LII,"
+    "LLY,LIN,LYV,LMT,L,LOW,LULU,LITE,LYB,MTB,MPC,MAR,MRSH,MLM,MRVL,MAS,MA,MKC,MCD,MCK,MDT,MRK,META,MET,MTD,MGM,MCHP,"
+    "MU,MSFT,MAA,MRNA,MDLZ,MPWR,MNST,MCO,MS,MOS,MSI,MSCI,NDAQ,NTAP,NFLX,NEM,NWSA,NWS,NEE,NKE,NI,NDSN,NSC,NTRS,NOC,"
+    "NCLH,NRG,NUE,NVDA,NVR,NXPI,ORLY,OXY,ODFL,OMC,ON,OKE,ORCL,OTIS,PCAR,PKG,PLTR,PANW,PSKY,PH,PAYX,PYPL,PNR,PEP,PFE,"
+    "PCG,PM,PSX,PNW,PNC,PPG,PPL,PFG,PG,PGR,PLD,PRU,PEG,PTC,PSA,PHM,PWR,QCOM,DGX,Q,RL,RJF,RDDT,RTX,O,REG,REGN,RF,RSG,"
     "RMD,RVTY,HOOD,ROK,ROL,ROP,ROST,RCL,SPGI,CRM,SBAC,SLB,STX,SRE,NOW,SHW,SPG,SWKS,SJM,SW,SNA,SOLV,SO,LUV,SWK,SBUX,"
     "STT,STLD,STE,SYK,SMCI,SYF,SNPS,SYY,TMUS,TROW,TTWO,TPR,TRGP,TGT,TEL,TDY,TER,TSLA,TXN,TPL,TXT,TMO,TJX,TKO,TSCO,"
     "TT,TDG,TRV,TRMB,TFC,TYL,TSN,USB,UBER,UDR,ULTA,UNP,UAL,UPS,URI,UNH,UHS,VLO,VEEV,VTR,VLTO,VRSN,VRSK,VZ,VRTX,VRT,"
@@ -51,7 +51,7 @@ NASDAQ_FULL = (
     "CHKP,CTAS,CSCO,CTSH,CMCSA,CPRT,COST,CRWD,DLTR,DXCM,EBAY,EA,EXPE,FAST,FB,FISV,FOXA,FOX,GILD,GOOGL,GOOG,"
     "IDXX,ILMN,INCY,INTC,INTU,ISRG,JBHT,JD,KDP,KLAC,KHC,LRCX,LULU,MELI,MAR,MTCH,MCHP,MU,MSFT,MRNA,MDLO,MNST,"
     "NTES,NFLX,NVDA,NXPI,ORLY,OKTA,ODFL,PCAR,PAYX,PYPL,PEP,PDD,REGN,ROST,SIRI,SWKS,SPLK,SBUX,SNPS,TMUS,TSLA,"
-    "TXN,TCOM,VRSN,VRSK,VRTX,WBA,WDAY,XEL,XLNX,ZM"
+    "TXN,TCOM,VRSN,VRTX,WBA,WDAY,XEL,XLNX,ZM"
 )
 
 FTSEMIB_FULL = (
@@ -82,6 +82,7 @@ def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     except Exception:
         return False
 
+# --- CALCOLO DEL POC TICK-BY-TICK DETERMINISTICO ---
 def calc_vp(df, div=None):
     if df.empty: return None, None, None, [], []
     df_calc = df.copy()
@@ -127,7 +128,6 @@ with tab1:
             st.success(f"Analisi avviata per {len(tickers)} elementi. Grafici in caricamento...")
             for ticker in tickers:
                 tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
-                # auto_adjust=False garantisce i prezzi originali puri identici a TradingView
                 df_c = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
                 if df_c is not None and not df_c.empty:
                     close_series = df_c["Close"]
@@ -269,7 +269,6 @@ with tab3:
             for idx, ticker in enumerate(lista_ticker_alert):
                 barra_progresso.progress((idx + 1) / totale_titoli)
                 
-                # auto_adjust=False garantisce i prezzi originari puri identici a TradingView
                 df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
                 if df_live is not None and not df_live.empty:
                     p_attuale = float(df_live["Close"].iloc[-1])
@@ -297,10 +296,11 @@ with tab3:
                             stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
                             take_p = p_vh if p_attuale >= p_poc else p_vl
                             
-                            # STRUTTURAZIONE URL CORRETTA: Forza la presenza della sottocartella /symbols/ richiesta da TradingView
-                            mercato_tv = "MIL" if ticker.endswith(".MI") else "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
-                            ticker_pulito = ticker.replace(".MI", "")
-                            url_tradingview_pulito = f"https://tradingview.com{mercato_tv}-{ticker_pulito}/"
+                            # RISOLUZIONE FINALE LINK: Forziamo la scomposizione in testo puro con lo slash /symbols/ integrato
+                            mercato_tv = "MIL" if str(ticker).endswith(".MI") else "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
+                            ticker_pulito = str(ticker).replace(".MI", "")
+                            
+                            url_stringa_pura = f"https://tradingview.com{mercato_tv}-{ticker_pulito}/"
                             
                             messaggio_alert = (
                                 f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
@@ -311,7 +311,7 @@ with tab3:
                                 f"🔴 <b>Entry POC:</b> {round(p_poc, 2)}\n"
                                 f"🟠 <b>Stop Loss:</b> {round(stop_l, 2)}\n"
                                 f"🔵 <b>Take Profit:</b> {round(take_p, 2)}\n\n"
-                                f"🔗 <b>LINK DI TRADINGVIEW:</b>\n{url_tradingview_pulito}"
+                                f"🔗 <b>LINK DI TRADINGVIEW:</b>\n{url_stringa_pura}"
                             )
                             invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
                             
