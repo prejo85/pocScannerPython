@@ -127,7 +127,8 @@ with tab1:
             st.success(f"Analisi avviata per {len(tickers)} elementi. Grafici in caricamento...")
             for ticker in tickers:
                 tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
-                df_c = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=True, multi_level_index=False, progress=False)
+                # auto_adjust=False garantisce i prezzi originali puri identici a TradingView
+                df_c = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
                 if df_c is not None and not df_c.empty:
                     close_series = df_c["Close"]
                     p_att = float(close_series.values[-1] if hasattr(close_series, 'values') else close_series.iloc[-1])
@@ -181,7 +182,7 @@ with tab2:
 
     if st.button("🚀 Esegui Backtest Strategia", type="primary"):
         st.info(f"Elaborazione della simulazione algoritmica per {bt_ticker}...")
-        df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=True, multi_level_index=False, progress=False)
+        df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
         if df_bt is not None and len(df_bt) > 60:
             capitale, in_posizione, prezzo_ingresso, livello_sl, livello_tp = capitale_iniziale, False, 0, 0, 0
             equity_curve, date_curve, trade_history = [capitale_iniziale], [df_bt.index], []
@@ -268,7 +269,8 @@ with tab3:
             for idx, ticker in enumerate(lista_ticker_alert):
                 barra_progresso.progress((idx + 1) / totale_titoli)
                 
-                df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=True, multi_level_index=False, progress=False)
+                # auto_adjust=False inserito anche qui per allineare gli alert live ai valori reali di TW
+                df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
                 if df_live is not None and not df_live.empty:
                     p_attuale = float(df_live["Close"].iloc[-1])
                     
@@ -295,6 +297,7 @@ with tab3:
                             stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
                             take_p = p_vh if p_attuale >= p_poc else p_vl
                             
+                            # Generazione dell'URL strutturato pulito per aprirsi nativamente su smartphone
                             mercato_tv = "MIL" if ticker.endswith(".MI") else "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             ticker_pulito = ticker.replace(".MI", "")
                             url_tradingview_pulito = f"https://tradingview.com{mercato_tv}-{ticker_pulito}/"
