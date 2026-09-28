@@ -261,7 +261,7 @@ with tab2:
 # --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
 with tab3:
     st.subheader("🔔 Canale Notifiche in Tempo Reale via Telegram")
-    st.success("✅ Credenziali sincronizzate in modalità protetta con sblocco immagini attivo.")
+    st.success("✅ Credenziali sincronizzate in modalità protetta con sblocco immagini leggero attivo.")
     
     st.markdown("---")
     st.subheader("📡 Impostazioni Avanzate dei Filtri Live")
@@ -279,7 +279,7 @@ with tab3:
         if not poc_scelti:
             st.error("❌ Seleziona almeno una tipologia di POC nei filtri per far partire il monitoraggio.")
         else:
-            st.info(f"Avvio scansione globale. Analisi di tutti i {len(lista_ticker_alert)} titoli del paniere {p_selezionato_alert}...")
+            st.info(f"Avvio scansione globale. Analisi di tutti i {len(lista_ticker_alert)} titoli del paniere {p_selezionato_alert}... (Invio immagini ottimizzato ad alta velocità)")
             segnali_trovati = 0
             
             barra_progresso = st.progress(0.0)
@@ -315,12 +315,13 @@ with tab3:
                             stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
                             take_p = p_vh if p_attuale >= p_poc else p_vl
                             
-                            # Configurazione URL pulito universale per TradingView
+                            # Generazione URL pulito TradingView
                             mercato_tv = "MIL" if ticker.endswith(".MI") else "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             ticker_pulito = ticker.replace(".MI", "")
                             url_tradingview_pulito = f"https://tradingview.com{mercato_tv}-{ticker_pulito}/"
                             
-                            giorni_disponibili = min(120, len(df_singolo_profilo))
+                            # OTTIMIZZAZIONE FOTO: Mostra solo lo storico recente indispensabile per non appesantire il file
+                            giorni_disponibili = min(90, len(df_singolo_profilo))
                             
                             fig_alert = make_subplots(rows=1, cols=1)
                             fig_alert.add_trace(grp.Candlestick(
@@ -335,7 +336,7 @@ with tab3:
                             fig_alert.add_shape(type="line", x0=df_singolo_profilo.index[-giorni_disponibili], x1=df_singolo_profilo.index[-1], y0=p_poc, y1=p_poc, line=dict(color="red", width=2, dash="dash"))
                             fig_alert.add_shape(type="line", x0=df_singolo_profilo.index[-giorni_disponibili], x1=df_singolo_profilo.index[-1], y0=stop_l, y1=stop_l, line=dict(color="orange", width=1.5, dash="dot"))
                             fig_alert.add_shape(type="line", x0=df_singolo_profilo.index[-giorni_disponibili], x1=df_singolo_profilo.index[-1], y0=take_p, y1=take_p, line=dict(color="cyan", width=1.5))
-                            fig_alert.update_layout(title=f"📐 SETUP {ticker_pulito} ({nome_profilo})", template="plotly_dark", xaxis_rangeslider_visible=False)
+                            fig_alert.update_layout(title=f"📐 SETUP {ticker_pulito} ({nome_profilo})", template="plotly_dark", xaxis_rangeslider_visible=False, width=800, height=600)
                             
                             messaggio_alert = (
                                 f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
