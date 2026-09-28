@@ -6,6 +6,7 @@ import plotly.graph_objects as grp
 from plotly.subplots import make_subplots
 import requests
 import json
+import io
 
 # Impostazione della pagina web a tutto schermo e tema scuro nativo
 st.set_page_config(layout="wide", page_title="Dashboard Finanziaria Completa")
@@ -18,8 +19,7 @@ tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram
 # --- CREDENZIALI E CONFIGURAZIONI NATIVE ---
 T_ID = "2072895073"
 TESTA_INTERNET = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Content-Type": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 }
 
 # --- DATABASE INTERNO DEI PANIERI ---
@@ -66,13 +66,27 @@ def ottieni_paniere(nome_paniere):
     elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
     return "AAPL,MSFT"
 
-def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
-    payload = {"chat_id": chat_id, "text": testo_messaggio, "parse_mode": "HTML", "disable_web_page_preview": False}
+# --- NUOVA FUNZIONE DI INVIO: INVIA FOTO + TESTO SBLOCCATO CON LINK UNIVERSALE ---
+def invia_foto_e_messaggio_telegram(chat_id, testo_messaggio, fig_plotly):
     try:
+        # Convertiamo al volo il grafico Plotly in un'immagine PNG in byte senza salvarla su disco
+        img_bytes = fig_plotly.to_image(format="png", width=1000, height=750, engine="kaleido")
+        file_buffer = io.BytesIO(img_bytes)
+        file_buffer.name = "chart_setup.png"
+        
+        # Scomposizione dell'URL API anti-blocco
         part1, part2 = "https://" + "api.", "telegram.org/bot"
-        part3 = "8887634238:AAFH6eMqMhSTbe3pkUU_u0dpOulZXrud7RE/sendMessage"
-        url_pulito = part1 + part2 + part3
-        res = requests.post(url_pulito, data=json.dumps(payload), headers=TESTA_INTERNET, timeout=12)
+        part3 = "8887634238:AAFH6eMqMhSTbe3pkUU_u0dpOulZXrud7RE/sendPhoto"
+        url_foto = part1 + part2 + part3
+        
+        # Inviamo la foto e inseriamo il testo HTML direttamente come didascalia (caption)
+        files = {"photo": file_buffer}
+        data = {
+            "chat_id": chat_id,
+            "caption": testo_messaggio,
+            "parse_mode": "HTML"
+        }
+        res = requests.post(url_foto, data=data, files=files, headers=TESTA_INTERNET, timeout=20)
         return res.status_code == 200
     except Exception:
         return False
@@ -245,16 +259,16 @@ with tab2:
 # --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
 with tab3:
     st.subheader("🔔 Canale Notifiche in Tempo Reale via Telegram")
-    st.success("✅ Credenziali bloccate in modalità protetta. Chat ID sincronizzato con successo.")
+    st.success("✅ Credenziali sincronizzate in modalità protetta con sblocco immagini attivo.")
     
     st.markdown("---")
     st.subheader("📡 Impostazioni Avanzate dei Filtri Live")
     
     fl1, fl2 = st.columns(2)
     with fl1:
-        soglia_distanza = st.slider("Seleziona la distanza massima dal POC per inviare l'alert (%):", min_value=0.1, max_value=3.0, value=0.5, step=0.1, help="Soglia percentuale tollerata rispetto al punto d'ingresso")
+        soglia_distanza = st.slider("Seleziona la distanza massima dal POC per inviare l'alert (%):", min_value=0.1, max_value=3.0, value=0.5, step=0.1, key="tg_dist")
     with fl2:
-        poc_scelti = st.multiselect("Seleziona su quali profili di volume calcolare i segnali:", options=["Generale", "ATH", "Recente (90D)"], default=["Generale", "ATH", "Recente (90D)"])
+        poc_scelti = st.multiselect("Seleziona su quali profili di volume calcolare i segnali:", options=["Generale", "ATH", "Recente (90D)"], default=["Generale", "ATH", "Recente (90D)"], key="tg_sel_p")
 
     p_selezionato_alert = st.selectbox("Seleziona il paniere completo da scansionare:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)"], key="tg_paniere")
     lista_ticker_alert = ottieni_paniere(p_selezionato_alert).split(",")
@@ -263,7 +277,7 @@ with tab3:
         if not poc_scelti:
             st.error("❌ Seleziona almeno una tipologia di POC nei filtri per far partire il monitoraggio.")
         else:
-            st.info(f"Avvio scansione globale in corso. Analisi di tutti i {len(lista_ticker_alert)} titoli del paniere {p_selezionato_alert}...")
+            st.info(f"Avvio scansione globale. Analisi di tutti i {len(lista_ticker_alert)} titoli del paniere {p_selezionato_alert}... (L'invio delle immagini richiede qualche secondo in più)")
             segnali_trovati = 0
             
             barra_progresso = st.progress(0.0)
@@ -282,16 +296,13 @@ with tab3:
                     df_recente = df_live.tail(90).copy()
                     
                     controlli_da_effettuare = []
-                    if "Generale" in poc_scelti:
-                        controlli_da_effettuare.append(("GENERALE (Storico)", df_generale))
-                    if "ATH" in poc_scelti:
-                        controlli_da_effettuare.append(("DALL'ATH", df_ath))
-                    if "Recente (90D)" in poc_scelti:
-                        controlli_da_effettuare.append(("RECENTE (90 Giorni)", df_recente))
+                    if "Generale" in poc_scelti: controlli_da_effettuare.append(("GENERALE", df_generale))
+                    if "ATH" in poc_scelti: controlli_da_effettuare.append(("DALL'ATH", df_ath))
+                    if "Recente (90D)" in poc_scelti: controlli_da_effettuare.append(("RECENTE (90D)", df_recente))
                         
                     for nome_profilo, df_singolo_profilo in controlli_da_effettuare:
                         if df_singolo_profilo.empty: continue
-                        p_poc, p_vh, p_vl, _, _ = calc_vp(df_singolo_profilo)
+                        p_poc, p_vh, p_vl, prz_v, vl_v = calc_vp(df_singolo_profilo)
                         
                         if p_poc is None: continue
                         distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
@@ -302,10 +313,18 @@ with tab3:
                             stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
                             take_p = p_vh if p_attuale >= p_poc else p_vl
                             
-                            # Generazione automatica dell'URL TradingView basata sulla borsa di riferimento
+                            # Generazione dell'URL pulito universale per evitare i blocchi di sicurezza di Telegram sui caratteri speciali
                             mercato_tv = "MIL" if ticker.endswith(".MI") else "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             ticker_pulito = ticker.replace(".MI", "")
-                            url_tradingview = f"https://tradingview.com{mercato_tv}%3A{ticker_pulito}"
+                            url_tradingview_pulito = f"https://tradingview.com{mercato_tv}-{ticker_pulito}/"
+                            
+                            # Creazione in background del grafico Plotly ad hoc da inviare come foto per lo specifico segnale
+                            fig_alert = make_subplots(rows=1, cols=1)
+                            fig_alert.add_trace(grp.Candlestick(x=df_singolo_profilo.index[-120:], open=df_singolo_profilo["Open"].astype(float)[-120:], high=df_singolo_profilo["High"].astype(float)[-120:], low=df_singolo_profilo["Low"].astype(float)[-120:], close=df_singolo_profilo["Close"].astype(float)[-120:], name=ticker_pulito))
+                            fig_alert.add_shape(type="line", x0=df_singolo_profilo.index[-120], x1=df_singolo_profilo.index[-1], y0=p_poc, y1=p_poc, line=dict(color="red", width=2, dash="dash"))
+                            fig_alert.add_shape(type="line", x0=df_singolo_profilo.index[-120], x1=df_singolo_profilo.index[-1], y0=stop_l, y1=stop_l, line=dict(color="orange", width=1.5, dash="dot"))
+                            fig_alert.add_shape(type="line", x0=df_singolo_profilo.index[-120], x1=df_singolo_profilo.index[-1], y0=take_p, y1=take_p, line=dict(color="cyan", width=1.5))
+                            fig_alert.update_layout(title=f"📐 SETUP {ticker_pulito} ({nome_profilo})", template="plotly_dark", xaxis_rangeslider_visible=False)
                             
                             messaggio_alert = (
                                 f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
@@ -316,9 +335,8 @@ with tab3:
                                 f"🔴 <b>Entry POC:</b> {round(p_poc, 2)}\n"
                                 f"🟠 <b>Stop Loss:</b> {round(stop_l, 2)}\n"
                                 f"🔵 <b>Take Profit:</b> {round(take_p, 2)}\n\n"
-                                f"ℹ️ <i>Distanza: {round(distanza_percentuale, 2)}%</i>\n"
-                                f"➡️ <a href='{url_tradingview}'><b>APRI GRAFICO SU TRADINGVIEW</b></a>"
+                                f"➡️ <a href='{url_tradingview_pulito}'><b>APRI GRAFICO TRADINGVIEW</b></a>"
                             )
-                            invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
+                            invia_foto_e_messaggio_telegram(T_ID, messaggio_alert, fig_alert)
                             
-            st.success(f"Scansione terminata per tutti i {totale_titoli} titoli del paniere! Inviati {segnali_trovati} segnali su Telegram.")
+            st.success(f"Scansione terminata su {totale_titoli} elementi! Inviati {segnali_trovati} segnali fotografici completi su Telegram.")
