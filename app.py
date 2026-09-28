@@ -66,18 +66,25 @@ def ottieni_paniere(nome_paniere):
     elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
     return "AAPL,MSFT"
 
+# --- RISOLUZIONE BUG LINK TELEGRAM: CORREZIONE SERIALIZZAZIONE DATA JSON PAYLOAD ---
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
-    payload = {"chat_id": chat_id, "text": testo_messaggio, "parse_mode": "HTML", "disable_web_page_preview": False}
+    payload = {
+        "chat_id": int(chat_id),
+        "text": str(testo_messaggio),
+        "parse_mode": "HTML",
+        "disable_web_page_preview": False
+    }
     try:
         part1, part2 = "https://" + "api.", "telegram.org/bot"
         part3 = "8887634238:AAFH6eMqMhSTbe3pkUU_u0dpOulZXrud7RE/sendMessage"
         url_pulito = part1 + part2 + part3
+        
+        # Forza la codifica in stringa json.dumps mantenendo gli header corretti
         res = requests.post(url_pulito, data=json.dumps(payload), headers=TESTA_INTERNET, timeout=12)
         return res.status_code == 200
     except Exception:
         return False
 
-# --- CALCOLO DEL POC AGGIORNATO E PUNTUALE (TICK-BY-TICK REAL LEVELS) ---
 def calc_vp(df, div=None):
     if df.empty: return None, None, None, [], []
     df_calc = df.copy()
@@ -295,7 +302,7 @@ with tab3:
                             stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
                             take_p = p_vh if p_attuale >= p_poc else p_vl
                             
-                            # Configurazione URL pulito universale per evitare i blocchi di sicurezza dei link di Telegram
+                            # Strutturazione URL pulito TradingView approvato dai filtri di parsing HTML di Telegram
                             mercato_tv = "MIL" if ticker.endswith(".MI") else "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             ticker_pulito = ticker.replace(".MI", "")
                             url_tradingview_pulito = f"https://tradingview.com{mercato_tv}-{ticker_pulito}/"
