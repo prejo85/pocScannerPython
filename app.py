@@ -67,7 +67,7 @@ def ottieni_paniere(nome_paniere):
     return "AAPL,MSFT"
 
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
-    payload = {"chat_id": chat_id, "text": testo_messaggio, "parse_mode": "HTML"}
+    payload = {"chat_id": chat_id, "text": testo_messaggio, "parse_mode": "HTML", "disable_web_page_preview": False}
     try:
         part1, part2 = "https://" + "api.", "telegram.org/bot"
         part3 = "8887634238:AAFH6eMqMhSTbe3pkUU_u0dpOulZXrud7RE/sendMessage"
@@ -250,7 +250,6 @@ with tab3:
     st.markdown("---")
     st.subheader("📡 Impostazioni Avanzate dei Filtri Live")
     
-    # Parametri di personalizzazione visiva dell'utente per distanza e filtri POC
     fl1, fl2 = st.columns(2)
     with fl1:
         soglia_distanza = st.slider("Seleziona la distanza massima dal POC per inviare l'alert (%):", min_value=0.1, max_value=3.0, value=0.5, step=0.1, help="Soglia percentuale tollerata rispetto al punto d'ingresso")
@@ -265,63 +264,61 @@ with tab3:
             st.error("❌ Seleziona almeno una tipologia di POC nei filtri per far partire il monitoraggio.")
         else:
             st.info(f"Avvio scansione globale in corso. Analisi di tutti i {len(lista_ticker_alert)} titoli del paniere {p_selezionato_alert}...")
+            segnali_trovati = 0
             
-            test_success = invia_messaggio_telegram_sbloccato(T_ID, f"🤖 <b>Scanner Attivo!</b>\nFiltro distanza impostato a: <b>{soglia_distanza}%</b>\nPOC monitorati: {', '.join(poc_scelti)}")
+            barra_progresso = st.progress(0.0)
+            totale_titoli = len(lista_ticker_alert)
             
-            if not test_success:
-                st.error("❌ Impossibile comunicare con Telegram. Assicurati di aver avviato il Bot.")
-            else:
-                st.success("✅ Collegamento stabilito! Analisi di mercato in corso...")
-                segnali_trovati = 0
+            for idx, ticker in enumerate(lista_ticker_alert):
+                barra_progresso.progress((idx + 1) / totale_titoli)
                 
-                barra_progresso = st.progress(0.0)
-                totale_titoli = len(lista_ticker_alert)
-                
-                for idx, ticker in enumerate(lista_ticker_alert):
-                    barra_progresso.progress((idx + 1) / totale_titoli)
+                df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=True, multi_level_index=False, progress=False)
+                if df_live is not None and not df_live.empty:
+                    p_attuale = float(df_live["Close"].iloc[-1])
                     
-                    df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=True, multi_level_index=False, progress=False)
-                    if df_live is not None and not df_live.empty:
-                        p_attuale = float(df_live["Close"].iloc[-1])
+                    d_ath = df_live["High"].idxmax()
+                    df_generale = df_live.copy()
+                    df_ath = df_live.loc[d_ath:].copy()
+                    df_recente = df_live.tail(90).copy()
+                    
+                    controlli_da_effettuare = []
+                    if "Generale" in poc_scelti:
+                        controlli_da_effettuare.append(("GENERALE (Storico)", df_generale))
+                    if "ATH" in poc_scelti:
+                        controlli_da_effettuare.append(("DALL'ATH", df_ath))
+                    if "Recente (90D)" in poc_scelti:
+                        controlli_da_effettuare.append(("RECENTE (90 Giorni)", df_recente))
                         
-                        d_ath = df_live["High"].idxmax()
-                        df_generale = df_live.copy()
-                        df_ath = df_live.loc[d_ath:].copy()
-                        df_recente = df_live.tail(90).copy()
+                    for nome_profilo, df_singolo_profilo in controlli_da_effettuare:
+                        if df_singolo_profilo.empty: continue
+                        p_poc, p_vh, p_vl, _, _ = calc_vp(df_singolo_profilo)
                         
-                        controlli_da_effettuare = []
-                        if "Generale" in poc_scelti:
-                            controlli_da_effettuare.append(("GENERALE (Storico)", df_generale))
-                        if "ATH" in poc_scelti:
-                            controlli_da_effettuare.append(("DALL'ATH", df_ath))
-                        if "Recente (90D)" in poc_scelti:
-                            controlli_da_effettuare.append(("RECENTE (90 Giorni)", df_recente))
+                        if p_poc is None: continue
+                        distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
+                        
+                        if abs(distanza_percentuale) <= soglia_distanza:
+                            segnali_trovati += 1
+                            direzione = "LONG 🟢" if p_attuale >= p_poc else "SHORT 🔴"
+                            stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
+                            take_p = p_vh if p_attuale >= p_poc else p_vl
                             
-                        for nome_profilo, df_singolo_profilo in controlli_da_effettuare:
-                            if df_singolo_profilo.empty: continue
-                            p_poc, p_vh, p_vl, _, _ = calc_vp(df_singolo_profilo)
+                            # Generazione automatica dell'URL TradingView basata sulla borsa di riferimento
+                            mercato_tv = "MIL" if ticker.endswith(".MI") else "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
+                            ticker_pulito = ticker.replace(".MI", "")
+                            url_tradingview = f"https://tradingview.com{mercato_tv}%3A{ticker_pulito}"
                             
-                            if p_poc is None: continue
-                            distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
+                            messaggio_alert = (
+                                f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
+                                f"🎯 <b>Ticker:</b> #{ticker_pulito}\n"
+                                f"🗂️ <b>Profilo:</b> {nome_profilo}\n"
+                                f"⚡ <b>Setup:</b> {direzione}\n\n"
+                                f"📊 <b>Prezzo Attuale:</b> {round(p_attuale, 2)} USD\n"
+                                f"🔴 <b>Entry POC:</b> {round(p_poc, 2)}\n"
+                                f"🟠 <b>Stop Loss:</b> {round(stop_l, 2)}\n"
+                                f"🔵 <b>Take Profit:</b> {round(take_p, 2)}\n\n"
+                                f"ℹ️ <i>Distanza: {round(distanza_percentuale, 2)}%</i>\n"
+                                f"➡️ <a href='{url_tradingview}'><b>APRI GRAFICO SU TRADINGVIEW</b></a>"
+                            )
+                            invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
                             
-                            # Applicazione del filtro di tolleranza percentuale inserito dall'utente
-                            if abs(distanza_percentuale) <= soglia_distanza:
-                                segnali_trovati += 1
-                                direzione = "LONG 🟢" if p_attuale >= p_poc else "SHORT 🔴"
-                                stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
-                                take_p = p_vh if p_attuale >= p_poc else p_vl
-                                
-                                messaggio_alert = (
-                                    f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
-                                    f"🎯 <b>Ticker:</b> #{ticker}\n"
-                                    f"🗂️ <b>Profilo:</b> {nome_profilo}\n"
-                                    f"⚡ <b>Setup:</b> {direzione}\n\n"
-                                    f"📊 <b>Prezzo Attuale:</b> {round(p_attuale, 2)} USD\n"
-                                    f"🔴 <b>Entry POC:</b> {round(p_poc, 2)}\n"
-                                    f"🟠 <b>Stop Loss:</b> {round(stop_l, 2)}\n"
-                                    f"🔵 <b>Take Profit:</b> {round(take_p, 2)}\n\n"
-                                    f"ℹ️ <i>Distanza dallo snodo: {round(distanza_percentuale, 2)}%</i>"
-                                )
-                                invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
-                                
-                st.success(f"Scansione terminata per tutti i {totale_titoli} titoli del paniere! Inviati {segnali_trovati} segnali su Telegram.")
+            st.success(f"Scansione terminata per tutti i {totale_titoli} titoli del paniere! Inviati {segnali_trovati} segnali su Telegram.")
