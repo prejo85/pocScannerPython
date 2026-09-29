@@ -1,0 +1,40 @@
+name: Controllo POC Giornaliero
+
+on:
+  schedule:
+    # L'orario di GitHub è in formato UTC.
+    # Alle 22:00 italiane corrisponde l'orario UTC:
+    # - 20:00 UTC durante l'ora legale (estate)
+    # - 21:00 UTC durante l'ora solare (inverno)
+    # Impostiamo le 20:00 UTC (0 20 * * *):
+    - cron: '0 20 * * *'
+  
+  # Questo ti permette di avviare la scansione anche a mano cliccando un pulsante su GitHub
+  workflow_dispatch: 
+
+jobs:
+  run-scanner:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Scarica il codice dal repository
+    - name: Checkout del codice
+      uses: actions/checkout@v3
+
+    # 2. Installa Python sul server di GitHub
+    - name: Configura Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    # 3. Installa le librerie necessarie (pandas, yfinance, ecc.)
+    - name: Installa le dipendenze
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas numpy yfinance requests
+
+    # 4. Esegue lo script passando in modo sicuro il Token Telegram nascosto prima
+    - name: Esegui lo script di scansione
+      env:
+        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      run: python scanner_cron.py
