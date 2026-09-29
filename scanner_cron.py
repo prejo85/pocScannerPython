@@ -94,20 +94,24 @@ def calc_vp(df, div=None):
 
 # ESECUZIONE AUTOMATICA (Configurata per le ore 22:00)
 if __name__ == "__main__":
-    print("Avvio scansione POC automatica...")
+    print("Avvio scansione POC automatica globale...")
     
-    # PARAMETRI FISSI (Sostituisci con quelli che preferisci controllare ogni sera)
-    p_selezionato_alert = "FTSE MIB (FIB)"  # Scegli il paniere predefinito
+    # PARAMETRI FISSI
     soglia_distanza = 1.0                  # Distanza massima in % dal POC
     poc_scelti = ["Generale", "ATH", "Recente (90D)"]
     
-    lista_ticker_alert = ottieni_paniere(p_selezionato_alert).split(",")
-    totale_titoli = len(lista_ticker_alert)
+    # Lista di tutti i panieri che vuoi controllare
+    panieri_da_scansionare = ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)"]
     segnali_trovati = 0
 
-    for idx, ticker in enumerate(lista_ticker_alert):
-        ticker = ticker.strip()
-        if not ticker: continue
+    for nome_paniere in panieri_da_scansionare:
+        print(f"\n--- INIZIO SCANSIONE PANIERE: {nome_paniere} ---")
+        lista_ticker_alert = ottieni_paniere(nome_paniere).split(",")
+        totale_titoli = len(lista_ticker_alert)
+
+        for idx, ticker in enumerate(lista_ticker_alert):
+            ticker = ticker.strip()
+            if not ticker: continue
         
         print(f"[{idx+1}/{totale_titoli}] Scansione di {ticker}...")
         df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=True, progress=False)
