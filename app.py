@@ -154,7 +154,8 @@ with tab1:
     st.subheader("Configurazione Parametri di Scansione")
     col1, col2, col3 = st.columns(3)
     with col1:
-        paniere_selezionato = st.selectbox("Seleziona Indice/Paniere:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)"], key="an_paniere")
+        # AGGIORNATO: Inserita l'opzione "Crypto" nel menu visivo della dashboard
+        paniere_selezionato = st.selectbox("Seleziona Indice/Paniere:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto"], key="an_paniere")
         ticker_caricati = ottieni_paniere(paniere_selezionato)
     with col2:
         asset_type = st.selectbox("Tipo Asset:", ["Azione", "Criptovaluta"], key="an_type")
@@ -301,7 +302,8 @@ with tab3:
         mappa_giorni_tg = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}
         g_recenti_scelti = mappa_giorni_tg[orizzonte_recente]
 
-    p_selezionato_alert = st.selectbox("Seleziona il paniere completo da scansionare:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)"], key="tg_paniere")
+    # AGGIORNATO: Inserita l'opzione "Crypto" nel menu visivo dello scanner live
+    p_selezionato_alert = st.selectbox("Seleziona il paniere completo da scansionare:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto"], key="tg_paniere")
     lista_ticker_alert = ottieni_paniere(p_selezionato_alert).split(",")
     
     if st.button("🚀 Attiva Scansione & Invia Alert su Telegram", type="primary"):
@@ -359,12 +361,22 @@ with tab3:
                                 stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
                                 take_p = p_vh if p_attuale >= p_poc else p_vl
                                 
-                                ticker_pulito = str(ticker).replace(".MI", "")
-                                url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={ticker_pulito}"
+                                # DICITURA DINAMICA: Identifica la borsa esatta per non mandare in crash la stringa del grafico privato
+                                ticker_pulito = str(ticker).replace(".MI", "").strip()
+                                if str(ticker).endswith(".MI"):
+                                    parametro_simbolo = f"MILANO:{ticker_pulito}"
+                                elif "-USD" in str(ticker):
+                                    # Formatta correttamente le crypto per TradingView rimuovendo il trattino (es: COINBASE:BTCUSD)
+                                    parametro_simbolo = f"COINBASE:{ticker_pulito.replace('-','')}"
+                                else:
+                                    parametro_simbolo = ticker_pulito
+                                
+                                # Generazione URL corretta e integrata per puntare al grafico layout fisso del tuo utente
+                                url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={parametro_simbolo}"
                                 
                                 messaggio_alert = (
                                     f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
-                                    f"🎯 <b>Ticker:</b> #{ticker_pulito}\n"
+                                    f"🎯 <b>Ticker:</b> {ticker_pulito}\n"
                                     f"🗂️ <b>Profilo Volume:</b> {nome_profilo}\n"
                                     f"⚡ <b>Setup Operativo:</b> {setup_tipo}\n\n"
                                     f"📊 <b>Prezzo Attuale:</b> {round(p_attuale, 2)} USD\n"
