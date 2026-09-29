@@ -302,8 +302,9 @@ with tab3:
         mappa_giorni_tg = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}
         g_recenti_scelti = mappa_giorni_tg[orizzonte_recente]
 
+    # AGGIORNATO: Inserita l'opzione "Crypto" nel menu visivo dello scanner live
     p_selezionato_alert = st.selectbox("Seleziona il paniere completo da scansionare:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto"], key="tg_paniere")
-    lista_ticker_alert = [t.strip() for t in ottieni_paniere(p_selezionato_alert).split(",") if t.strip()]
+    lista_ticker_alert = ottieni_paniere(p_selezionato_alert).split(",")
     
     if st.button("🚀 Attiva Scansione & Invia Alert su Telegram", type="primary"):
         if not poc_scelti:
@@ -316,76 +317,74 @@ with tab3:
             totale_titoli = len(lista_ticker_alert)
             
             for idx, ticker in enumerate(lista_ticker_alert):
-                # Aggiorna la barra visiva a prescindere dall'esito del singolo download per evitare blocchi permanenti
                 barra_progresso.progress((idx + 1) / totale_titoli)
                 
-                # Forza il timeout a 10 secondi per non far freezare i server di Streamlit
-                df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False, timeout=10)
-                
-                if df_live is None or df_live.empty: 
-                    continue
+                df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
+                if df_live is not None and not df_live.empty:
+                    df_live.columns = [str(c).strip() for c in df_live.columns]
+                    mappa_colonne = {c.lower(): c for c in df_live.columns}
                     
-                df_live.columns = [str(c).strip() for c in df_live.columns]
-                mappa_colonne = {c.lower(): c for c in df_live.columns}
-                
-                if 'close' in mappa_colonne and 'high' in mappa_colonne and 'low' in mappa_colonne:
-                    p_attuale = float(df_live[mappa_colonne['close']].iloc[-1])
-                    
-                    d_ath = df_live[mappa_colonne['high']].idxmax()
-                    df_generale = df_live.copy()
-                    df_ath = df_live.loc[d_ath:].copy()
-                    df_recente = df_live.tail(g_recenti_scelti).copy()
-                    
-                    controlli_da_effettuare = []
-                    if "Generale (Inizio)" in poc_scelti: 
-                        controlli_da_effettuare.append(("GENERALE (Dall'Inizio)", df_generale))
-                    if "Dall'ATH" in poc_scelti: 
-                        controlli_da_effettuare.append(("DALL'ATH", df_ath))
-                    if "Recente (Timeframe)" in poc_scelti: 
-                        controlli_da_effettuare.append((f"RECENTE ({orizzonte_recente})", df_recente))
+                    if 'close' in mappa_colonne and 'high' in mappa_colonne and 'low' in mappa_colonne:
+                        p_attuale = float(df_live[mappa_colonne['close']].iloc[-1])
                         
-                    for nome_profilo, df_singolo_profilo in controlli_da_effettuare:
-                        if df_singolo_profilo.empty: continue
+                        d_ath = df_live[mappa_colonne['high']].idxmax()
+                        df_generale = df_live.copy()
+                        df_ath = df_live.loc[d_ath:].copy()
+                        df_recente = df_live.tail(g_recenti_scelti).copy()
                         
-                        df_input_vp = pd.DataFrame(index=df_singolo_profilo.index)
-                        df_input_vp['Open'] = df_singolo_profilo[mappa_colonne.get('open', mappa_colonne['close'])].astype(float)
-                        df_input_vp['High'] = df_singolo_profilo[mappa_colonne['high']].astype(float)
-                        df_input_vp['Low'] = df_singolo_profilo[mappa_colonne['low']].astype(float)
-                        df_input_vp['Close'] = df_singolo_profilo[mappa_colonne['close']].astype(float)
-                        df_input_vp['Volume'] = df_singolo_profilo[mappa_colonne.get('volume', df_singolo_profilo.columns)].astype(float)
-                        
-                        p_poc, p_vh, p_vl, prz_v, vl_v = calc_vp(df_input_vp)
-                        if p_poc is None: continue
-                        
-                        distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
-                        
-                        if abs(distanza_percentuale) <= soglia_distanza:
-                            segnali_trovati += 1
-                            setup_tipo = "LONG 🟢" if p_attuale >= p_poc else "SHORT 🔴"
-                            stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
-                            take_p = p_vh if p_attuale >= p_poc else p_vl
+                        controlli_da_effettuare = []
+                        if "Generale (Inizio)" in poc_scelti: 
+                            controlli_da_effettuare.append(("GENERALE (Dall'Inizio)", df_generale))
+                        if "Dall'ATH" in poc_scelti: 
+                            controlli_da_effettuare.append(("DALL'ATH", df_ath))
+                        if "Recente (Timeframe)" in poc_scelti: 
+                            controlli_da_effettuare.append((f"RECENTE ({orizzonte_recente})", df_recente))
                             
-                            ticker_pulito = str(ticker).replace(".MI", "").strip()
-                            if str(ticker).endswith(".MI"):
-                                borsa_tv = f"MILANO:{ticker_pulito}"
-                            elif "-USD" in str(ticker):
-                                borsa_tv = f"COINBASE:{ticker_pulito.replace('-','')}"
-                            else:
-                                borsa_tv = ticker_pulito
+                        for nome_profilo, df_singolo_profilo in controlli_da_effettuare:
+                            if df_singolo_profilo.empty: continue
                             
-                            url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={borsa_tv}"
+                            df_input_vp = pd.DataFrame(index=df_singolo_profilo.index)
+                            df_input_vp['Open'] = df_singolo_profilo[mappa_colonne.get('open', mappa_colonne['close'])].astype(float)
+                            df_input_vp['High'] = df_singolo_profilo[mappa_colonne['high']].astype(float)
+                            df_input_vp['Low'] = df_singolo_profilo[mappa_colonne['low']].astype(float)
+                            df_input_vp['Close'] = df_singolo_profilo[mappa_colonne['close']].astype(float)
+                            df_input_vp['Volume'] = df_singolo_profilo[mappa_colonne.get('volume', df_singolo_profilo.columns)].astype(float)
                             
-                            messaggio_alert = (
-                                f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
-                                f"🎯 <b>Ticker:</b> {ticker_pulito}\n"
-                                f"🗂️ <b>Profilo Volume:</b> {nome_profilo}\n"
-                                f"⚡ <b>Setup Operativo:</b> {setup_tipo}\n\n"
-                                f"📊 <b>Prezzo Attuale:</b> {round(p_attuale, 2)} USD\n"
-                                f"🔴 <b>Entry POC Esatto:</b> {round(p_poc, 2)}\n"
-                                f"🟠 <b>Stop Loss (VAL/VAH):</b> {round(stop_l, 2)}\n"
-                                f"🔵 <b>Take Profit (VAH/VAL):</b> {round(take_p, 2)}\n\n"
-                                f"🔗 <b>APRI IL TUO GRAFICO PERSONALIZZATO:</b>\n{url_stringa_pura}"
-                            )
-                            invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
+                            p_poc, p_vh, p_vl, prz_v, vl_v = calc_vp(df_input_vp)
+                            if p_poc is None: continue
                             
-            st.success(f"Scansione terminata! Rilevati ed inviati {segnali_trovati} segnali su Telegram.")
+                            distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
+                            
+                            if abs(distanza_percentuale) <= soglia_distanza:
+                                segnali_trovati += 1
+                                setup_tipo = "LONG 🟢" if p_attuale >= p_poc else "SHORT 🔴"
+                                stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
+                                take_p = p_vh if p_attuale >= p_poc else p_vl
+                                
+                                # DICITURA DINAMICA: Identifica la borsa esatta per non mandare in crash la stringa del grafico privato
+                                ticker_pulito = str(ticker).replace(".MI", "").strip()
+                                if str(ticker).endswith(".MI"):
+                                    parametro_simbolo = f"MILANO:{ticker_pulito}"
+                                elif "-USD" in str(ticker):
+                                    # Formatta correttamente le crypto per TradingView rimuovendo il trattino (es: COINBASE:BTCUSD)
+                                    parametro_simbolo = f"COINBASE:{ticker_pulito.replace('-','')}"
+                                else:
+                                    parametro_simbolo = ticker_pulito
+                                
+                                # Generazione URL corretta e integrata per puntare al grafico layout fisso del tuo utente
+                                url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={parametro_simbolo}"
+                                
+                                messaggio_alert = (
+                                    f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
+                                    f"🎯 <b>Ticker:</b> {ticker_pulito}\n"
+                                    f"🗂️ <b>Profilo Volume:</b> {nome_profilo}\n"
+                                    f"⚡ <b>Setup Operativo:</b> {setup_tipo}\n\n"
+                                    f"📊 <b>Prezzo Attuale:</b> {round(p_attuale, 2)} USD\n"
+                                    f"🔴 <b>Entry POC Esatto:</b> {round(p_poc, 2)}\n"
+                                    f"🟠 <b>Stop Loss (VAL/VAH):</b> {round(stop_l, 2)}\n"
+                                    f"🔵 <b>Take Profit (VAH/VAL):</b> {round(take_p, 2)}\n\n"
+                                    f"🔗 <b>APRI IL TUO GRAFICO PERSONALIZZATO:</b>\n{url_stringa_pura}"
+                                )
+                                invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
+                                
+            st.success(f"Scansione terminata con successo! Inviati {segnali_trovati} segnali precisi su Telegram.")
