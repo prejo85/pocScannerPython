@@ -32,13 +32,13 @@ SP500_FULL = (
     "CSGP,COST,CRH,CRWD,CCI,CSX,CMI,CVS,DHR,DRI,DDOG,DVA,DECK,DE,DELL,DAL,DVN,DXCM,FANG,DLR,DG,DLTR,D,DPZ,DASH,DOV,"
     "DOW,DHI,DTE,DUK,DD,ETN,EBAY,ECHO,ECL,EIX,EW,ELV,EME,EMR,ETR,EOG,EQT,EFX,EQIX,ERIE,ESS,EL,EG,EVRG,P,ES,EXC,EXE,"
     "EXPE,EXPD,EXR,XOM,FFIV,FDS,FICO,FAST,FRT,FDX,FDXF,FERG,FIS,FITB,FSLR,FE,FISV,FLEX,F,FTNT,FTV,FOXA,FOX,BEN,FCX,"
-    "GRMN,IT,GE,GEHC,GEV,GEN,GNRC,GD,GIS,GM,GPC,GILD,GPN,GL,GDDY,GS,HAL,HIG,HIG,HAS,HCA,DOC,HSIC,HSY,HPE,HLT,HD,HON,"
-    "HRL,HST,HWM,HPQ,HUBB,HUM,HBAN,HII,IBM,IEX,IDXX,ITW,ILMN,INCY,IR,PODD,INTC,IBKR,ICE,IFF,IP,INTU,ISRG,IVZ,INVH,"
-    "IQV,IRM,JBHT,JBL,JKHY,J,JNJ,JCI,JPM,KVUE,KDP,KEY,KEYS,KMB,KIM,KMI,KKR,KLAC,KHC,KR,LHX,LH,LRCX,LVS,LDOS,LEN,LII,"
-    "LLY,LIN,LYV,LMT,L,LOW,LULU,LITE,LYB,MTB,MPC,MAR,MRSH,MLM,MRVL,MAS,MA,MKC,MCD,MCK,MDT,MRK,META,MET,MTD,MGM,MCHP,"
-    "MU,MSFT,MAA,MRNA,MDLZ,MPWR,MNST,MCO,MS,MOS,MSI,MSCI,NDAQ,NTAP,NFLX,NEM,NWSA,NWS,NEE,NKE,NI,NDSN,NSC,NTRS,NOC,"
-    "NCLH,NRG,NUE,NVDA,NVR,NXPI,ORLY,OXY,ODFL,OMC,ON,OKE,ORCL,OTIS,PCAR,PKG,PLTR,PANW,PSKY,PH,PAYX,PYPL,PNR,PEP,PFE,"
-    "PCG,PM,PSX,PNW,PNC,PPG,PPL,PFG,PG,PGR,PLD,PRU,PEG,PTC,PSA,PHM,PWR,QCOM,DGX,Q,RL,RJF,RDDT,RTX,O,REG,REGN,RF,RSG,"
+    "GRMN,IT,GE,GEHC,GEV,GEN,GNRC,GD,GIS,GM,GPC,GILD,GPN,GL,GDDY,GS,HAL,HIG,HAS,HCA,DOC,HSIC,HSY,HPE,HLT,HD,HON,HRL,"
+    "HST,HWM,HUBB,HUM,HBAN,HII,IBM,IEX,IDXX,ITW,ILMN,INCY,IR,PODD,INTC,IBKR,ICE,IFF,IP,INTU,ISRG,IVZ,INVH,IQV,"
+    "IRM,JBHT,JBL,JKHY,J,JNJ,JCI,JPM,KVUE,KDP,KEY,KEYS,KMB,KIM,KMI,KKR,KLAC,KHC,KR,LHX,LH,LRCX,LVS,LDOS,LEN,LII,LLY,"
+    "LIN,LYV,LMT,L,LOW,LULU,LITE,LYB,MTB,MPC,MAR,MRSH,MLM,MRVL,MAS,MA,MKC,MCD,MCK,MDT,MRK,META,MET,MTD,MGM,MCHP,MU,"
+    "MSFT,MAA,MRNA,MDLZ,MPWR,MNST,MCO,MS,MOS,MSI,MSCI,NDAQ,NTAP,NFLX,NEM,NWSA,NWS,NEE,NKE,NI,NDSN,NSC,NTRS,NOC,NCLH,"
+    "NRG,NUE,NVDA,NVR,NXPI,ORLY,OXY,ODFL,OMC,ON,OKE,ORCL,OTIS,PCAR,PKG,PLTR,PANW,PSKY,PH,PAYX,PYPL,PNR,PEP,PFE,PCG,"
+    "PM,PSX,PNW,PNC,PPG,PPL,PFG,PG,PGR,PLD,PRU,PEG,PTC,PSA,PHM,PWR,QCOM,DGX,Q,RL,RJF,RDDT,RTX,O,REG,REGN,RF,RSG,"
     "RMD,RVTY,HOOD,ROK,ROL,ROP,ROST,RCL,SPGI,CRM,SBAC,SLB,STX,SRE,NOW,SHW,SPG,SWKS,SJM,SW,SNA,SOLV,SO,LUV,SWK,SBUX,"
     "STT,STLD,STE,SYK,SMCI,SYF,SNPS,SYY,TMUS,TROW,TTWO,TPR,TRGP,TGT,TEL,TDY,TER,TSLA,TXN,TPL,TXT,TMO,TJX,TKO,TSCO,"
     "TT,TDG,TRV,TRMB,TFC,TYL,TSN,USB,UBER,UDR,ULTA,UNP,UAL,UPS,URI,UNH,UHS,VLO,VEEV,VTR,VLTO,VRSN,VRSK,VZ,VRTX,VRT,"
@@ -82,28 +82,66 @@ def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     except Exception:
         return False
 
-# --- CALCOLO DEL POC TICK-BY-TICK DETERMINISTICO ---
+# --- NUOVO ALGORITMO GEOMETRICO: DISTRIBUZIONE TICK-BY-TICK AGGIORNATA ---
 def calc_vp(df, div=None):
     if df.empty: return None, None, None, [], []
-    df_calc = df.copy()
-    df_calc['Round_Close'] = df_calc['Close'].round(2)
-    vp_data = df_calc.groupby('Round_Close')['Volume'].sum().sort_index()
-    if vp_data.empty or vp_data.sum() == 0:
-        p_min = float(df['Low'].min())
+    
+    p_min = round(float(df['Low'].min()), 2)
+    p_max = round(float(df['High'].max()), 2)
+    
+    if p_max - p_min <= 0:
         return p_min, p_min, p_min, [], []
-    prices = vp_data.index.astype(float).tolist()
-    volumes = vp_data.values.astype(float).tolist()
+        
+    ticks = [round(p * 0.01, 2) for p in range(int(p_min * 100), int(p_max * 100) + 1)]
+    vols_dict = {t: 0.0 for t in ticks}
+    
+    for _, row in df.iterrows():
+        h = round(float(row['High']), 2)
+        l = round(float(row['Low']), 2)
+        v = float(row['Volume'])
+        if v <= 0: continue
+        
+        tick_min_idx = int(l * 100)
+        tick_max_idx = int(h * 100)
+        num_ticks = tick_max_idx - tick_min_idx + 1
+        
+        if num_ticks > 0:
+            volume_per_tick = v / num_ticks
+            for t_idx in range(tick_min_idx, tick_max_idx + 1):
+                t_val = round(t_idx * 0.01, 2)
+                if t_val in vols_dict:
+                    vols_dict[t_val] += volume_per_tick
+
+    prices = sorted(list(vols_dict.keys()))
+    volumes = [vols_dict[p] for p in prices]
+    
+    if not volumes or max(volumes) == 0:
+        return p_min, p_min, p_min, prices, volumes
+
     poc_idx = volumes.index(max(volumes))
     poc = prices[poc_idx]
-    v_total, v_target = sum(volumes), sum(volumes) * 0.70
-    v_current, idx_b, idx_a = volumes[poc_idx], poc_idx, poc_idx
+    
+    v_total = sum(volumes)
+    v_target = v_total * 0.70
+    v_current = volumes[poc_idx]
+    idx_b = poc_idx
+    idx_a = poc_idx
+    
     while v_current < v_target:
         v_s = volumes[idx_b - 1] if idx_b > 0 else 0
         v_p = volumes[idx_a + 1] if idx_a < len(volumes) - 1 else 0
         if v_s == 0 and v_p == 0: break
-        if v_s >= v_p: idx_b -= 1; v_current += v_s
-        else: idx_a += 1; v_current += v_p
-    return poc, prices[min(len(prices) - 1, idx_a)], prices[max(0, idx_b)], prices, volumes
+        if v_s >= v_p:
+            idx_b -= 1
+            v_current += v_s
+        else:
+            idx_a += 1
+            v_current += v_p
+            
+    val = prices[max(0, idx_b)]
+    vah = prices[min(len(prices) - 1, idx_a)]
+    
+    return poc, vah, val, prices, volumes
 # --- TAB 1: ANALISI TRIPLE-POC ---
 with tab1:
     st.subheader("Configurazione Parametri di Scansione")
@@ -114,9 +152,9 @@ with tab1:
     with col2:
         asset_type = st.selectbox("Tipo Asset:", ["Azione", "Criptovaluta"], key="an_type")
     with col3:
-        period_label = st.selectbox("Periodo Analisi Recente:", ["1 Mese", "3 Mesi", "6 Mesi"], key="an_period")
-        period_map = {"1 Mese": "1mo", "3 Mesi": "3mo", "6 Mesi": "6mo"}
-        period_value = period_map[period_label]
+        period_label = st.selectbox("Seleziona Estensione Profilo Recente:", ["3 Mesi", "6 Mesi", "9 Mesi"], key="an_period")
+        period_map = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}
+        g3 = period_map[period_label]
 
     tickers_input = st.text_area("Modifica o verifica i Tickers estratti (separati da virgola):", value=ticker_caricati, height=150, key="an_area")
 
@@ -132,7 +170,6 @@ with tab1:
                 if df_c is not None and not df_c.empty:
                     close_series = df_c["Close"]
                     p_att = float(close_series.values[-1] if hasattr(close_series, 'values') else close_series.iloc[-1])
-                    g3 = {"1mo": 30, "3mo": 90, "6mo": 180}.get(period_value, 90)
                     df1, d_ath = df_c.copy(), df_c["High"].idxmax()
                     df2, df3 = df_c.loc[d_ath:].copy(), df_c.tail(g3).copy()
                     p1, vh1, vl1, prz1, vl_v1 = calc_vp(df1)
@@ -140,7 +177,7 @@ with tab1:
                     p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
                     if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]: continue
                     
-                    fig = make_subplots(rows=3, cols=1, subplot_titles=(f"1. STORICO COMPLETO ({ticker})", f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')})", f"3. ULTIMI {g3} GIORNI"), vertical_spacing=0.06)
+                    fig = make_subplots(rows=3, cols=1, subplot_titles=(f"1. STORICO COMPLETO DALL'INIZIO ({ticker})", f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')})", f"3. PROFILO RECENTE {period_label.upper()}"), vertical_spacing=0.06)
                     cfg = [(1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")]
                     
                     for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
@@ -242,16 +279,20 @@ with tab2:
 # --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
 with tab3:
     st.subheader("🔔 Canale Notifiche in Tempo Reale via Telegram")
-    st.success("✅ Credenziali sincronizzate in modalità protetta ad alta stabilità.")
+    st.success("✅ Sincronizzazione completata. Algoritmo di distribuzione ad alta precisione attivo.")
     
     st.markdown("---")
-    st.subheader("📡 Impostazioni Avanzate dei Filtri Live")
+    st.subheader("📡 Configurazione Selettiva Parametri Scanner")
     
-    fl1, fl2 = st.columns(2)
+    fl1, fl2, fl3 = st.columns(3)
     with fl1:
         soglia_distanza = st.slider("Seleziona la distanza massima dal POC per inviare l'alert (%):", min_value=0.1, max_value=3.0, value=0.5, step=0.1, key="tg_dist")
     with fl2:
-        poc_scelti = st.multiselect("Seleziona su quali profili di volume calcolare i segnali:", options=["Generale", "ATH", "Recente (90D)"], default=["Generale", "ATH", "Recente (90D)"], key="tg_sel_p")
+        poc_scelti = st.multiselect("Seleziona quali profili analizzare:", options=["Generale (Inizio)", "Dall'ATH", "Recente (Timeframe)"], default=["Generale (Inizio)", "Dall'ATH", "Recente (Timeframe)"], key="tg_sel_p")
+    with fl3:
+        orizzonte_recente = st.selectbox("Imposta l'estensione del profilo Recente:", ["3 Mesi", "6 Mesi", "9 Mesi"], index=1, key="tg_oriz_t")
+        mappa_giorni_tg = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}
+        g_recenti_scelti = mappa_giorni_tg[orizzonte_recente]
 
     p_selezionato_alert = st.selectbox("Seleziona il paniere completo da scansionare:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)"], key="tg_paniere")
     lista_ticker_alert = ottieni_paniere(p_selezionato_alert).split(",")
@@ -260,7 +301,7 @@ with tab3:
         if not poc_scelti:
             st.error("❌ Seleziona almeno una tipologia di POC nei filtri per far partire il monitoraggio.")
         else:
-            st.info(f"Avvio scansione globale. Analisi di tutti i {len(lista_ticker_alert)} titoli del paniere {p_selezionato_alert}...")
+            st.info(f"Avvio scansione globale. Analisi geometrica di tutti i {len(lista_ticker_alert)} titoli del paniere {p_selezionato_alert}...")
             segnali_trovati = 0
             
             barra_progresso = st.progress(0.0)
@@ -280,19 +321,18 @@ with tab3:
                         d_ath = df_live[mappa_colonne['high']].idxmax()
                         df_generale = df_live.copy()
                         df_ath = df_live.loc[d_ath:].copy()
-                        df_recente = df_live.tail(90).copy()
+                        df_recente = df_live.tail(g_recenti_scelti).copy()
                         
                         controlli_da_effettuare = []
-                        if "Generale" in poc_scelti: 
-                            controlli_da_effettuare.append(("GENERALE", df_generale))
-                        if "ATH" in poc_scelti: 
+                        if "Generale (Inizio)" in poc_scelti: 
+                            controlli_da_effettuare.append(("GENERALE (Dall'Inizio)", df_generale))
+                        if "Dall'ATH" in poc_scelti: 
                             controlli_da_effettuare.append(("DALL'ATH", df_ath))
-                        if "Recente (90D)" in poc_scelti: 
-                            controlli_da_effettuare.append(("RECENTE (90D)", df_recente))
+                        if "Recente (Timeframe)" in poc_scelti: 
+                            controlli_da_effettuare.append((f"RECENTE ({orizzonte_recente})", df_recente))
                             
                         for nome_profilo, df_singolo_profilo in controlli_da_effettuare:
-                            if df_singolo_profilo.empty: 
-                                continue
+                            if df_singolo_profilo.empty: continue
                             
                             df_input_vp = pd.DataFrame(index=df_singolo_profilo.index)
                             df_input_vp['Open'] = df_singolo_profilo[mappa_colonne.get('open', mappa_colonne['close'])].astype(float)
@@ -302,33 +342,30 @@ with tab3:
                             df_input_vp['Volume'] = df_singolo_profilo[mappa_colonne.get('volume', df_singolo_profilo.columns)].astype(float)
                             
                             p_poc, p_vh, p_vl, prz_v, vl_v = calc_vp(df_input_vp)
+                            if p_poc is None: continue
                             
-                            if p_poc is None: 
-                                continue
                             distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
                             
                             if abs(distanza_percentuale) <= soglia_distanza:
                                 segnali_trovati += 1
-                                direzione = "LONG 🟢" if p_attuale >= p_poc else "SHORT 🔴"
+                                setup_tipo = "LONG 🟢" if p_attuale >= p_poc else "SHORT 🔴"
                                 stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
                                 take_p = p_vh if p_attuale >= p_poc else p_vl
                                 
                                 ticker_pulito = str(ticker).replace(".MI", "")
-                                
-                                # INTEGRAZIONE STRUTTURA RICHIESTA: Punta al grafico layout fisso del tuo utente
-                                url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={ticker_pulito}"
+                                url_stringa_pura = f"https://tradingview.com{ticker_pulito}"
                                 
                                 messaggio_alert = (
                                     f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
                                     f"🎯 <b>Ticker:</b> #{ticker_pulito}\n"
-                                    f"🗂️ <b>Profilo:</b> {nome_profilo}\n"
-                                    f"⚡ <b>Setup:</b> {direzione}\n\n"
+                                    f"🗂️ <b>Profilo Volume:</b> {nome_profilo}\n"
+                                    f"⚡ <b>Setup Operativo:</b> {setup_tipo}\n\n"
                                     f"📊 <b>Prezzo Attuale:</b> {round(p_attuale, 2)} USD\n"
-                                    f"🔴 <b>Entry POC:</b> {round(p_poc, 2)}\n"
-                                    f"🟠 <b>Stop Loss:</b> {round(stop_l, 2)}\n"
-                                    f"🔵 <b>Take Profit:</b> {round(take_p, 2)}\n\n"
-                                    f"🔗 <b>APRI IL TUO GRAFICO SU TRADINGVIEW:</b>\n{url_stringa_pura}"
+                                    f"🔴 <b>Entry POC Esatto:</b> {round(p_poc, 2)}\n"
+                                    f"🟠 <b>Stop Loss (VAL/VAH):</b> {round(stop_l, 2)}\n"
+                                    f"🔵 <b>Take Profit (VAH/VAL):</b> {round(take_p, 2)}\n\n"
+                                    f"🔗 <b>APRI IL TUO GRAFICO PERSONALIZZATO:</b>\n{url_stringa_pura}"
                                 )
                                 invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
                                 
-            st.success(f"Scansione terminata su {totale_titoli} elementi! Inviati {segnali_trovati} segnali su Telegram.")
+            st.success(f"Scansione terminata con successo! Inviati {segnali_trovati} segnali precisi su Telegram.")
