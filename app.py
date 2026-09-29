@@ -60,10 +60,17 @@ FTSEMIB_FULL = (
     "STLAM.MI,STMMI.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,YSVP.MI"
 )
 
+CRYPTO_FULL = (
+    "BTC-USD, ETH-USD, SOL-USD, BNB-USD, XRP-USD, ADA-USD, DOGE-USD, AVAX-USD, "
+    "DOT-USD, LINK-USD, MATIC-USD, SHIB-USD, LTC-USD, UNI-USD, NEAR-USD, APT-USD, "
+    "ICP-USD, STX-USD, FIL-USD, ATOM-USD, IMX-USD, RNDR-USD, GRT-USD, FTM-USD, SUI-USD"
+)
+
 def ottieni_paniere(nome_paniere):
     if nome_paniere == "S&P 500": return SP500_FULL
     elif nome_paniere == "NASDAQ 100": return NASDAQ_FULL
     elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
+    elif nome_paniere == "Crypto": return CRYPTO_FULL
     return "AAPL,MSFT"
 
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
