@@ -271,21 +271,30 @@ with tab3:
                 
                 df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
                 if df_live is not None and not df_live.empty:
-                    p_attuale = float(df_live["Close"].iloc[-1])
+                    # NORMALIZZAZIONE COLONNE: Converte tutto in minuscolo per evitare fallimenti nei calcoli
+                    df_live.columns = [str(c).lower() for c in df_live.columns]
                     
-                    d_ath = df_live["High"].idxmax()
+                    p_attuale = float(df_live["close"].iloc[-1])
+                    
+                    d_ath = df_live["high"].idxmax()
                     df_generale = df_live.copy()
                     df_ath = df_live.loc[d_ath:].copy()
                     df_recente = df_live.tail(90).copy()
                     
                     controlli_da_effettuare = []
-                    if "Generale" in poc_scelti: controlli_da_effettuare.append(("GENERALE", df_generale))
+                    if "Generale" in poc_scelti: controlli_da_effettore = controlli_da_effettuare.append(("GENERALE", df_generale))
                     if "ATH" in poc_scelti: controlli_da_effettuare.append(("DALL'ATH", df_ath))
                     if "Recente (90D)" in poc_scelti: controlli_da_effettuare.append(("RECENTE (90D)", df_recente))
                         
                     for nome_profilo, df_singolo_profilo in controlli_da_effettuare:
                         if df_singolo_profilo.empty: continue
-                        p_poc, p_vh, p_vl, prz_v, vl_v = calc_vp(df_singolo_profilo)
+                        
+                        # Adattiamo momentaneamente i nomi per la funzione calc_vp interna
+                        df_input_vp = df_singolo_profilo.copy()
+                        df_input_vp.columns = ['open', 'high', 'low', 'close', 'volume'] # standard pulito
+                        df_input_vp.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
+                        
+                        p_poc, p_vh, p_vl, prz_v, vl_v = calc_vp(df_input_vp)
                         
                         if p_poc is None: continue
                         distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
@@ -296,11 +305,10 @@ with tab3:
                             stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
                             take_p = p_vh if p_attuale >= p_poc else p_vl
                             
-                            # RISOLUZIONE FINALE LINK: Forziamo la scomposizione in testo puro con lo slash /symbols/ integrato
+                            # Configurazione URL TradingView pulito e cliccabile nativamente
                             mercato_tv = "MIL" if str(ticker).endswith(".MI") else "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             ticker_pulito = str(ticker).replace(".MI", "")
-                            
-                            url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={ticker_pulito}.{mercato_tv}"
+                            url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={ticker_pulito}"
                             
                             messaggio_alert = (
                                 f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
@@ -311,7 +319,7 @@ with tab3:
                                 f"🔴 <b>Entry POC:</b> {round(p_poc, 2)}\n"
                                 f"🟠 <b>Stop Loss:</b> {round(stop_l, 2)}\n"
                                 f"🔵 <b>Take Profit:</b> {round(take_p, 2)}\n\n"
-                                f"🔗 <b>LINK DI TRADINGVIEW:</b>\n{url_stringa_pura}"
+                                f"🔗 <b>LINK DI TRADINGVIEW:</b>\n{url_tradingview_pulito}"
                             )
                             invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
                             
