@@ -164,7 +164,7 @@ if __name__ == "__main__":
                         take_p = p_vh if p_attuale >= p_poc else p_vl
                         ticker_pulito = str(ticker).replace(".MI", "")
                         
-                        url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={mercato}%3{ticker_pulito}"
+                        url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={mercato_tv}%3{ticker_pulito}"
                         
                         messaggio_alert = (
                             f"🚨 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
