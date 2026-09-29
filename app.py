@@ -300,7 +300,7 @@ with tab3:
                             mercato_tv = "MIL" if str(ticker).endswith(".MI") else "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             ticker_pulito = str(ticker).replace(".MI", "")
                             
-                            url_stringa_pura = f"https://tradingview.com/{ticker_pulito}.{mercato_tv}/"
+                            url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={ticker_pulito}.{mercato_tv}/"
                             
                             messaggio_alert = (
                                 f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
