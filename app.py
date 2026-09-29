@@ -151,7 +151,7 @@ def calc_vp(df, div=None):
     return poc, vah, val, prices, volumes
 # --- TAB 1: ANALISI TRIPLE-POC ---
 with tab1:
-    st.subheader("Configurazione Parametri di Scansione")
+    st.subheader("📊 Analisi Grafica Avanzata Volume Profile & Nodes")
     col1, col2, col3 = st.columns(3)
     with col1:
         paniere_selezionato = st.selectbox("Seleziona Indice/Paniere:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto"], key="an_paniere")
@@ -163,13 +163,7 @@ with tab1:
         period_map = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}
         g3 = period_map[period_label]
 
-    # RISOLUZIONE BUG: Usando una chiave dinamica fusa col nome del paniere, costringiamo Streamlit a rigenerare l'area di testo con i ticker corretti
-    tickers_input = st.text_area(
-        "Modifica o verifica i Tickers estratti (separati da virgola):", 
-        value=ticker_caricati, 
-        height=150, 
-        key=f"an_area_{paniere_selezionato}"
-    )
+    tickers_input = st.text_area("Modifica o verifica i Tickers estratti (separati da virgola):", value=ticker_caricati, height=150, key="an_area")
 
     if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
         tickers = [t.strip().upper() for t in tickers_input.split(',') if t.strip()]
@@ -180,41 +174,101 @@ with tab1:
             for ticker in tickers:
                 tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
                 df_c = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
+                
                 if df_c is not None and not df_c.empty:
                     close_series = df_c["Close"]
                     p_att = float(close_series.values[-1] if hasattr(close_series, 'values') else close_series.iloc[-1])
                     df1, d_ath = df_c.copy(), df_c["High"].idxmax()
                     df2, df3 = df_c.loc[d_ath:].copy(), df_c.tail(g3).copy()
+                    
                     p1, vh1, vl1, prz1, vl_v1 = calc_vp(df1)
                     p2, vh2, vl2, prz2, vl_v2 = calc_vp(df2)
                     p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
+                    
                     if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]: continue
                     
-                    fig = make_subplots(rows=3, cols=1, subplot_titles=(f"1. STORICO COMPLETO DALL'INIZIO ({ticker})", f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')})", f"3. PROFILO RECENTE {period_label.upper()}"), vertical_spacing=0.06)
-                    cfg = [(1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")]
+                    fig = make_subplots(
+                        rows=3, cols=1, 
+                        subplot_titles=(
+                            f"1. STORICO COMPLETO DALL'INIZIO ({ticker}) — POC: {round(p1,2)}", 
+                            f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — POC: {round(p2,2)}", 
+                            f"3. PROFILO RECENTE {period_label.upper()} — POC: {round(p3,2)}"
+                        ), 
+                        vertical_spacing=0.07
+                    )
+                    
+                    cfg = [
+                        (1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), 
+                        (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), 
+                        (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")
+                    ]
                     
                     for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
                         if df_s.empty: continue
-                        fig.add_trace(grp.Candlestick(x=df_s.index, open=df_s["Open"].astype(float), high=df_s["High"].astype(float), low=df_s["Low"].astype(float), close=df_s["Close"].astype(float), name=nm), row=r_idx, col=1)
+                        
+                        # 1. Disegna le Candele Candlestick standard
+                        fig.add_trace(grp.Candlestick(
+                            x=df_s.index, open=df_s["Open"].astype(float), 
+                            high=df_s["High"].astype(float), low=df_s["Low"].astype(float), 
+                            close=df_s["Close"].astype(float), name=nm
+                        ), row=r_idx, col=1)
+                        
+                        # 2. Disegna l'orizzonte del Volume Profile calcolato in modo matematico e proporzionale
                         if v_vp and max(v_vp) > 0:
                             m_v, d_i, d_f = max(v_vp), df_s.index.min(), df_s.index.max()
                             ext = (d_f - d_i).days
-                            for i in range(0, len(v_vp), max(1, len(v_vp)//50)):
-                                w = (float(v_vp[i]) / m_v) * (ext * 0.15) if m_v > 0 else 0
+                            step_k = max(1, len(v_vp) // 60) # Raggruppa i prezzi in massimo 60 livelli visivi per non appesantire Plotly
+                            
+                            for i in range(0, len(v_vp), step_k):
+                                idx_fine = min(i + step_k, len(v_vp) - 1)
+                                y0_val = float(p_vp[i])
+                                y1_val = float(p_vp[idx_fine])
+                                
+                                # Se siamo sull'ultimo elemento o l'indice è identico, creiamo uno spessore proporzionale minimo
+                                if y0_val == y1_val:
+                                    spessore_minimo = (max(p_vp) - min(p_vp)) * 0.005
+                                    y0_val -= spessore_minimo
+                                    y1_val += spessore_minimo
+                                
+                                w = (float(v_vp[i]) / m_v) * (ext * 0.18) if m_v > 0 else 0
                                 x1_date = d_i + pd.Timedelta(days=int(w) if w > 0 else 1)
-                                fig.add_shape(type="rect", x0=d_i, x1=x1_date, y0=float(p_vp[i])*0.998, y1=float(p_vp[i])*1.002, fillcolor="rgba(0,165,181,0.15)", line=dict(width=0), row=r_idx, col=1)
-                        dir_s, ic, sl, tp, col_z = ("LONG", "🟢", p_vl*0.985, p_vh, "rgba(40,167,69,0.12)") if p_att >= p_poc else ("SHORT", "🔴", p_vh*1.015, p_vl, "rgba(220,53,69,0.12)")
+                                
+                                # Colore differenziato: arancione per la Value Area (nodi importanti), azzurro trasparente per il resto
+                                col_barra = "rgba(242,142,43,0.22)" if p_vl <= p_vp[i] <= p_vh else "rgba(0,165,181,0.08)"
+                                
+                                fig.add_shape(
+                                    type="rect", x0=d_i, x1=x1_date, y0=y0_val, y1=y1_val, 
+                                    fillcolor=col_barra, line=dict(width=0), row=r_idx, col=1
+                                )
+                        
+                        # 3. Setup dei Target Operativi (LONG/SHORT)
+                        dir_s, ic, sl, tp, col_z = ("LONG", "🟢", p_vl*0.985, p_vh, "rgba(40,167,69,0.10)") if p_att >= p_poc else ("SHORT", "🔴", p_vh*1.015, p_vl, "rgba(220,53,69,0.10)")
                         rr = round(abs(tp - p_poc) / abs(p_poc - sl), 2) if abs(p_poc - sl) > 0 else 0
-                        fig.add_shape(type="rect", x0=df_s.index.min(), x1=df_s.index.max(), y0=min(p_poc, tp), y1=max(p_poc, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
-                        fig.add_shape(type="line", x0=df_s.index.min(), x1=df_s.index.max(), y0=p_poc, y1=p_poc, line=dict(color="red", width=2, dash="dash"), row=r_idx, col=1)
-                        fig.add_shape(type="line", x0=df_s.index.min(), x1=df_s.index.max(), y0=sl, y1=sl, line=dict(color="orange", width=1.5, dash="dot"), row=r_idx, col=1)
-                        fig.add_shape(type="line", x0=df_s.index.min(), x1=df_s.index.max(), y0=tp, y1=tp, line=dict(color="cyan", width=1.5), row=r_idx, col=1)
-                        fig.add_annotation(x=df_s.index.max(), y=p_poc, text=f"ENTRY: {round(p_poc,2)}", showarrow=False, bgcolor="red", font=dict(color="white", size=8), row=r_idx, col=1)
-                        fig.add_annotation(x=df_s.index.max(), y=sl, text=f"STOP: {round(sl,2)}", showarrow=False, bgcolor="orange", font=dict(color="white", size=8), row=r_idx, col=1)
-                        fig.add_annotation(x=df_s.index.max(), y=tp, text=f"TARGET: {round(tp,2)}", showarrow=False, bgcolor="cyan", font=dict(color="black", size=8), row=r_idx, col-1)
-                        txt_leg = f"<b>📊 {nm.upper()}</b><br>Dir: {ic} {dir_s}<br>R/R: 1:{rr}<br>🔴 ENTRY: {round(p_poc,2)}<br>🟠 STOP: {round(sl,2)}<br>🔵 TARGET: {round(tp,2)}"
-                        fig.add_annotation(xref="paper", yref="paper", x=0.01, y=0.93 if r_idx==1 else (0.59 if r_idx==2 else 0.26), text=txt_leg, showarrow=False, align="left", bgcolor="rgba(15,18,24,0.93)", bordercolor="rgba(0,165,181,0.6)", borderwidth=1.5, borderpad=8, font=dict(color="white", size=10))
-                    fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, height=1300, showlegend=False)
+                        
+                        # Definiamo la partenza visiva delle linee di trading (ultimi 1/3 del grafico per non sporcare il passato)
+                        data_linee_inizio = df_s.index[int(len(df_s)*0.65)]
+                        data_linee_fine = df_s.index[-1]
+                        
+                        # Evidenziazione grafica della zona di target (Rapporto Rischio/Rendimento)
+                        fig.add_shape(type="rect", x0=data_linee_inizio, x1=data_linee_fine, y0=min(p_poc, tp), y1=max(p_poc, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
+                        
+                        # Linea del POC Esatto (Rossa e marcata)
+                        fig.add_shape(type="line", x0=df_s.index.min(), x1=data_linee_fine, y0=p_poc, y1=p_poc, line=dict(color="#dc3545", width=2.5), row=r_idx, col=1)
+                        # Linea dello Stop Loss (Tratteggiata Arancione)
+                        fig.add_shape(type="line", x0=data_linee_inizio, x1=data_linee_fine, y0=sl, y1=sl, line=dict(color="#ffc107", width=1.5, dash="dash"), row=r_idx, col=1)
+                        # Linea del Take Profit (Azzurra continua)
+                        fig.add_shape(type="line", x0=data_linee_inizio, x1=data_linee_fine, y0=tp, y1=tp, line=dict(color="#17a2b8", width=2), row=r_idx, col=1)
+                        
+                        # Etichette di testo sul lato destro del grafico
+                        fig.add_annotation(x=data_linee_fine, y=p_poc, text=f" POC ENTRY: {round(p_poc,2)}", showarrow=False, align="left", bgcolor="#dc3545", font=dict(color="white", size=9, family="Arial Black"), row=r_idx, col=1)
+                        fig.add_annotation(x=data_linee_fine, y=sl, text=f" SL STOP: {round(sl,2)}", showarrow=False, align="left", bgcolor="#ffc107", font=dict(color="black", size=9), row=r_idx, col=1)
+                        fig.add_annotation(x=data_linee_fine, y=tp, text=f" TP TARGET: {round(tp,2)}", showarrow=False, align="left", bgcolor="#17a2b8", font=dict(color="white", size=9), row=r_idx, col=1)
+                        
+                        # Box della legenda informativa fluttuante
+                        txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Direzione: {ic} {dir_s}<br>Rapporto R/R: 1:{rr}<br><br>🔴 POC: {round(p_poc,2)}<br>🟠 VAH (Sup): {round(p_vh,2)}<br>🔵 VAL (Inf): {round(p_vl,2)}"
+                        fig.add_annotation(xref="paper", yref="paper", x=0.01, y=0.95 if r_idx==1 else (0.61 if r_idx==2 else 0.28), text=txt_leg, showarrow=False, align="left", bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.5)", borderwidth=1.5, borderpad=10, font=dict(color="white", size=10))
+                    
+                    fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, height=1400, showlegend=False)
                     st.plotly_chart(fig, use_container_width=True)
 # --- TAB 2: BACKTESTING ---
 with tab2:
