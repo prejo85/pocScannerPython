@@ -1,33 +1,36 @@
 def avvia_scansione():
     print("Inizio scansione giornaliera...")
-    # Puliamo la lista per evitare spazi vuoti
+    
+    # --- TEST DI CONNESSIONE TELEGRAM ---
+    # Questo messaggio DEVE arrivare. Se non arriva, il problema è il Token o la Chat ID.
+    test_invio = invia_messaggio_telegram(T_ID, "🚀 <b>POC Scanner avviato su GitHub!</b> Test di connessione in corso...")
+    if test_invio:
+        print("✅ Messaggio di test inviato correttamente su Telegram.")
+    else:
+        print("❌ ERRORE: Impossibile inviare il messaggio su Telegram. Verifica il Token Bot o la Chat ID.")
+    
     lista_ticker = [t.strip() for t in SP500_FULL.split(",") if t.strip()]
+    segnali_rilevati = 0
     
     for ticker in lista_ticker:
         try:
-            # Scarichiamo forzando l'indice piatto a livello singolo
             df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False, timeout=10)
-            
             if df_live is None or df_live.empty: 
-                print(f"Nessun dato per {ticker}, salto...")
                 continue
             
-            # Normalizzazione robusta delle colonne per evitare errori di Key o stringhe sporche
             df_live.columns = [str(c).strip().lower() for c in df_live.columns]
             
-            # Controllo di sicurezza: se mancano le colonne vitali passiamo al prossimo senza bloccare lo script
             colonne_necessarie = ['close', 'high', 'low', 'open', 'volume']
             if not all(col in df_live.columns for col in colonne_necessarie):
-                print(f"Colonne incomplete per {ticker}, salto...")
                 continue
                 
             p_attuale = float(df_live['close'].iloc[-1])
             d_ath = df_live['high'].idxmax()
             
             profili = {
-                "GENERALE (Dall'Inizio)": df_live.copy(),
-                "DALL'ATH": df_live.loc[d_ath:].copy(),
-                f"RECENTE ({GIORNI_RECENTI}D)": df_live.tail(GIORNI_RECENTI).copy()
+                "GENERALE": df_live.copy(),
+                "ATH": df_live.loc[d_ath:].copy(),
+                "RECENTE": df_live.tail(GIORNI_RECENTI).copy()
             }
             
             for nome_profilo, df_singolo in profili.items():
@@ -45,7 +48,12 @@ def avvia_scansione():
                 
                 distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
                 
+                # Monitoriamo i calcoli stampando i primi 10 ticker estratti
+                if segnali_rilevati < 5:
+                     print(f"Ticker: {ticker} | Prezzo: {round(p_attuale,2)} | POC {nome_profilo}: {round(p_poc,2)} | Distanza: {round(distanza_percentuale,2)}%")
+                
                 if abs(distanza_percentuale) <= SOGLIA_DISTANZA:
+                    segnali_rilevati += 1
                     setup_tipo = "LONG 🟢" if p_attuale >= p_poc else "SHORT 🔴"
                     stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
                     take_p = p_vh if p_attuale >= p_poc else p_vl
@@ -66,7 +74,6 @@ def avvia_scansione():
                     )
                     invia_messaggio_telegram(T_ID, messaggio)
         except Exception as e:
-            # Stampando l'errore evitiamo il crash completo dell'applicazione se un singolo ticker fallisce
-            print(f"Errore riscontrato su {ticker}: {e}")
+            pass
             
-    print("Scansione terminata con successo.")
+    print(f"Scansione terminata. Segnali inviati: {segnali_rilevati}")
