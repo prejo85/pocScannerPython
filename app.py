@@ -155,6 +155,7 @@ with tab1:
         period_map = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}
         g3 = period_map[period_label]
 
+    # Area di inserimento/verifica dei Ticker
     tickers_input = st.text_area("Modifica o verifica i Tickers estratti (separati da virgola):", value=ticker_caricati, height=150, key=f"an_area_{paniere_selezionato}")
 
     if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
@@ -162,70 +163,85 @@ with tab1:
         if not tickers:
             st.warning("Inserisci almeno un ticker valido.")
         else:
-            st.success(f"Analisi avviata per {len(tickers)} elementi. Grafici in caricamento...")
-            for ticker in tickers:
-                tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
-                df_c = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
-                
-                if df_c is not None and not df_c.empty:
-                    close_series = df_c["Close"]
-                    p_att = float(close_series.values[-1] if hasattr(close_series, 'values') else close_series.iloc[-1])
-                    df1, d_ath = df_c.copy(), df_c["High"].idxmax()
-                    df2, df3 = df_c.loc[d_ath:].copy(), df_c.tail(g3).copy()
+            st.success(f"Analisi avviata per {len(tickers)} elementi. Generazione fogli ticker...")
+            
+            # --- CREAZIONE SCHEDE STILE FOGLIO EXCEL (Tabs annidati per ticker) ---
+            fogli_ticker = st.tabs(tickers)
+            
+            # Iteriamo contemporaneamente sui ticker e sui rispettivi tab/foglio excel generati
+            for ticker, foglio_attivo in zip(tickers, fogli_ticker):
+                with foglio_attivo:
+                    # Tutto il rendering grafico avviene dentro lo specifico foglio/tab del ticker corrente
+                    st.markdown(f"### 📈 Analisi Avanzata Volumi per: **{ticker}**")
                     
-                    p1, vh1, vl1, prz1, vl_v1 = calc_vp(df1)
-                    p2, vh2, vl2, prz2, vl_v2 = calc_vp(df2)
-                    p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
-                    if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]: continue
+                    tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
+                    df_c = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
                     
-                    fig = make_subplots(
-                        rows=3, cols=1, 
-                        subplot_titles=(
-                            f"1. STORICO COMPLETO DALL'INIZIO ({ticker}) — POC: {round(p1,2)}", 
-                            f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — POC: {round(p2,2)}", 
-                            f"3. PROFILO RECENTE {period_label.upper()} — POC: {round(p3,2)}"
-                        ), 
-                        vertical_spacing=0.07
-                    )
-                    cfg = [(1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")]
-                    
-                    for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
-                        if df_s.empty: continue
-                        fig.add_trace(grp.Candlestick(x=df_s.index, open=df_s["Open"].astype(float), high=df_s["High"].astype(float), low=df_s["Low"].astype(float), close=df_s["Close"].astype(float), name=nm), row=r_idx, col=1)
+                    if df_c is not None and not df_c.empty:
+                        close_series = df_c["Close"]
+                        p_att = float(close_series.values[-1] if hasattr(close_series, 'values') else close_series.iloc[-1])
+                        df1, d_ath = df_c.copy(), df_c["High"].idxmax()
+                        df2, df3 = df_c.loc[d_ath:].copy(), df_c.tail(g3).copy()
                         
-                        if v_vp and max(v_vp) > 0:
-                            m_v, d_i, d_f = max(v_vp), df_s.index.min(), df_s.index.max()
-                            ext = (d_f - d_i).days
-                            step_k = max(1, len(v_vp) // 60)
-                            for i in range(0, len(v_vp), step_k):
-                                idx_fine = min(i + step_k, len(v_vp) - 1)
-                                y0_val, y1_val = float(p_vp[i]), float(p_vp[idx_fine])
-                                if y0_val == y1_val:
-                                    sp_m = (max(p_vp) - min(p_vp)) * 0.005
-                                    y0_val -= sp_m; y1_val += sp_m
-                                w = (float(v_vp[i]) / m_v) * (ext * 0.18) if m_v > 0 else 0
-                                x1_date = d_i + pd.Timedelta(days=int(w) if w > 0 else 1)
-                                col_b = "rgba(242,142,43,0.22)" if p_vl <= p_vp[i] <= p_vh else "rgba(0,165,181,0.08)"
-                                fig.add_shape(type="rect", x0=d_i, x1=x1_date, y0=y0_val, y1=y1_val, fillcolor=col_b, line=dict(width=0), row=r_idx, col=1)
+                        p1, vh1, vl1, prz1, vl_v1 = calc_vp(df1)
+                        p2, vh2, vl2, prz2, vl_v2 = calc_vp(df2)
+                        p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
                         
-                        dir_s, ic, sl, tp, col_z = ("LONG", "🟢", p_vl*0.985, p_vh, "rgba(40,167,69,0.10)") if p_att >= p_poc else ("SHORT", "🔴", p_vh*1.015, p_vl, "rgba(220,53,69,0.10)")
-                        rr = round(abs(tp - p_poc) / abs(p_poc - sl), 2) if abs(p_poc - sl) > 0 else 0
-                        data_l_i, data_l_f = df_s.index[int(len(df_s)*0.65)], df_s.index[-1]
+                        if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]: 
+                            st.error(f"Impossibile calcolare il profilo dei volumi per {ticker}.")
+                            continue
                         
-                        fig.add_shape(type="rect", x0=data_l_i, x1=data_l_f, y0=min(p_poc, tp), y1=max(p_poc, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
-                        fig.add_shape(type="line", x0=df_s.index.min(), x1=data_l_f, y0=p_poc, y1=p_poc, line=dict(color="#dc3545", width=2.5), row=r_idx, col=1)
-                        fig.add_shape(type="line", x0=data_l_i, x1=data_l_f, y0=sl, y1=sl, line=dict(color="#ffc107", width=1.5, dash="dash"), row=r_idx, col=1)
-                        fig.add_shape(type="line", x0=data_l_i, x1=data_l_f, y0=tp, y1=tp, line=dict(color="#17a2b8", width=2), row=r_idx, col=1)
+                        fig = make_subplots(
+                            rows=3, cols=1, 
+                            subplot_titles=(
+                                f"1. STORICO COMPLETO DALL'INIZIO — POC: {round(p1,2)}", 
+                                f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — POC: {round(p2,2)}", 
+                                f"3. PROFILO RECENTE {period_label.upper()} — POC: {round(p3,2)}"
+                            ), 
+                            vertical_spacing=0.07
+                        )
+                        cfg = [(1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")]
                         
-                        fig.add_annotation(x=data_l_f, y=p_poc, text=f" POC ENTRY: {round(p_poc,2)}", showarrow=False, align="left", bgcolor="#dc3545", font=dict(color="white", size=9, family="Arial Black"), row=r_idx, col=1)
-                        fig.add_annotation(x=data_l_f, y=sl, text=f" SL STOP: {round(sl,2)}", showarrow=False, align="left", bgcolor="#ffc107", font=dict(color="black", size=9), row=r_idx, col=1)
-                        fig.add_annotation(x=data_l_f, y=tp, text=f" TP TARGET: {round(tp,2)}", showarrow=False, align="left", bgcolor="#17a2b8", font=dict(color="white", size=9), row=r_idx, col=1)
+                        for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
+                            if df_s.empty: continue
+                            fig.add_trace(grp.Candlestick(x=df_s.index, open=df_s["Open"].astype(float), high=df_s["High"].astype(float), low=df_s["Low"].astype(float), close=df_s["Close"].astype(float), name=nm), row=r_idx, col=1)
+                            
+                            if v_vp and max(v_vp) > 0:
+                                m_v, d_i, d_f = max(v_vp), df_s.index.min(), df_s.index.max()
+                                ext = (d_f - d_i).days
+                                step_k = max(1, len(v_vp) // 60)
+                                for i in range(0, len(v_vp), step_k):
+                                    idx_fine = min(i + step_k, len(v_vp) - 1)
+                                    y0_val, y1_val = float(p_vp[i]), float(p_vp[idx_fine])
+                                    if y0_val == y1_val:
+                                        sp_m = (max(p_vp) - min(p_vp)) * 0.005
+                                        y0_val -= sp_m; y1_val += sp_m
+                                    w = (float(v_vp[i]) / m_v) * (ext * 0.18) if m_v > 0 else 0
+                                    x1_date = d_i + pd.Timedelta(days=int(w) if w > 0 else 1)
+                                    col_b = "rgba(242,142,43,0.22)" if p_vl <= p_vp[i] <= p_vh else "rgba(0,165,181,0.08)"
+                                    fig.add_shape(type="rect", x0=d_i, x1=x1_date, y0=y0_val, y1=y1_val, fillcolor=col_b, line=dict(width=0), row=r_idx, col=1)
+                            
+                            dir_s, ic, sl, tp, col_z = ("LONG", "🟢", p_vl*0.985, p_vh, "rgba(40,167,69,0.10)") if p_att >= p_poc else ("SHORT", "🔴", p_vh*1.015, p_vl, "rgba(220,53,69,0.10)")
+                            rr = round(abs(tp - p_poc) / abs(p_poc - sl), 2) if abs(p_poc - sl) > 0 else 0
+                            data_l_i, data_l_f = df_s.index[int(len(df_s)*0.65)], df_s.index[-1]
+                            
+                            fig.add_shape(type="rect", x0=data_l_i, x1=data_l_f, y0=min(p_poc, tp), y1=max(p_poc, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
+                            fig.add_shape(type="line", x0=df_s.index.min(), x1=data_l_f, y0=p_poc, y1=p_poc, line=dict(color="#dc3545", width=2.5), row=r_idx, col=1)
+                            fig.add_shape(type="line", x0=data_l_i, x1=data_l_f, y0=sl, y1=sl, line=dict(color="#ffc107", width=1.5, dash="dash"), row=r_idx, col=1)
+                            fig.add_shape(type="line", x0=data_l_i, x1=data_l_f, y0=tp, y1=tp, line=dict(color="#17a2b8", width=2), row=r_idx, col=1)
+                            
+                            fig.add_annotation(x=data_l_f, y=p_poc, text=f" POC ENTRY: {round(p_poc,2)}", showarrow=False, align="left", bgcolor="#dc3545", font=dict(color="white", size=9, family="Arial Black"), row=r_idx, col=1)
+                            fig.add_annotation(x=data_l_f, y=sl, text=f" SL STOP: {round(sl,2)}", showarrow=False, align="left", bgcolor="#ffc107", font=dict(color="black", size=9), row=r_idx, col=1)
+                            fig.add_annotation(x=data_l_f, y=tp, text=f" TP TARGET: {round(tp,2)}", showarrow=False, align="left", bgcolor="#17a2b8", font=dict(color="white", size=9), row=r_idx, col=1)
+                            
+                            txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Direzione: {ic} {dir_s}<br>Rapporto R/R: 1:{rr}<br><br>🔴 POC: {round(p_poc,2)}<br>🟠 VAH: {round(p_vh,2)}<br>🔵 VAL: {round(p_vl,2)}"
+                            fig.add_annotation(xref="paper", yref="paper", x=0.01, y=0.95 if r_idx==1 else (0.61 if r_idx==2 else 0.28), text=txt_leg, showarrow=False, align="left", bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.5)", borderwidth=1.5, borderpad=10, font=dict(color="white", size=10))
                         
-                        txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Direzione: {ic} {dir_s}<br>Rapporto R/R: 1:{rr}<br><br>🔴 POC: {round(p_poc,2)}<br>🟠 VAH: {round(p_vh,2)}<br>🔵 VAL: {round(p_vl,2)}"
-                        fig.add_annotation(xref="paper", yref="paper", x=0.01, y=0.95 if r_idx==1 else (0.61 if r_idx==2 else 0.28), text=txt_leg, showarrow=False, align="left", bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.5)", borderwidth=1.5, borderpad=10, font=dict(color="white", size=10))
-                    
-                    fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, height=1400, showlegend=False)
-                    st.plotly_chart(fig, use_container_width=True)
+                        fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, height=1400, showlegend=False)
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.warning(f"Nessun dato scaricabile da Yahoo Finance per il ticker {ticker}.")
+
 # --- TAB 2: BACKTESTING ---
 with tab2:
     st.subheader("⚙️ Motore di Simulazione Storica (Backtest)")
