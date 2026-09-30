@@ -368,7 +368,6 @@ with tab3:
                             
                             # RISOLTO BUG: Utilizzo esatto della variabile borsa_tv sbloccata
                             url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={borsa_tv}"
-                            url_stringa_pura = f"https://tradingview.com{borsa_tv}"
                             
                             messaggio_alert = (
                                 f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
