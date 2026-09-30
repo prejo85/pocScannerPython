@@ -7,85 +7,137 @@ from plotly.subplots import make_subplots
 import requests
 import json
 
-# 1. Impostazione della pagina web a tutto schermo e tema scuro nativo
-st.set_page_config(layout="wide", page_title="Dashboard Finanziaria Completa", page_icon="📐")
+# 1. Impostazione della pagina web a tutto schermo e tema premium
+st.set_page_config(layout="wide", page_title="VolNodes Pro", page_icon="📐")
 
-# --- INIEZIONE CSS PER DESIGN PREMIUM E MODERNO ---
+# --- INIEZIONE CSS PER DESIGN PREMIUM E MODERNO (Glassmorphism & SaaS) ---
 st.markdown("""
 <style>
+    @import url('https://googleapis.com');
+    
     .stApp {
-        background: linear-gradient(135deg, #0f111a 0%, #151926 100%);
-        color: #e2e8f0;
+        background: radial-gradient(circle at top right, #1a1f36 0%, #0d0f18 100%);
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        color: #f8fafc;
     }
+    
     h1 {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Plus Jakarta Sans', sans-serif;
         font-weight: 800;
-        background: linear-gradient(90deg, #ff7e40, #00ced1);
+        background: linear-gradient(90deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         padding-bottom: 15px;
         text-shadow: 0px 4px 10px rgba(0, 0, 0, 0.4);
     }
+    
     div[data-testid="stMetric"] {
-        background: rgba(30, 37, 56, 0.65) !important;
-        border: 1px solid rgba(242, 142, 43, 0.25) !important;
-        border-radius: 12px !important;
-        padding: 20px 25px !important;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-        backdrop-filter: blur(4px);
-        transition: transform 0.2s ease-in-out, border-color 0.2s ease-in-out;
+        background: rgba(15, 23, 42, 0.6) !important;
+        border: 1px solid rgba(56, 189, 248, 0.15) !important;
+        border-radius: 14px !important;
+        padding: 20px !important;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3) !important;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     }
     div[data-testid="stMetric"]:hover {
-        transform: translateY(-4px);
-        border-color: rgba(0, 206, 209, 0.6) !important;
-        box-shadow: 0 8px 32px 0 rgba(0, 206, 209, 0.15);
+        transform: translateY(-2px);
+        border-color: rgba(56, 189, 248, 0.4) !important;
+        box-shadow: 0 10px 30px -5px rgba(56, 189, 248, 0.15) !important;
     }
+    
     div.stButton > button:first-child {
-        background: linear-gradient(90deg, #ff6a00 0%, #ee0979 100%) !important;
-        color: white !important;
-        font-weight: 700 !important;
+        background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%) !important;
+        color: #ffffff !important;
+        font-weight: 600 !important;
         border: none !important;
-        border-radius: 8px !important;
-        padding: 0.6rem 2.5rem !important;
-        box-shadow: 0 4px 15px rgba(238, 9, 121, 0.3) !important;
-        transition: all 0.3s ease !important;
+        border-radius: 10px !important;
+        padding: 0.7rem 2.2rem !important;
+        box-shadow: 0 4px 14px 0 rgba(79, 70, 229, 0.3) !important;
+        transition: all 0.2s ease !important;
     }
     div.stButton > button:first-child:hover {
-        transform: scale(1.02);
-        box-shadow: 0 6px 20px rgba(238, 9, 121, 0.5) !important;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 20px 0 rgba(59, 130, 246, 0.45) !important;
     }
+    
     button[data-baseweb="tab"] {
-        font-size: 16px !important;
+        font-size: 15px !important;
         font-weight: 600 !important;
-        color: #a0aec0 !important;
+        color: #64748b !important;
+        padding: 12px 24px !important;
         border-bottom: 2px solid transparent !important;
         transition: all 0.3s ease;
     }
     button[aria-selected="true"] {
-        color: #00ced1 !important;
-        border-bottom: 2px solid #00ced1 !important;
+        color: #38bdf8 !important;
+        border-bottom: 2px solid #38bdf8 !important;
         text-shadow: 0 0 10px rgba(0, 206, 209, 0.3);
+    }
+    
+    div[data-baseweb="select"], input, textarea {
+        background-color: #0f172a !important;
+        border-color: #334155 !important;
+        color: #f8fafc !important;
+        border-radius: 8px !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📐 Dashboard Finanziaria — Scansione, Backtest & Alert")
+st.title("📐 VolNodes Pro — Dashboard Multitasking")
 
 # Inizializzazione degli stati della sessione
 if "asset_type_index" not in st.session_state:
     st.session_state.asset_type_index = 0
 
-# --- CONFIGURAZIONI & UTILS CONDIVISE ---
+# --- CREDENZIALI E CONFIGURAZIONI NATIVE ---
 T_ID = "2072895073"
 TESTA_INTERNET = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Content-Type": "application/json",
 }
 
-SP500_FULL = "MMM,AOS,ABT,ABBV,ACN,ADBE,AMD,AES,AFL,A,APD,ABNB,AKAM,ALB,ARE,ALGN,ALLE,LNT,ALL,GOOGL,GOOG,MO,AMZN,AMCR,AEE,AEP,AXP,AIG,AMT,AWK,AMP,AME,AMGN,APH,ADI,AON,APA,APO,AAPL,AMAT,APP,APTV,ACGL,ADM,ARES,ANET,AJG,AIZ,T,ATO,ADSK,ADP,AZO,AVY,AXON,BKR,BALL,BAC,BAX,BDX,BRK-B,BBY,TECH,BIIB,BLK,BX,BE,BNY,BA,BKNG,BSX,BMY,AVGO,BR,BRO,BF-B,BG,BXP,CHRW,CDNS,CPT,COF,CAH,CCL,CARR,CVNA,CASY,CAT,CBOE,CBRE,CDW,COR,CNC,CNP,CF,CRL,SCHW,CHTR,CVX,CMG,CB,CHD,CIEN,CI,CINF,CTAS,CSCO,C,CFG,CLX,CME,CMS,KO,CTSH,COHR,COIN,CL,CMCSA,FIX,COP,ED,STZ,CEG,COO,CPRT,GLW,CPAY,CTVA,CSGP,COST,CRH,CRWD,CCI,CSX,CMI,CVS,DHR,DRI,DDOG,DVA,DECK,DE,DELL,DAL,DVN,DXCM,FANG,DLR,DG,DLTR,D,DPZ,DASH,DOV,DOW,DHI,DTE,DUK,DD,ETN,EBAY,ECHO,ECL,EIX,EW,ELV,EME,EMR,ETR,EOG,EQT,EFX,EQIX,ERIE,ESS,EL,EG,EVRG,P,ES,EXC,EXE,EXPE,EXPD,EXR,XOM,FFIV,FDS,FICO,FAST,FRT,FDX,FDXF,FERG,FIS,FITB,FSLR,FE,FISV,FLEX,F,FTNT,FTV,FOXA,FOX,BEN,FCX,GRMN,IT,GE,GEHC,GEV,GEN,GNRC,GD,GIS,GM,GPC,GILD,GPN,GL,GDDY,GS,HAL,HIG,HAS,HCA,DOC,HSIC,HSY,HPE,HLT,HD,HON,HRL,HST,HWM,HUBB,HUM,HBAN,HII,IBM,IEX,IDXX,ITW,ILMN,INCY,IR,PODD,INTC,IBKR,ICE,IFF,IP,INTU,ISRG,IVZ,INVH,IQV,IRM,JBHT,JBL,JKHY,J,JNJ,JCI,JPM,KVUE,KDP,KEY,KEYS,KMB,KIM,KMI,KKR,KLAC,KHC,KR,LHX,LH,LRCX,LVS,LDOS,LEN,LII,LLY,LIN,LYV,LMT,L,LOW,LULU,LITE,LYB,MTB,MPC,MAR,MRSH,MLM,MRVL,MAS,MA,MKC,MCD,MCK,MDT,MRK,META,MET,MTD,MGM,MCHP,MU,MSFT,MAA,MRNA,MDLZ,MPWR,MNST,MCO,MS,MOS,MSI,MSCI,NDAQ,NTAP,NFLX,NEM,NWSA,NWS,NEE,NKE,NI,NDSN,NSC,NTRS,NOC,NCLH,NRG,NUE,NVDA,NVR,NXPI,ORLY,OXY,ODFL,OMC,ON,OKE,ORCL,OTIS,PCAR,PKG,PLTR,PANW,PSKY,PH,PAYX,PYPL,PNR,PEP,PFE,PCG,PM,PSX,PNW,PNC,PPG,PPL,PFG,PG,PGR,PLD,PRU,PEG,PTC,PSA,PHM,PWR,QCOM,DGX,Q,RL,RJF,RDDT,RTX,O,REG,REGN,RF,RSG,RMD,RVTY,HOOD,ROK,ROL,ROP,ROST,RCL,SPGI,CRM,SBAC,SLB,STX,SRE,NOW,SHW,SPG,SWKS,SJM,SW,SNA,SOLV,SO,LUV,SWK,SBUX,STT,STLD,STE,SYK,SMCI,SYF,SNPS,SYY,TMUS,TROW,TTWO,TPR,TRGP,TGT,TEL,TDY,TER,TSLA,TXN,TPL,TXT,TMO,TJX,TKO,TSCO,TT,TDG,TRV,TRMB,TFC,TYL,TSN,USB,UBER,UDR,ULTA,UNP,UAL,UPS,URI,UNH,UHS,VLO,VEEV,VTR,VLTO,VRSN,VRSK,VZ,VRTX,VRT,VTRS,VICI,V,VST,VMC,WRB,GWW,WAB,WMT,DIS,WBD,WM,WAT,WEC,WFC,WELL,WST,WDC,WY,WSM,WMB,WTW,WDAY,WYNN,XEL,XYL,YUM,ZBRA,ZBH,ZTS"
-NASDAQ_FULL = "MDLZ,ADI,ADP,ADSK,AAL,ALGN,AMAT,AMD,AMGN,AMZN,ANSS,ASML,TEAM,ADBE,BIIB,BMRN,BKNG,AVGO,CDNS,CDW,CERN,CHTR,CHKP,CTAS,CSCO,CTSH,CMCSA,CPRT,COST,CRWD,DLTR,DXCM,EBAY,EA,EXPE,FAST,FB,FISV,FOXA,FOX,GILD,GOOGL,GOOG,IDXX,ILMN,INCY,INTC,INTU,ISRG,JBHT,JD,KDP,KLAC,KHC,LRCX,LULU,MELI,MAR,MTCH,MCHP,MU,MSFT,MRNA,MDLO,MNST,NTES,NFLX,NVDA,NXPI,ORLY,OKTA,ODFL,PCAR,PAYX,PYPL,PEP,PDD,REGN,ROST,SIRI,SWKS,SPLK,SBUX,SNPS,TMUS,TSLA,TXN,TCOM,VRSN,VRTX,WBA,WDAY,XEL,XLNX,ZM"
-FTSEMIB_FULL = "A2A.MI,AMP.MI,AZM.MI,BAMI.MI,BCA.MI,BMED.MI,BPER.MI,CPR.MI,DIA.MI,ENI.MI,ERG.MI,EVO.MI,FBK.MI,G.MI,HER.MI,INW.MI,ISP.MI,LDO.MI,MB.MI,MONC.MI,NEXI.MI,PIRC.MI,PRY.MI,PST.MI,RACE.MI,REC.MI,SGO.MI,SRG.MI,STLAM.MI,STMMI.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,YSVP.MI"
-CRYPTO_FULL = "BTC-USD,ETH-USD,SOL-USD,BNB-USD,XRP-USD,ADA-USD,DOGE-USD,AVAX-USD,DOT-USD,LINK-USD,MATIC-USD,LTC-USD,UNI-USD,NEAR-USD,SUI-USD"
+# --- DATABASE INTERNO DEI PANIERI ---
+SP500_FULL = (
+    "MMM,AOS,ABT,ABBV,ACN,ADBE,AMD,AES,AFL,A,APD,ABNB,AKAM,ALB,ARE,ALGN,ALLE,LNT,ALL,GOOGL,GOOG,MO,AMZN,AMCR,AEE,"
+    "AEP,AXP,AIG,AMT,AWK,AMP,AME,AMGN,APH,ADI,AON,APA,APO,AAPL,AMAT,APP,APTV,ACGL,ADM,ARES,ANET,AJG,AIZ,T,ATO,ADSK,"
+    "ADP,AZO,AVY,AXON,BKR,BALL,BAC,BAX,BDX,BRK-B,BBY,TECH,BIIB,BLK,BX,BE,BNY,BA,BKNG,BSX,BMY,AVGO,BR,BRO,BF-B,BG,"
+    "BXP,CHRW,CDNS,CPT,COF,CAH,CCL,CARR,CVNA,CASY,CAT,CBOE,CBRE,CDW,COR,CNC,CNP,CF,CRL,SCHW,CHTR,CVX,CMG,CB,CHD,"
+    "CIEN,CI,CINF,CTAS,CSCO,C,CFG,CLX,CME,CMS,KO,CTSH,COHR,COIN,CL,CMCSA,FIX,COP,ED,STZ,CEG,COO,CPRT,GLW,CPAY,CTVA,"
+    "CSGP,COST,CRH,CRWD,CCI,CSX,CMI,CVS,DHR,DRI,DDOG,DVA,DECK,DE,DELL,DAL,DVN,DXCM,FANG,DLR,DG,DLTR,D,DPZ,DASH,DOV,"
+    "DOW,DHI,DTE,DUK,DD,ETN,EBAY,ECHO,ECL,EIX,EW,ELV,EME,EMR,ETR,EOG,EQT,EFX,EQIX,ERIE,ESS,EL,EG,EVRG,P,ES,EXC,EXE,"
+    "EXPE,EXPD,EXR,XOM,FFIV,FDS,FICO,FAST,FRT,FDX,FDXF,FERG,FIS,FITB,FSLR,FE,FISV,FLEX,F,FTNT,FTV,FOXA,FOX,BEN,FCX,"
+    "GRMN,IT,GE,GEHC,GEV,GEN,GNRC,GD,GIS,GM,GPC,GILD,GPN,GL,GDDY,GS,HAL,HIG,HAS,HCA,DOC,HSIC,HSY,HPE,HLT,HD,HON,HRL,"
+    "HST,HWM,HUBB,HUM,HBAN,HII,IBM,IEX,IDXX,ITW,ILMN,INCY,IR,PODD,INTC,IBKR,ICE,IFF,IP,INTU,ISRG,IVZ,INVH,IQV,"
+    "IRM,JBHT,JBL,JKHY,J,JNJ,JCI,JPM,KVUE,KDP,KEY,KEYS,KMB,KIM,KMI,KKR,KLAC,KHC,KR,LHX,LH,LRCX,LVS,LDOS,LEN,LII,LLY,"
+    "LIN,LYV,LMT,L,LOW,LULU,LITE,LYB,MTB,MPC,MAR,MRSH,MLM,MRVL,MAS,MA,MKC,MCD,MCK,MDT,MRK,META,MET,MTD,MGM,MCHP,MU,"
+    "MSFT,MAA,MRNA,MDLZ,MPWR,MNST,MCO,MS,MOS,MSI,MSCI,NDAQ,NTAP,NFLX,NEM,NWSA,NWS,NEE,NKE,NI,NDSN,NSC,NTRS,NOC,NCLH,"
+    "NRG,NUE,NVDA,NVR,NXPI,ORLY,OXY,ODFL,OMC,ON,OKE,ORCL,OTIS,PCAR,PKG,PLTR,PANW,PSKY,PH,PAYX,PYPL,PNR,PEP,PFE,PCG,"
+    "PM,PSX,PNW,PNC,PPG,PPL,PFG,PG,PGR,PLD,PRU,PEG,PTC,PSA,PHM,PWR,QCOM,DGX,Q,RL,RJF,RDDT,RTX,O,REG,REGN,RF,RSG,"
+    "RMD,RVTY,HOOD,ROK,ROL,ROP,ROST,RCL,SPGI,CRM,SBAC,SLB,STX,SRE,NOW,SHW,SPG,SWKS,SJM,SW,SNA,SOLV,SO,LUV,SWK,SBUX,"
+    "STT,STLD,STE,SYK,SMCI,SYF,SNPS,SYY,TMUS,TROW,TTWO,TPR,TRGP,TGT,TEL,TDY,TER,TSLA,TXN,TPL,TXT,TMO,TJX,TKO,TSCO,"
+    "TT,TDG,TRV,TRMB,TFC,TYL,TSN,USB,UBER,UDR,ULTA,UNP,UAL,UPS,URI,UNH,UHS,VLO,VEEV,VTR,VLTO,VRSN,VRSK,VZ,VRTX,VRT,"
+    "VTRS,VICI,V,VST,VMC,WRB,GWW,WAB,WMT,DIS,WBD,WM,WAT,WEC,WFC,WELL,WST,WDC,WY,WSM,WMB,WTW,WDAY,WYNN,XEL,XYL,YUM,"
+    "ZBRA,ZBH,ZTS"
+)
+
+NASDAQ_FULL = (
+    "MDLZ,ADI,ADP,ADSK,AAL,ALGN,AMAT,AMD,AMGN,AMZN,ANSS,ASML,TEAM,ADBE,BIIB,BMRN,BKNG,AVGO,CDNS,CDW,CERN,CHTR,"
+    "CHKP,CTAS,CSCO,CTSH,CMCSA,CPRT,COST,CRWD,DLTR,DXCM,EBAY,EA,EXPE,FAST,FB,FISV,FOXA,FOX,GILD,GOOGL,GOOG,"
+    "IDXX,ILMN,INCY,INTC,INTU,ISRG,JBHT,JD,KDP,KLAC,KHC,LRCX,LULU,MELI,MAR,MTCH,MCHP,MU,MSFT,MRNA,MDLO,MNST,"
+    "NTES,NFLX,NVDA,NXPI,ORLY,OKTA,ODFL,PCAR,PAYX,PYPL,PEP,PDD,REGN,ROST,SIRI,SWKS,SPLK,SBUX,SNPS,TMUS,TSLA,"
+    "TXN,TCOM,VRSN,VRTX,WBA,WDAY,XEL,XLNX,ZM"
+)
+
+FTSEMIB_FULL = (
+    "A2A.MI,AMP.MI,AZM.MI,BAMI.MI,BCA.MI,BMED.MI,BPER.MI,CPR.MI,DIA.MI,ENI.MI,ERG.MI,EVO.MI,FBK.MI,G.MI,"
+    "HER.MI,INW.MI,ISP.MI,LDO.MI,MB.MI,MONC.MI,NEXI.MI,PIRC.MI,PRY.MI,PST.MI,RACE.MI,REC.MI,SGO.MI,SRG.MI,"
+    "STLAM.MI,STMMI.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,YSVP.MI"
+)
+
+CRYPTO_FULL = (
+    "BTC-USD,ETH-USD,SOL-USD,BNB-USD,XRP-USD,ADA-USD,DOGE-USD,AVAX-USD,"
+    "DOT-USD,LINK-USD,MATIC-USD,LTC-USD,UNI-USD,NEAR-USD,SUI-USD"
+)
 
 def ottieni_paniere(nome_paniere):
     if nome_paniere == "S&P 500": return SP500_FULL
@@ -93,17 +145,6 @@ def ottieni_paniere(nome_paniere):
     elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
     elif nome_paniere == "Crypto": return CRYPTO_FULL
     return "AAPL,MSFT"
-
-def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
-    payload = {"chat_id": int(chat_id), "text": str(testo_messaggio), "parse_mode": "HTML", "disable_web_page_preview": False}
-    try:
-        part1, part2 = "https://" + "api.", "telegram.org/bot"
-        part3 = "8887634238:AAFH6eMqMhSTbe3pkUU_u0dpOulZXrud7RE/sendMessage"
-        url_pulito = part1 + part2 + part3
-        res = requests.post(url_pulito, data=json.dumps(payload), headers=TESTA_INTERNET, timeout=12)
-        return res.status_code == 200
-    except Exception:
-        return False
 
 def calc_vp(df, div=200):
     if df.empty: return None, None, None, [], []
@@ -137,8 +178,9 @@ def calc_vp(df, div=200):
         
     return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
 
-# Inizializzazione fisica dei Tab
+# Generazione dei Tab principali nell'interfaccia
 tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram"])
+
 # --- TAB 1: ANALISI TRIPLE-POC ---
 with tab1:
     st.subheader("📊 Analisi Grafica Avanzata Volume Profile & Nodes")
@@ -155,7 +197,6 @@ with tab1:
         period_map = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}
         g3 = period_map[period_label]
 
-    # Area di inserimento/verifica dei Ticker
     tickers_input = st.text_area("Modifica o verifica i Tickers estratti (separati da virgola):", value=ticker_caricati, height=150, key=f"an_area_{paniere_selezionato}")
 
     if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
@@ -165,15 +206,11 @@ with tab1:
         else:
             st.success(f"Analisi avviata per {len(tickers)} elementi. Generazione fogli ticker...")
             
-            # --- CREAZIONE SCHEDE STILE FOGLIO EXCEL (Tabs annidati per ticker) ---
+            # Generazione dinamica delle schede annidate (Stile fogli Excel)
             fogli_ticker = st.tabs(tickers)
             
-            # Iteriamo contemporaneamente sui ticker e sui rispettivi tab/foglio excel generati
             for ticker, foglio_attivo in zip(tickers, fogli_ticker):
                 with foglio_attivo:
-                    # Tutto il rendering grafico avviene dentro lo specifico foglio/tab del ticker corrente
-                    st.markdown(f"### 📈 Analisi Avanzata Volumi per: **{ticker}**")
-                    
                     tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
                     df_c = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
                     
@@ -186,68 +223,61 @@ with tab1:
                         p1, vh1, vl1, prz1, vl_v1 = calc_vp(df1)
                         p2, vh2, vl2, prz2, vl_v2 = calc_vp(df2)
                         p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
+                        if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]: continue
                         
-                        if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]: 
-                            st.error(f"Impossibile calcolare il profilo dei volumi per {ticker}.")
-                            continue
+                        # Spaziatura verticale fissata a 0.12 per eliminare le sovrapposizioni delle diciture
+                        fig = make_subplots(
+                            rows=3, cols=1, 
+                            subplot_titles=(
+                                f"1. STORICO COMPLETO DALL'INIZIO ({ticker}) — POC: {round(p1,2)}", 
+                                f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — POC: {round(p2,2)}", 
+                                f"3. PROFILO RECENTE {period_label.upper()} — POC: {round(p3,2)}"
+                            ), 
+                            vertical_spacing=0.12
+                        )
+                        cfg = [(1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")]
                         
-                                            # --- CONFIGURAZIONE SPAZIATURA AVANZATA ---
-                    # Incrementiamo vertical_spacing da 0.07 a 0.12 per distanziare nettamente i pannelli
-                    fig = make_subplots(
-                        rows=3, cols=1, 
-                        subplot_titles=(
-                            f"1. STORICO COMPLETO DALL'INIZIO — POC: {round(p1,2)}", 
-                            f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — POC: {round(p2,2)}", 
-                            f"3. PROFILO RECENTE {period_label.upper()} — POC: {round(p3,2)}"
-                        ), 
-                        vertical_spacing=0.12  
-                    )
-                    cfg = [(1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")]
-                    
-                    for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
-                        if df_s.empty: continue
-                        fig.add_trace(grp.Candlestick(x=df_s.index, open=df_s["Open"].astype(float), high=df_s["High"].astype(float), low=df_s["Low"].astype(float), close=df_s["Close"].astype(float), name=nm), row=r_idx, col=1)
+                        for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
+                            if df_s.empty: continue
+                            fig.add_trace(grp.Candlestick(x=df_s.index, open=df_s["Open"].astype(float), high=df_s["High"].astype(float), low=df_s["Low"].astype(float), close=df_s["Close"].astype(float), name=nm), row=r_idx, col=1)
+                            
+                            if v_vp and max(v_vp) > 0:
+                                m_v, d_i, d_f = max(v_vp), df_s.index.min(), df_s.index.max()
+                                ext = (d_f - d_i).days
+                                step_k = max(1, len(v_vp) // 60)
+                                for i in range(0, len(v_vp), step_k):
+                                    idx_fine = min(i + step_k, len(v_vp) - 1)
+                                    y0_val, y1_val = float(p_vp[i]), float(p_vp[idx_fine])
+                                    if y0_val == y1_val:
+                                        sp_m = (max(p_vp) - min(p_vp)) * 0.005
+                                        y0_val -= sp_m; y1_val += sp_m
+                                    w = (float(v_vp[i]) / m_v) * (ext * 0.18) if m_v > 0 else 0
+                                    x1_date = d_i + pd.Timedelta(days=int(w) if w > 0 else 1)
+                                    col_b = "rgba(242,142,43,0.22)" if p_vl <= p_vp[i] <= p_vh else "rgba(0,165,181,0.08)"
+                                    fig.add_shape(type="rect", x0=d_i, x1=x1_date, y0=y0_val, y1=y1_val, fillcolor=col_b, line=dict(width=0), row=r_idx, col=1)
+                            
+                            dir_s, ic, sl, tp, col_z = ("LONG", "🟢", p_vl*0.985, p_vh, "rgba(40,167,69,0.10)") if p_att >= p_poc else ("SHORT", "🔴", p_vh*1.015, p_vl, "rgba(220,53,69,0.10)")
+                            rr = round(abs(tp - p_poc) / abs(p_poc - sl), 2) if abs(p_poc - sl) > 0 else 0
+                            data_l_i, data_l_f = df_s.index[int(len(df_s)*0.65)], df_s.index[-1]
+                            
+                            fig.add_shape(type="rect", x0=data_l_i, x1=data_l_f, y0=min(p_poc, tp), y1=max(p_poc, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
+                            fig.add_shape(type="line", x0=df_s.index.min(), x1=data_l_f, y0=p_poc, y1=p_poc, line=dict(color="#dc3545", width=2.5), row=r_idx, col=1)
+                            fig.add_shape(type="line", x0=data_l_i, x1=data_l_f, y0=sl, y1=sl, line=dict(color="#ffc107", width=1.5, dash="dash"), row=r_idx, col=1)
+                            fig.add_shape(type="line", x0=data_l_i, x1=data_l_f, y0=tp, y1=tp, line=dict(color="#17a2b8", width=2), row=r_idx, col=1)
+                            
+                            fig.add_annotation(x=data_l_f, y=p_poc, text=f" POC ENTRY: {round(p_poc,2)}", showarrow=False, align="left", bgcolor="#dc3545", font=dict(color="white", size=9, family="Arial Black"), row=r_idx, col=1)
+                            fig.add_annotation(x=data_l_f, y=sl, text=f" SL STOP: {round(sl,2)}", showarrow=False, align="left", bgcolor="#ffc107", font=dict(color="black", size=9), row=r_idx, col=1)
+                            fig.add_annotation(x=data_l_f, y=tp, text=f" TP TARGET: {round(tp,2)}", showarrow=False, align="left", bgcolor="#17a2b8", font=dict(color="white", size=9), row=r_idx, col=1)
+                            
+                            txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Direzione: {ic} {dir_s}<br>Rapporto R/R: 1:{rr}<br><br>🔴 POC: {round(p_poc,2)}<br>🟠 VAH: {round(p_vh,2)}<br>🔵 VAL: {round(p_vl,2)}"
+                            
+                            # Calibrazione cartesiana asse Y cartaceo (paper)
+                            y_pos_map = {1: 0.96, 2: 0.62, 3: 0.28}
+                            fig.add_annotation(xref="paper", yref="paper", x=0.01, y=y_pos_map[r_idx], text=txt_leg, showarrow=False, align="left", bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.5)", borderwidth=1.5, borderpad=10, font=dict(color="white", size=10))
                         
-                        if v_vp and max(v_vp) > 0:
-                            m_v, d_i, d_f = max(v_vp), df_s.index.min(), df_s.index.max()
-                            ext = (d_f - d_i).days
-                            step_k = max(1, len(v_vp) // 60)
-                            for i in range(0, len(v_vp), step_k):
-                                idx_fine = min(i + step_k, len(v_vp) - 1)
-                                y0_val, y1_val = float(p_vp[i]), float(p_vp[idx_fine])
-                                if y0_val == y1_val:
-                                    sp_m = (max(p_vp) - min(p_vp)) * 0.005
-                                    y0_val -= sp_m; y1_val += sp_m
-                                w = (float(v_vp[i]) / m_v) * (ext * 0.18) if m_v > 0 else 0
-                                x1_date = d_i + pd.Timedelta(days=int(w) if w > 0 else 1)
-                                col_b = "rgba(242,142,43,0.22)" if p_vl <= p_vp[i] <= p_vh else "rgba(0,165,181,0.08)"
-                                fig.add_shape(type="rect", x0=d_i, x1=x1_date, y0=y0_val, y1=y1_val, fillcolor=col_b, line=dict(width=0), row=r_idx, col=1)
-                        
-                        dir_s, ic, sl, tp, col_z = ("LONG", "🟢", p_vl*0.985, p_vh, "rgba(40,167,69,0.10)") if p_att >= p_poc else ("SHORT", "🔴", p_vh*1.015, p_vl, "rgba(220,53,69,0.10)")
-                        rr = round(abs(tp - p_poc) / abs(p_poc - sl), 2) if abs(p_poc - sl) > 0 else 0
-                        data_l_i, data_l_f = df_s.index[int(len(df_s)*0.65)], df_s.index[-1]
-                        
-                        fig.add_shape(type="rect", x0=data_l_i, x1=data_l_f, y0=min(p_poc, tp), y1=max(p_poc, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
-                        fig.add_shape(type="line", x0=df_s.index.min(), x1=data_l_f, y0=p_poc, y1=p_poc, line=dict(color="#dc3545", width=2.5), row=r_idx, col=1)
-                        fig.add_shape(type="line", x0=data_l_i, x1=data_l_f, y0=sl, y1=sl, line=dict(color="#ffc107", width=1.5, dash="dash"), row=r_idx, col=1)
-                        fig.add_shape(type="line", x0=data_l_i, x1=data_l_f, y0=tp, y1=tp, line=dict(color="#17a2b8", width=2), row=r_idx, col=1)
-                        
-                        fig.add_annotation(x=data_l_f, y=p_poc, text=f" POC ENTRY: {round(p_poc,2)}", showarrow=False, align="left", bgcolor="#dc3545", font=dict(color="white", size=9, family="Arial Black"), row=r_idx, col=1)
-                        fig.add_annotation(x=data_l_f, y=sl, text=f" SL STOP: {round(sl,2)}", showarrow=False, align="left", bgcolor="#ffc107", font=dict(color="black", size=9), row=r_idx, col=1)
-                        fig.add_annotation(x=data_l_f, y=tp, text=f" TP TARGET: {round(tp,2)}", showarrow=False, align="left", bgcolor="#17a2b8", font=dict(color="white", size=9), row=r_idx, col=1)
-                        
-                        txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Direzione: {ic} {dir_s}<br>Rapporto R/R: 1:{rr}<br><br>🔴 POC: {round(p_poc,2)}<br>🟠 VAH: {round(p_vh,2)}<br>🔵 VAL: {round(p_vl,2)}"
-                        
-                        # Ricalibrazione asse coordinate y relative (paper) per evitare sovrapposizioni tra i riquadri delle legende
-                        y_pos_map = {1: 0.96, 2: 0.62, 3: 0.28}
-                        fig.add_annotation(xref="paper", yref="paper", x=0.01, y=y_pos_map[r_idx], text=txt_leg, showarrow=False, align="left", bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.5)", borderwidth=1.5, borderpad=10, font=dict(color="white", size=10))
-                    
-                    # Portiamo l'altezza totale (height) a 1600 per dare ampio respiro verticale ai tre layout cartesiani
-                    fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, height=1600, showlegend=False)
-                    st.plotly_chart(fig, use_container_width=True)
-
-                    else:
-                        st.warning(f"Nessun dato scaricabile da Yahoo Finance per il ticker {ticker}.")
+                        # Altezza totale fissata a 1600 pixel per garantire un ampio respiro visivo
+                        fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, height=1600, showlegend=False)
+                        st.plotly_chart(fig, use_container_width=True)
 
 # --- TAB 2: BACKTESTING ---
 with tab2:
@@ -313,16 +343,7 @@ with tab2:
                 
                 m_col1, m_col2, m_col3, m_col4 = st.columns(4)
                 m_col1.metric("Ritorno Totale", f"{round(((capitale - capitale_iniziale) / capitale_iniziale) * 100, 2)} %")
-                m_col2.metric("Percentuale Win Rate", f"{win_rate} %")
-                m_col3.metric("Profit Factor", f"{profit_factor}")
-                m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
-
-                fig_eq = grp.Figure()
-                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines', name='Equity', line=dict(color='#28a745', width=2)))
-                fig_eq.update_layout(title=f"📈 Andamento dell'Equity Line — {bt_ticker}", template="plotly_dark", height=400)
-                st.plotly_chart(fig_eq, use_container_width=True)
-                st.dataframe(df_trades, use_container_width=True)
-# --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
+                m_col2.metric("Percentuale Win Rate", f"{win_rate} %")# --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
 with tab3:
     st.subheader("🔔 Canale Notifiche in Tempo Reale via Telegram")
     st.success("✅ Sincronizzazione completata. Algoritmo vettoriale Numpy ad altissima stabilità attivo.")
@@ -409,7 +430,7 @@ with tab3:
                             else:
                                 borsa_codice = "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             
-                            url_stringa_pura = f"https://tradingview.com{borsa_codice}-{ticker_pulito}/"
+                            url_stringa_pura = f"https://tradingview.com/chart/sqBvK6ky/?symbol={borsa_codice}-{ticker_pulito}/"
                             
                             messaggio_alert = (
                                 f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
@@ -425,3 +446,13 @@ with tab3:
                             invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
                             
             st.success(f"Scansione terminata con successo! Inviati {segnali_trovati} segnali precisi su Telegram.")
+
+                m_col3.metric("Profit Factor", f"{profit_factor}")
+                m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
+
+                fig_eq = grp.Figure()
+                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines', name='Equity', line=dict(color='#38bdf8', width=2)))
+                fig_eq.update_layout(title=f"📈 Andamento dell'Equity Line — {bt_ticker}", template="plotly_dark", height=400)
+                st.plotly_chart(fig_eq, use_container_width=True)
+                st.dataframe(df_trades, use_container_width=True)
+
