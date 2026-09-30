@@ -184,7 +184,7 @@ tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram
 with tab1:
     st.subheader("📊 Analisi Grafica Avanzata Volume Profile & Indicatori")
     
-    # --- NUOVO BLOCCO INTERATTIVO: TOGGLE DEI LIVELLI ---
+    # --- TOGGLE DEI LIVELLI ---
     st.markdown("##### ⚙️ Personalizzazione Livelli Grafici")
     t_col1, t_col2, t_col3 = st.columns(3)
     with t_col1:
@@ -243,7 +243,6 @@ with tab1:
                         rs = gain / np.where(loss == 0, 0.00001, loss)
                         df_c["RSI"] = 100 - (100 / (1 + rs))
                         
-                        # Modificato il layout a 4 righe per fare spazio all'RSI inferiore
                         fig = make_subplots(
                             rows=4, cols=1, 
                             subplot_titles=(
@@ -262,7 +261,6 @@ with tab1:
                             if df_s.empty: continue
                             fig.add_trace(grp.Candlestick(x=df_s.index, open=df_s["Open"].astype(float), high=df_s["High"].astype(float), low=df_s["Low"].astype(float), close=df_s["Close"].astype(float), name=nm), row=r_idx, col=1)
                             
-                            # Disegno condizionale della Value Area (Istogrammi)
                             if mostra_va and v_vp and max(v_vp) > 0:
                                 m_v, d_i, d_f = max(v_vp), df_s.index.min(), df_s.index.max()
                                 ext = (d_f - d_i).days
@@ -282,7 +280,6 @@ with tab1:
                             rr = round(abs(tp - p_poc) / abs(p_poc - sl), 2) if abs(p_poc - sl) > 0 else 0
                             data_l_i, data_l_f = df_s.index[int(len(df_s)*0.65)], df_s.index[-1]
                             
-                            # Disegno condizionale delle zone R/R e Target
                             if mostra_rr:
                                 fig.add_shape(type="rect", x0=data_l_i, x1=data_l_f, y0=min(p_poc, tp), y1=max(p_poc, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
                                 fig.add_shape(type="line", x0=data_l_i, x1=data_l_f, y0=sl, y1=sl, line=dict(color="#ffc107", width=1.5, dash="dash"), row=r_idx, col=1)
@@ -290,7 +287,6 @@ with tab1:
                                 fig.add_annotation(x=data_l_f, y=sl, text=f" SL STOP: {round(sl,2)}", showarrow=False, align="left", bgcolor="#ffc107", font=dict(color="black", size=9), row=r_idx, col=1)
                                 fig.add_annotation(x=data_l_f, y=tp, text=f" TP TARGET: {round(tp,2)}", showarrow=False, align="left", bgcolor="#17a2b8", font=dict(color="white", size=9), row=r_idx, col=1)
                             
-                            # Disegno condizionale della linea del POC
                             if mostra_poc:
                                 fig.add_shape(type="line", x0=df_s.index.min(), x1=data_l_f, y0=p_poc, y1=p_poc, line=dict(color="#dc3545", width=2.5), row=r_idx, col=1)
                                 fig.add_annotation(x=data_l_f, y=p_poc, text=f" POC ENTRY: {round(p_poc,2)}", showarrow=False, align="left", bgcolor="#dc3545", font=dict(color="white", size=9, family="Arial Black"), row=r_idx, col=1)
@@ -299,19 +295,20 @@ with tab1:
                             y_pos_map = {1: 0.97, 2: 0.68, 3: 0.38}
                             fig.add_annotation(xref="paper", yref="paper", x=0.01, y=y_pos_map[r_idx], text=txt_leg, showarrow=False, align="left", bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.5)", borderwidth=1.5, borderpad=10, font=dict(color="white", size=10))
                         
-                        # --- TRACCIAMENTO GRAFICO DELL'RSI NEL PANNELLO 4 ---
-                        df_recent_rsi = df_c.tail(365) # Mostra l'ultimo anno di RSI per leggibilità
+                        # --- TRACCIAMENTO GRAFICO RSI (PANNELLO 4) ---
+                        df_recent_rsi = df_c.tail(365)
                         fig.add_trace(grp.Scatter(x=df_recent_rsi.index, y=df_recent_rsi["RSI"], mode="lines", name="RSI", line=dict(color="#c084fc", width=2)), row=4, col=1)
                         
-                        # Linee di Ipercomprato e Ipervenduto fisse
                         fig.add_shape(type="line", x0=df_recent_rsi.index.min(), x1=df_recent_rsi.index[-1], y0=70, y1=70, line=dict(color="rgba(239, 68, 68, 0.5)", width=1.5, dash="dot"), row=4, col=1)
                         fig.add_shape(type="line", x0=df_recent_rsi.index.min(), x1=df_recent_rsi.index[-1], y0=30, y1=30, line=dict(color="rgba(34, 197, 94, 0.5)", width=1.5, dash="dot"), row=4, col=1)
                         
-                        # Set del range dell'asse Y per l'RSI da 0 a 100
-                        fig.update_yaxes(range=[10, 90], row=4, col=1)
+                        fig.update_yaxes(range=[0, 100], row=4, col=1)
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, height=1800, showlegend=False)
-                    
-                    st.plotly_chart(fig, use_container_width=True)
+                        
+                        # RISOLTO BUG DUPLICATE ID: key dinamica basata sul ticker corrente
+                        st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
+                    else:
+                        st.warning(f"Nessun dato scaricabile da Yahoo Finance per il ticker {ticker}.")
 
 # --- TAB 2: BACKTESTING ---
 with tab2:
