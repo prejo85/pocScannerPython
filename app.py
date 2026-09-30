@@ -103,7 +103,7 @@ SP500_FULL = (
     "ADP,AZO,AVY,AXON,BKR,BALL,BAC,BAX,BDX,BRK-B,BBY,TECH,BIIB,BLK,BX,BE,BNY,BA,BKNG,BSX,BMY,AVGO,BR,BRO,BF-B,BG,"
     "BXP,CHRW,CDNS,CPT,COF,CAH,CCL,CARR,CVNA,CASY,CAT,CBOE,CBRE,CDW,COR,CNC,CNP,CF,CRL,SCHW,CHTR,CVX,CMG,CB,CHD,"
     "CIEN,CI,CINF,CTAS,CSCO,C,CFG,CLX,CME,CMS,KO,CTSH,COHR,COIN,CL,CMCSA,FIX,COP,ED,STZ,CEG,COO,CPRT,GLW,CPAY,CTVA,"
-    "CSGP,COST,CRH,CRWD,CCI,CSX,CMI,CVS,DHR,DRI,DDOG,DVA,DECK,DE,DELL,DAL,DVN,DXCM,FANG,DLR,DG,DLTR,D,DPZ,DASH,DOV,"
+    "CSGP,COST,CRH,CRWD,CCI,CSX,CMI,CVS,DHR,DRI,DRI,DVA,DECK,DE,DELL,DAL,DVN,DXCM,FANG,DLR,DG,DLTR,D,DPZ,DASH,DOV,"
     "DOW,DHI,DTE,DUK,DD,ETN,EBAY,ECHO,ECL,EIX,EW,ELV,EME,EMR,ETR,EOG,EQT,EFX,EQIX,ERIE,ESS,EL,EG,EVRG,P,ES,EXC,EXE,"
     "EXPE,EXPD,EXR,XOM,FFIV,FDS,FICO,FAST,FRT,FDX,FDXF,FERG,FIS,FITB,FSLR,FE,FISV,FLEX,F,FTNT,FTV,FOXA,FOX,BEN,FCX,"
     "GRMN,IT,GE,GEHC,GEV,GEN,GNRC,GD,GIS,GM,GPC,GILD,GPN,GL,GDDY,GS,HAL,HIG,HAS,HCA,DOC,HSIC,HSY,HPE,HLT,HD,HON,HRL,"
@@ -180,7 +180,6 @@ def calc_vp(df, div=200):
 
 # Generazione dei Tab principali nell'interfaccia
 tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram"])
-
 # --- TAB 1: ANALISI TRIPLE-POC ---
 with tab1:
     st.subheader("📊 Analisi Grafica Avanzata Volume Profile & Nodes")
@@ -206,7 +205,7 @@ with tab1:
         else:
             st.success(f"Analisi avviata per {len(tickers)} elementi. Generazione fogli ticker...")
             
-            # Generazione dinamica delle schede annidate (Stile fogli Excel)
+            # Creazione schede Excel-style annidate per ogni ticker
             fogli_ticker = st.tabs(tickers)
             
             for ticker, foglio_attivo in zip(tickers, fogli_ticker):
@@ -225,7 +224,7 @@ with tab1:
                         p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
                         if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]: continue
                         
-                        # Spaziatura verticale fissata a 0.12 per eliminare le sovrapposizioni delle diciture
+                        # Spaziatura verticale aumentata a 0.12 per distanziare nettamente diciture e legende
                         fig = make_subplots(
                             rows=3, cols=1, 
                             subplot_titles=(
@@ -271,14 +270,13 @@ with tab1:
                             
                             txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Direzione: {ic} {dir_s}<br>Rapporto R/R: 1:{rr}<br><br>🔴 POC: {round(p_poc,2)}<br>🟠 VAH: {round(p_vh,2)}<br>🔵 VAL: {round(p_vl,2)}"
                             
-                            # Calibrazione cartesiana asse Y cartaceo (paper)
+                            # Mappatura delle posizioni fisse per evitare collisioni visive
                             y_pos_map = {1: 0.96, 2: 0.62, 3: 0.28}
                             fig.add_annotation(xref="paper", yref="paper", x=0.01, y=y_pos_map[r_idx], text=txt_leg, showarrow=False, align="left", bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.5)", borderwidth=1.5, borderpad=10, font=dict(color="white", size=10))
                         
-                        # Altezza totale fissata a 1600 pixel per garantire un ampio respiro visivo
+                        # Altezza fissata a 1600 per dare ampio respiro
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, height=1600, showlegend=False)
                         st.plotly_chart(fig, use_container_width=True)
-
 # --- TAB 2: BACKTESTING ---
 with tab2:
     st.subheader("⚙️ Motore di Simulazione Storica (Backtest)")
@@ -343,7 +341,16 @@ with tab2:
                 
                 m_col1, m_col2, m_col3, m_col4 = st.columns(4)
                 m_col1.metric("Ritorno Totale", f"{round(((capitale - capitale_iniziale) / capitale_iniziale) * 100, 2)} %")
-                m_col2.metric("Percentuale Win Rate", f"{win_rate} %")# --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
+                m_col2.metric("Percentuale Win Rate", f"{win_rate} %")
+                m_col3.metric("Profit Factor", f"{profit_factor}")
+                m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
+
+                fig_eq = grp.Figure()
+                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines', name='Equity', line=dict(color='#38bdf8', width=2)))
+                fig_eq.update_layout(title=f"📈 Andamento dell'Equity Line — {bt_ticker}", template="plotly_dark", height=400)
+                st.plotly_chart(fig_eq, use_container_width=True)
+                st.dataframe(df_trades, use_container_width=True)
+# --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
 with tab3:
     st.subheader("🔔 Canale Notifiche in Tempo Reale via Telegram")
     st.success("✅ Sincronizzazione completata. Algoritmo vettoriale Numpy ad altissima stabilità attivo.")
@@ -430,7 +437,7 @@ with tab3:
                             else:
                                 borsa_codice = "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             
-                            url_stringa_pura = f"https://tradingview.com/chart/sqBvK6ky/?symbol={borsa_codice}-{ticker_pulito}/"
+                            url_stringa_pura = f"https://tradingview.com{borsa_codice}-{ticker_pulito}/"
                             
                             messaggio_alert = (
                                 f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
@@ -446,13 +453,3 @@ with tab3:
                             invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
                             
             st.success(f"Scansione terminata con successo! Inviati {segnali_trovati} segnali precisi su Telegram.")
-
-                m_col3.metric("Profit Factor", f"{profit_factor}")
-                m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
-
-                fig_eq = grp.Figure()
-                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines', name='Equity', line=dict(color='#38bdf8', width=2)))
-                fig_eq.update_layout(title=f"📈 Andamento dell'Equity Line — {bt_ticker}", template="plotly_dark", height=400)
-                st.plotly_chart(fig_eq, use_container_width=True)
-                st.dataframe(df_trades, use_container_width=True)
-
