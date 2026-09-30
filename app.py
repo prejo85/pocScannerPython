@@ -8,7 +8,7 @@ import requests
 import json
 
 # 1. Impostazione della pagina web a tutto schermo e tema premium
-st.set_page_config(layout="wide", page_title="VolNodes Pro", page_icon="📐")
+st.set_page_config(layout="wide", page_title="POC Scanner Pro", page_icon="📐")
 
 # --- INIEZIONE CSS PER DESIGN PREMIUM E MODERNO (Glassmorphism & SaaS) ---
 st.markdown("""
@@ -83,7 +83,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📐 VolNodes Pro — Dashboard Multitasking")
+st.title("📐 Analisi POC Pro — Dashboard Multitasking")
 
 if "asset_type_index" not in st.session_state:
     st.session_state.asset_type_index = 0
