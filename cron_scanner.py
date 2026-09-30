@@ -49,9 +49,7 @@ FTSEMIB_FULL = (
     "HER.MI,INW.MI,ISP.MI,LDO.MI,MB.MI,MONC.MI,NEXI.MI,PIRC.MI,PRY.MI,PST.MI,RACE.MI,REC.MI,SGO.MI,SRG.MI,"
     "STLAM.MI,STMMI.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,YSVP.MI"
 )
-# =====================================================================
-# SUDDIVISIONE DEL PANIERE CRIPTO COMPONENTI GLI INDICI TOTAL 1, 2, 3
-# =====================================================================
+
 TOTAL1_LEADERS = "BTC-USD,ETH-USD"
 TOTAL2_MAJORS = "SOL-USD,BNB-USD,XRP-USD,ADA-USD,TRX-USD,DOT-USD,LINK-USD,AVAX-USD,TON-USD,SHIB-USD"
 TOTAL3_ALTS = (
@@ -62,17 +60,14 @@ TOTAL3_ALTS = (
     "ENS-USD,LRC-USD,ANKR-USD,WOO-USD,GMX-USD,JUP-USD"
 )
 
-# Paniere unificato per la scansione delle Criptovalute
 CRYPTO_FULL = f"{TOTAL1_LEADERS},{TOTAL2_MAJORS},{TOTAL3_ALTS}"
-
 
 def ottieni_paniere(nome_paniere):
     if nome_paniere == "S&P 500": return SP500_FULL
     elif nome_paniere == "NASDAQ 100": return NASDAQ_FULL
     elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
     elif nome_paniere == "Crypto (TOTAL 1-2-3)": return CRYPTO_FULL
-    return "AAPL, MSFT"
-
+    return "AAPL,MSFT"
 
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     payload = {"chat_id": int(chat_id), "text": str(testo_messaggio), "parse_mode": "HTML", "disable_web_page_preview": False}
@@ -85,14 +80,19 @@ def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     except Exception:
         return False
 
-
-def calc_vp(df, div=None):
+def calc_vp(df):
     if df.empty: return None, None, None, [], []
     df_calc = df.copy()
-    df_calc['Round_Close'] = df_calc['Close'].round(4)
-    vp_data = df_calc.groupby('Round_Close')['Volume'].sum().sort_index()
+    
+    col_close = next((c for c in df_calc.columns if c.lower() == 'close'), 'Close')
+    col_volume = next((c for c in df_calc.columns if c.lower() == 'volume'), 'Volume')
+    col_low = next((c for c in df_calc.columns if c.lower() == 'low'), 'Low')
+    col_high = next((c for c in df_calc.columns if c.lower() == 'high'), 'High')
+    
+    df_calc['Round_Close'] = df_calc[col_close].round(4)
+    vp_data = df_calc.groupby('Round_Close')[col_volume].sum().sort_index()
     if vp_data.empty or vp_data.sum() == 0:
-        p_min = float(df['Low'].min())
+        p_min = float(df[col_low].min())
         return p_min, p_min, p_min, [], []
     prices = vp_data.index.astype(float).tolist()
     volumes = vp_data.values.astype(float).tolist()
@@ -108,15 +108,13 @@ def calc_vp(df, div=None):
         else: idx_a += 1; v_current += v_p
     return poc, prices[min(len(prices) - 1, idx_a)], prices[max(0, idx_b)], prices, volumes
 
-# =====================================================================
-# ESECUZIONE AUTOMATICA DELLE 22:00 (INTEGRATA SU GITHUB ACTIONS)
-# =====================================================================
 if __name__ == "__main__":
     print("Avvio scansione POC automatica globale...")
     
-    soglia_distanza = 5.0                  # Distanza massima in % dal POC
-    poc_scelti = ["Generale", "ATH", "Recente (90D)"]
+    invia_messaggio_telegram_sbloccato(T_ID, "🚀 <b>POC Scanner Actions:</b> Avvio del ciclo globale sui panieri...")
     
+    soglia_distanza = 1.5                  # Distanza massima tollerata in % dal POC
+    poc_scelti = ["Generale", "ATH", "Recente (90D)"]
     panieri_da_scansionare = ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto (TOTAL 1-2-3)"]
     segnali_trovati = 0
 
@@ -130,57 +128,50 @@ if __name__ == "__main__":
             if not ticker: continue
         
             print(f"[{idx+1}/{totale_titoli}] Scansione di {ticker}...")
-            df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=True, progress=False)
-            
-            if df_live is not None and not df_live.empty:
-                df_live.columns = [str(c).strip() for c in df_live.columns]
-                mappa_colonne = {c.lower(): c for c in df_live.columns}
+            try:
+                df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=True, progress=False, timeout=8)
                 
-                if "Crypto" in nome_paniere:
-                    if is_short_squeeze_risk(df_live):
-                        print(f"⚠️ {ticker} SALTATA: Rilevato potenziale rischio Short Squeeze.")
-                        continue
-                
-                if 'close' in mappa_colonne and 'high' in mappa_colonne and 'low' in mappa_colonne:
-                    p_attuale = float(df_live[mappa_colonne['close']].iloc[-1])
-                    d_ath = df_live[mappa_colonne['high']].idxmax()
+                if df_live is not None and not df_live.empty:
+                    df_live.columns = [str(c).strip() for c in df_live.columns]
+                    mappa_colonne = {c.lower(): c for c in df_live.columns}
                     
-                    df_generale = df_live.copy()
-                    df_ath_data = df_live.loc[d_ath:].copy()
-                    df_recente = df_live.tail(90).copy()
-                    
-                    controlli_da_effettuare = []
-                    if "Generale" in poc_scelti: controlli_da_effettuare.append(("GENERALE", df_generale))
-                    if "ATH" in poc_scelti: controlli_da_effettuare.append(("DALL'ATH", df_ath_data))
-                    if "Recente (90D)" in poc_scelti: controlli_da_effettuare.append(("RECENTE (90D)", df_recente))
-                    
-                    for nome_profilo, df_singolo_profilo in controlli_da_effettuare:
-                        if df_singolo_profilo.empty: continue
+                    if 'close' in mappa_colonne and 'high' in mappa_colonne and 'low' in mappa_colonne:
+                        p_attuale = float(df_live[mappa_colonne['close']].iloc[-1])
+                        d_ath = df_live[mappa_colonne['high']].idxmax()
                         
-                        df_input_vp = pd.DataFrame(index=df_singolo_profilo.index)
-                        df_input_vp['Open'] = df_singolo_profilo[mappa_colonne.get('open', 'Open')]
-                        df_input_vp['High'] = df_singolo_profilo[mappa_colonne['high']]
-                        df_input_vp['Low'] = df_singolo_profilo[mappa_colonne['low']]
-                        df_input_vp['Close'] = df_singolo_profilo[mappa_colonne['close']]
-                        df_input_vp['Volume'] = df_singolo_profilo[mappa_colonne.get('volume', 'Volume')]
+                        df_generale = df_live.copy()
+                        df_ath_data = df_live.loc[d_ath:].copy()
+                        df_recente = df_live.tail(90).copy()
                         
-                        p_poc, p_vh, p_vl, prz_v, vl_v = calc_vp(df_input_vp)
-                        if p_poc is None: continue
+                        controlli_da_effettuare = []
+                        if "Generale" in poc_scelti: controlli_da_effettuare.append(("GENERALE", df_generale))
+                        if "ATH" in poc_scelti: controlli_da_effettuare.append(("DALL'ATH", df_ath_data))
+                        if "Recente (90D)" in poc_scelti: controlli_da_effettuare.append(("RECENTE (90D)", df_recente))
                         
-                        distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
-                        
-                        if abs(distanza_percentuale) <= soglia_distanza:
-                            segnali_trovati += 1
-                            direzione = "LONG" if p_attuale >= p_poc else "SHORT"
-                            stop_1 = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
-                            take_p = p_vh if p_attuale >= p_poc else p_vl
+                        for nome_profilo, df_singolo_profilo in controlli_da_effettuare:
+                            if df_singolo_profilo.empty: continue
                             
-                            ticker_pulito = str(ticker).replace(".MI", "").replace("-USD", "")
-                            url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={parametro_simbolo}"
+                            p_poc, p_vh, p_vl, prz_v, vl_v = calc_vp(df_singolo_profilo)
+                            if p_poc is None: continue
                             
-                            dec = 4 if "Crypto" in nome_paniere else 2
+                            distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
                             
-                            messaggio_alert = (
+                            if abs(distanza_percentuale) <= soglia_distanza:
+                                segnali_trovati += 1
+                                direzione = "LONG 🟢" if p_attuale >= p_poc else "SHORT 🔴"
+                                stop_1 = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
+                                take_p = p_vh if p_attuale >= p_poc else p_vl
+                                
+                                ticker_pulito = str(ticker).replace(".MI", "").replace("-USD", "")
+                                
+                                if ".MI" in str(ticker): borsa_code = "MILAN"
+                                elif "-USD" in str(ticker): borsa_code = "BINANCE"
+                                else: borsa_code = "NASDAQ" if nome_paniere == "NASDAQ 100" else "NYSE"
+                                
+                                url_stringa_pura = f"https://tradingview.com{borsa_code}-{ticker_pulito}/"
+                                dec = 4 if "Crypto" in nome_paniere else 2
+                                
+                                messaggio_alert = (
                                 f"🚨 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
                                 f"📈 <b>Ticker:</b> #{ticker_pulito}\n"
                                 f"📊 <b>Profilo:</b> {nome_profilo}\n"
@@ -195,84 +186,3 @@ if __name__ == "__main__":
                             print(f"--> Segnale inviato per {ticker} ({nome_profilo})")
                         
     print(f"\nScansione completata. Trovati {segnali_trovati} segnali totali.")
-
-
-def avvia_scansione():
-    print("Inizio scansione giornaliera...")
-    
-    # --- TEST DI CONNESSIONE TELEGRAM ---
-    # Questo messaggio DEVE arrivare. Se non arriva, il problema è il Token o la Chat ID.
-    test_invio = invia_messaggio_telegram(T_ID, "🚀 <b>POC Scanner avviato su GitHub!</b> Test di connessione in corso...")
-    if test_invio:
-        print("✅ Messaggio di test inviato correttamente su Telegram.")
-    else:
-        print("❌ ERRORE: Impossibile inviare il messaggio su Telegram. Verifica il Token Bot o la Chat ID.")
-    
-    lista_ticker = [t.strip() for t in SP500_FULL.split(",") if t.strip()]
-    segnali_rilevati = 0
-    
-    for ticker in lista_ticker:
-        try:
-            df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False, timeout=10)
-            if df_live is None or df_live.empty: 
-                continue
-            
-            df_live.columns = [str(c).strip().lower() for c in df_live.columns]
-            
-            colonne_necessarie = ['close', 'high', 'low', 'open', 'volume']
-            if not all(col in df_live.columns for col in colonne_necessarie):
-                continue
-                
-            p_attuale = float(df_live['close'].iloc[-1])
-            d_ath = df_live['high'].idxmax()
-            
-            profili = {
-                "GENERALE": df_live.copy(),
-                "ATH": df_live.loc[d_ath:].copy(),
-                "RECENTE": df_live.tail(GIORNI_RECENTI).copy()
-            }
-            
-            for nome_profilo, df_singolo in profili.items():
-                if df_singolo.empty: continue
-                
-                df_input_vp = pd.DataFrame(index=df_singolo.index)
-                df_input_vp['Open'] = df_singolo['open'].astype(float)
-                df_input_vp['High'] = df_singolo['high'].astype(float)
-                df_input_vp['Low'] = df_singolo['low'].astype(float)
-                df_input_vp['Close'] = df_singolo['close'].astype(float)
-                df_input_vp['Volume'] = df_singolo['volume'].astype(float)
-                
-                p_poc, p_vh, p_vl, _, _ = calc_vp(df_input_vp)
-                if p_poc is None: continue
-                
-                distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
-                
-                # Monitoriamo i calcoli stampando i primi 10 ticker estratti
-                if segnali_rilevati < 5:
-                     print(f"Ticker: {ticker} | Prezzo: {round(p_attuale,2)} | POC {nome_profilo}: {round(p_poc,2)} | Distanza: {round(distanza_percentuale,2)}%")
-                
-                if abs(distanza_percentuale) <= SOGLIA_DISTANZA:
-                    segnali_rilevati += 1
-                    setup_tipo = "LONG 🟢" if p_attuale >= p_poc else "SHORT 🔴"
-                    stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
-                    take_p = p_vh if p_attuale >= p_poc else p_vl
-                    
-                    borsa = "NASDAQ" if PANIERE_SELEZIONATO == "NASDAQ 100" else "NYSE"
-                    url_tv = f"https://tradingview.com{borsa}-{ticker}/"
-                    
-                    messaggio = (
-                        f"📐 <b>AUTOMAZIONE: TRIPLE-POC RILEVATO</b>\n\n"
-                        f"🎯 <b>Ticker:</b> #{ticker}\n"
-                        f"🗂️ <b>Profilo Volume:</b> {nome_profilo}\n"
-                        f"⚡ <b>Setup Operativo:</b> {setup_tipo}\n\n"
-                        f"📊 <b>Prezzo Attuale:</b> {round(p_attuale, 2)} USD\n"
-                        f"🔴 <b>Entry POC Esatto:</b> {round(p_poc, 2)}\n"
-                        f"🟠 <b>Stop Loss (VAL/VAH):</b> {round(stop_l, 2)}\n"
-                        f"🔵 <b>Take Profit (VAH/VAL):</b> {round(take_p, 2)}\n\n"
-                        f"🔗 <a href='{url_tv}'>APRI IL GRAFICO SU TRADINGVIEW</a>"
-                    )
-                    invia_messaggio_telegram(T_ID, messaggio)
-        except Exception as e:
-            pass
-            
-    print(f"Scansione terminata. Segnali inviati: {segnali_rilevati}")
