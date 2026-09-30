@@ -103,7 +103,7 @@ SP500_FULL = (
     "ADP,AZO,AVY,AXON,BKR,BALL,BAC,BAX,BDX,BRK-B,BBY,TECH,BIIB,BLK,BX,BE,BNY,BA,BKNG,BSX,BMY,AVGO,BR,BRO,BF-B,BG,"
     "BXP,CHRW,CDNS,CPT,COF,CAH,CCL,CARR,CVNA,CASY,CAT,CBOE,CBRE,CDW,COR,CNC,CNP,CF,CRL,SCHW,CHTR,CVX,CMG,CB,CHD,"
     "CIEN,CI,CINF,CTAS,CSCO,C,CFG,CLX,CME,CMS,KO,CTSH,COHR,COIN,CL,CMCSA,FIX,COP,ED,STZ,CEG,COO,CPRT,GLW,CPAY,CTVA,"
-    "CSGP,COST,CRH,CRWD,CCI,CSX,CMI,CVS,DHR,DRI,DRI,DVA,DECK,DE,DELL,DAL,DVN,DXCM,FANG,DLR,DG,DLTR,D,DPZ,DASH,DOV,"
+    "CSGP,COST,CRH,CRWD,CCI,CSX,CMI,CVS,DHR,DRI,DVA,DECK,DE,DELL,DAL,DVN,DXCM,FANG,DLR,DG,DLTR,D,DPZ,DASH,DOV,"
     "DOW,DHI,DTE,DUK,DD,ETN,EBAY,ECHO,ECL,EIX,EW,ELV,EME,EMR,ETR,EOG,EQT,EFX,EQIX,ERIE,ESS,EL,EG,EVRG,P,ES,EXC,EXE,"
     "EXPE,EXPD,EXR,XOM,FFIV,FDS,FICO,FAST,FRT,FDX,FDXF,FERG,FIS,FITB,FSLR,FE,FISV,FLEX,F,FTNT,FTV,FOXA,FOX,BEN,FCX,"
     "GRMN,IT,GE,GEHC,GEV,GEN,GNRC,GD,GIS,GM,GPC,GILD,GPN,GL,GDDY,GS,HAL,HIG,HAS,HCA,DOC,HSIC,HSY,HPE,HLT,HD,HON,HRL,"
@@ -178,142 +178,13 @@ def calc_vp(df, div=200):
         
     return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
 
-# Generazione dei Tab principali nell'interfaccia
+# Inizializzazione fisica dei Tab principali
 tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram"])
-
-# --- TAB 1: ANALISI TRIPLE-POC ---
-with tab1:
-    st.subheader("📊 Analisi Grafica Avanzata Volume Profile & Indicatori")
-    
-    # --- TOGGLE DEI LIVELLI ---
-    st.markdown("##### ⚙️ Personalizzazione Livelli Grafici")
-    t_col1, t_col2, t_col3 = st.columns(3)
-    with t_col1:
-        mostra_poc = st.checkbox("Mostra Linea POC Entry (Rosso)", value=True, key="chk_poc")
-    with t_col2:
-        mostra_va = st.checkbox("Mostra Value Area & Istogrammi (VAH/VAL)", value=True, key="chk_va")
-    with t_col3:
-        mostra_rr = st.checkbox("Mostra Zone Target / Stop Loss (R/R)", value=True, key="chk_rr")
-    
-    st.markdown("---")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        paniere_selezionato = st.selectbox("Seleziona Indice/Paniere:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto"], key="an_paniere")
-        ticker_caricati = ottieni_paniere(paniere_selezionato)
-        if paniere_selezionato == "Crypto": st.session_state.asset_type_index = 1
-        else: st.session_state.asset_type_index = 0
-    with col2:
-        asset_type = st.selectbox("Tipo Asset:", ["Azione", "Criptovaluta"], index=st.session_state.asset_type_index, key="an_type")
-    with col3:
-        period_label = st.selectbox("Seleziona Estensione Profilo Recente:", ["3 Mesi", "6 Mesi", "9 Mesi"], key="an_period")
-        period_map = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}
-        g3 = period_map[period_label]
-
-    tickers_input = st.text_area("Modifica o verifica i Tickers estratti (separati da virgola):", value=ticker_caricati, height=150, key=f"an_area_{paniere_selezionato}")
-
-    if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
-        tickers = [t.strip().upper() for t in tickers_input.split(',') if t.strip()]
-        if not tickers:
-            st.warning("Inserisci almeno un ticker valido.")
-        else:
-            st.success(f"Analisi avviata per {len(tickers)} elementi. Generazione fogli ticker...")
-            
-            fogli_ticker = st.tabs(tickers)
-            
-            for ticker, foglio_attivo in zip(tickers, fogli_ticker):
-                with foglio_attivo:
-                    tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
-                    df_c = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
-                    
-                    if df_c is not None and not df_c.empty:
-                        close_series = df_c["Close"]
-                        p_att = float(close_series.values[-1] if hasattr(close_series, 'values') else close_series.iloc[-1])
-                        df1, d_ath = df_c.copy(), df_c["High"].idxmax()
-                        df2, df3 = df_c.loc[d_ath:].copy(), df_c.tail(g3).copy()
-                        
-                        p1, vh1, vl1, prz1, vl_v1 = calc_vp(df1)
-                        p2, vh2, vl2, prz2, vl_v2 = calc_vp(df2)
-                        p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
-                        if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]: continue
-                        
-                        # --- CALCOLO MATEMATICO DELL'RSI (14 Periodi) ---
-                        delta = df_c["Close"].diff()
-                        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-                        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-                        rs = gain / np.where(loss == 0, 0.00001, loss)
-                        df_c["RSI"] = 100 - (100 / (1 + rs))
-                        
-                        fig = make_subplots(
-                            rows=4, cols=1, 
-                            subplot_titles=(
-                                f"1. STORICO COMPLETO DALL'INIZIO ({ticker}) — POC: {round(p1,2)}", 
-                                f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — POC: {round(p2,2)}", 
-                                f"3. PROFILO RECENTE {period_label.upper()} — POC: {round(p3,2)}",
-                                "📊 OSCILLATORE MOMENTUM RSI (14)"
-                            ), 
-                            vertical_spacing=0.08,
-                            row_heights=[0.28, 0.28, 0.28, 0.16]
-                        )
-                        
-                        cfg = [(1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")]
-                        
-                        for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
-                            if df_s.empty: continue
-                            fig.add_trace(grp.Candlestick(x=df_s.index, open=df_s["Open"].astype(float), high=df_s["High"].astype(float), low=df_s["Low"].astype(float), close=df_s["Close"].astype(float), name=nm), row=r_idx, col=1)
-                            
-                            if mostra_va and v_vp and max(v_vp) > 0:
-                                m_v, d_i, d_f = max(v_vp), df_s.index.min(), df_s.index.max()
-                                ext = (d_f - d_i).days
-                                step_k = max(1, len(v_vp) // 60)
-                                for i in range(0, len(v_vp), step_k):
-                                    idx_fine = min(i + step_k, len(v_vp) - 1)
-                                    y0_val, y1_val = float(p_vp[i]), float(p_vp[idx_fine])
-                                    if y0_val == y1_val:
-                                        sp_m = (max(p_vp) - min(p_vp)) * 0.005
-                                        y0_val -= sp_m; y1_val += sp_m
-                                    w = (float(v_vp[i]) / m_v) * (ext * 0.18) if m_v > 0 else 0
-                                    x1_date = d_i + pd.Timedelta(days=int(w) if w > 0 else 1)
-                                    col_b = "rgba(242,142,43,0.22)" if p_vl <= p_vp[i] <= p_vh else "rgba(0,165,181,0.08)"
-                                    fig.add_shape(type="rect", x0=d_i, x1=x1_date, y0=y0_val, y1=y1_val, fillcolor=col_b, line=dict(width=0), row=r_idx, col=1)
-                            
-                            dir_s, ic, sl, tp, col_z = ("LONG", "🟢", p_vl*0.985, p_vh, "rgba(40,167,69,0.10)") if p_att >= p_poc else ("SHORT", "🔴", p_vh*1.015, p_vl, "rgba(220,53,69,0.10)")
-                            rr = round(abs(tp - p_poc) / abs(p_poc - sl), 2) if abs(p_poc - sl) > 0 else 0
-                            data_l_i, data_l_f = df_s.index[int(len(df_s)*0.65)], df_s.index[-1]
-                            
-                            if mostra_rr:
-                                fig.add_shape(type="rect", x0=data_l_i, x1=data_l_f, y0=min(p_poc, tp), y1=max(p_poc, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
-                                fig.add_shape(type="line", x0=data_l_i, x1=data_l_f, y0=sl, y1=sl, line=dict(color="#ffc107", width=1.5, dash="dash"), row=r_idx, col=1)
-                                fig.add_shape(type="line", x0=data_l_i, x1=data_l_f, y0=tp, y1=tp, line=dict(color="#17a2b8", width=2), row=r_idx, col=1)
-                                fig.add_annotation(x=data_l_f, y=sl, text=f" SL STOP: {round(sl,2)}", showarrow=False, align="left", bgcolor="#ffc107", font=dict(color="black", size=9), row=r_idx, col=1)
-                                fig.add_annotation(x=data_l_f, y=tp, text=f" TP TARGET: {round(tp,2)}", showarrow=False, align="left", bgcolor="#17a2b8", font=dict(color="white", size=9), row=r_idx, col=1)
-                            
-                            if mostra_poc:
-                                fig.add_shape(type="line", x0=df_s.index.min(), x1=data_l_f, y0=p_poc, y1=p_poc, line=dict(color="#dc3545", width=2.5), row=r_idx, col=1)
-                                fig.add_annotation(x=data_l_f, y=p_poc, text=f" POC ENTRY: {round(p_poc,2)}", showarrow=False, align="left", bgcolor="#dc3545", font=dict(color="white", size=9, family="Arial Black"), row=r_idx, col=1)
-                            
-                            txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Direzione: {ic} {dir_s}<br>Rapporto R/R: 1:{rr}<br><br>🔴 POC: {round(p_poc,2)}<br>🟠 VAH: {round(p_vh,2)}<br>🔵 VAL: {round(p_vl,2)}"
-                            y_pos_map = {1: 0.97, 2: 0.68, 3: 0.38}
-                            fig.add_annotation(xref="paper", yref="paper", x=0.01, y=y_pos_map[r_idx], text=txt_leg, showarrow=False, align="left", bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.5)", borderwidth=1.5, borderpad=10, font=dict(color="white", size=10))
-                        
-                        # --- TRACCIAMENTO GRAFICO RSI (PANNELLO 4) ---
-                        df_recent_rsi = df_c.tail(365)
-                        fig.add_trace(grp.Scatter(x=df_recent_rsi.index, y=df_recent_rsi["RSI"], mode="lines", name="RSI", line=dict(color="#c084fc", width=2)), row=4, col=1)
-                        
-                        fig.add_shape(type="line", x0=df_recent_rsi.index.min(), x1=df_recent_rsi.index[-1], y0=70, y1=70, line=dict(color="rgba(239, 68, 68, 0.5)", width=1.5, dash="dot"), row=4, col=1)
-                        fig.add_shape(type="line", x0=df_recent_rsi.index.min(), x1=df_recent_rsi.index[-1], y0=30, y1=30, line=dict(color="rgba(34, 197, 94, 0.5)", width=1.5, dash="dot"), row=4, col=1)
-                        
-                        fig.update_yaxes(range=[0, 100], row=4, col=1)
-                        fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, height=1800, showlegend=False)
-                        
-                        # RISOLTO BUG DUPLICATE ID: key dinamica basata sul ticker corrente
-                        st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
-                    else:
-                        st.warning(f"Nessun dato scaricabile da Yahoo Finance per il ticker {ticker}.")
-
-# --- TAB 2: BACKTESTING ---
+# --- TAB 2 - BLOCCO 1: INPUT INTERFACCIA UTENTE ---
 with tab2:
     st.subheader("⚙️ Motore di Simulazione Storica (Backtest)")
+    
+    # Organizzazione dei controlli in 3 colonne
     b_col1, b_col2, b_col3 = st.columns(3)
     with b_col1:
         bt_ticker = st.text_input("Inserisci un singolo Ticker da testare:", value="AAPL")
@@ -325,82 +196,96 @@ with tab2:
     with b_col3:
         comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5)
 
-    if st.button("🚀 Esegui Backtest Strategia", type="primary"):
-        st.info(f"Elaborazione della simulazione algoritmica per {bt_ticker}...")
-        df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
-        if df_bt is not None and len(df_bt) > 60:
-            capitale, in_posizione, prezzo_ingresso, livello_sl, livello_tp = capitale_iniziale, False, 0, 0, 0
-            equity_curve, date_curve, trade_history = [capitale_iniziale], [df_bt.index], []
+    avvia_backtest = st.button("🚀 Esegui Backtest Strategia", type="primary")
+# --- TAB 2 - BLOCCO 2: LOOP DI CALCOLO STRATEGIA ---
+if avvia_backtest:
+    st.info(f"Elaborazione della simulazione algoritmica per {bt_ticker}...")
+    df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
+    
+    if df_bt is not None and len(df_bt) > 60:
+        capitale, in_posizione, prezzo_ingresso, livello_sl, livello_tp = capitale_iniziale, False, 0, 0, 0
+        equity_curve, date_curve, trade_history = [capitale_iniziale], [df_bt.index[50]], []
+        size_contratti = 0
+        posizione_tipo = "LONG"
 
-            for i in range(50, len(df_bt)):
-                df_storico_finora = df_bt.iloc[:i]
-                riga_attuale = df_bt.iloc[i]
-                prezzo_corrente, data_corrente = float(riga_attuale["Close"]), df_bt.index[i]
+        for i in range(50, len(df_bt)):
+            df_storico_finora = df_bt.iloc[:i]
+            riga_attuale = df_bt.iloc[i]
+            prezzo_corrente, data_corrente = float(riga_attuale["Close"]), df_bt.index[i]
 
-                if not in_posizione:
-                    p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora)
-                    if p_poc is None: continue
-                    posizione_tipo = "LONG" if prezzo_corrente >= p_poc else "SHORT"
-                    prezzo_ingresso = prezzo_corrente
-                    livello_sl, livello_tp = (p_vl * 0.985, p_vh) if posizione_tipo == "LONG" else (p_vh * 1.015, p_vl)
-
-                    if livello_sl > 0 and abs(prezzo_ingresso - livello_sl) > 0:
-                        in_posizione = True
-                        size_contratti = (capitale * (rischio_trade / 100)) / abs(prezzo_ingresso - livello_sl)
-                else:
-                    high_g, low_g, uscito, p_chiusura = float(riga_attuale["High"]), float(riga_attuale["Low"]), False, 0
-                    if posizione_tipo == "LONG":
-                        if low_g <= livello_sl: uscito, p_chiusura = True, livello_sl
-                        elif high_g >= livello_tp: uscito, p_chiusura = True, livello_tp
-                    elif posizione_tipo == "SHORT":
-                        if high_g >= livello_sl: uscito, p_chiusura = True, livello_sl
-                        elif low_g >= livello_tp: uscito, p_chiusura = True, livello_tp
-
-                    if uscito:
-                        pnl = ((p_chiusura - prezzo_ingresso) if posizione_tipo == "LONG" else (prezzo_ingresso - p_chiusura)) * size_contratti - (comun_fee * 2)
-                        capitale += pnl
-                        trade_history.append({"Data": data_corrente.strftime("%d/%m/%Y"), "Tipo": posizione_tipo, "Ingresso": round(prezzo_ingresso, 2), "Uscita": round(p_chiusura, 2), "PnL ($)": round(pnl, 2), "Capitale": round(capitale, 2)})
-                        equity_curve.append(capitale)
-                        date_curve.append(data_corrente)
-                        in_posizione = False
-
-            st.subheader("📊 Statistiche di Performance Log")
-            if trade_history:
-                df_trades = pd.DataFrame(trade_history)
-                profitti = df_trades[df_trades["PnL ($)"] > 0]["PnL ($)"].sum()
-                perdite = abs(df_trades[df_trades["PnL ($)"] < 0]["PnL ($)"].sum())
-                win_rate = round((len(df_trades[df_trades["PnL ($)"] > 0]) / len(df_trades)) * 100, 2)
-                profit_factor = round(profitti / perdite, 2) if perdite > 0 else float('inf')
-                max_dd = round(abs(((np.array(equity_curve) - np.maximum.accumulate(equity_curve)) / np.maximum.accumulate(equity_curve)).min()) * 100, 2)
+            if not in_posizione:
+                p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora)
+                if p_poc is None: continue
                 
-                m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-                m_col1.metric("Ritorno Totale", f"{round(((capitale - capitale_iniziale) / capitale_iniziale) * 100, 2)} %")
-                m_col2.metric("Percentuale Win Rate", f"{win_rate} %")
-                m_col3.metric("Profit Factor", f"{profit_factor}")
-                m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
+                posizione_tipo = "LONG" if prezzo_corrente >= p_poc else "SHORT"
+                prezzo_ingresso = prezzo_corrente
+                livello_sl, livello_tp = (p_vl * 0.985, p_vh) if posizione_tipo == "LONG" else (p_vh * 1.015, p_vl)
 
-                fig_eq = grp.Figure()
-                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines', name='Equity', line=dict(color='#38bdf8', width=2)))
-                fig_eq.update_layout(title=f"📈 Andamento dell'Equity Line — {bt_ticker}", template="plotly_dark", height=400)
-                st.plotly_chart(fig_eq, use_container_width=True)
-                
-                # Visualizzazione della Tabella Dati
-                st.dataframe(df_trades, use_container_width=True)
-                
-                # --- STRUTTURA DI ESPORTAZIONE IN CSV COMPATIBILE EXCEL ---
-                csv_dati = df_trades.to_csv(index=False).encode('utf-8')
-                
-                st.markdown(" ") # Spaziatore visivo
-                st.download_button(
-                    label="📥 Esporta Storico Operazioni (CSV)",
-                    data=csv_dati,
-                    file_name=f"backtest_{bt_ticker}_{bt_periodo.replace(' ', '_').lower()}.csv",
-                    mime="text/csv",
-                    key="btn_download_csv"
-                )
+                if livello_sl > 0 and abs(prezzo_ingresso - livello_sl) > 0:
+                    in_posizione = True
+                    size_contratti = (capitale * (rischio_trade / 100)) / abs(prezzo_ingresso - livello_sl)
             else:
-                st.warning("Nessuna operazione eseguita nel periodo selezionato con i parametri attuali.")
+                high_g, low_g, uscito, p_chiusura = float(riga_attuale["High"]), float(riga_attuale["Low"]), False, 0
+                if posizione_tipo == "LONG":
+                    if low_g <= livello_sl: uscito, p_chiusura = True, livello_sl
+                    elif high_g >= livello_tp: uscito, p_chiusura = True, livello_tp
+                elif posizione_tipo == "SHORT":
+                    if high_g >= livello_sl: uscito, p_chiusura = True, livello_sl
+                    elif low_g >= livello_tp: uscito, p_chiusura = True, livello_tp
 
+                if uscito:
+                    pnl = ((p_chiusura - prezzo_ingresso) if posizione_tipo == "LONG" else (prezzo_ingresso - p_chiusura)) * size_contratti - (comun_fee * 2)
+                    capitale += pnl
+                    trade_history.append({
+                        "Data": data_corrente.strftime("%d/%m/%Y"), 
+                        "Tipo": posizione_tipo, 
+                        "Ingresso": round(prezzo_ingresso, 2), 
+                        "Uscita": round(p_chiusura, 2), 
+                        "PnL ($)": round(pnl, 2), 
+                        "Capitale": round(capitale, 2)
+                    })
+                    equity_curve.append(capitale)
+                    date_curve.append(data_corrente)
+                    in_posizione = False
+# --- TAB 2 - BLOCCO 3: RENDER STATISTICHE E DOWNLOAD EXCEL/CSV ---
+        st.subheader("📊 Statistiche di Performance Log")
+        if trade_history:
+            df_trades = pd.DataFrame(trade_history)
+            profitti = df_trades[df_trades["PnL ($)"] > 0]["PnL ($)"].sum()
+            perdite = abs(df_trades[df_trades["PnL ($)"] < 0]["PnL ($)"].sum())
+            win_rate = round((len(df_trades[df_trades["PnL ($)"] > 0]) / len(df_trades)) * 100, 2)
+            profit_factor = round(profitti / perdite, 2) if perdite > 0 else float('inf')
+            max_dd = round(abs(((np.array(equity_curve) - np.maximum.accumulate(equity_curve)) / np.maximum.accumulate(equity_curve)).min()) * 100, 2)
+            
+            # Rendering delle Card con stile CSS Glow
+            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+            m_col1.metric("Ritorno Totale", f"{round(((capitale - capitale_iniziale) / capitale_iniziale) * 100, 2)} %")
+            m_col2.metric("Percentuale Win Rate", f"{win_rate} %")
+            m_col3.metric("Profit Factor", f"{profit_factor}")
+            m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
+
+            # Rendering grafico a linee
+            fig_eq = grp.Figure()
+            fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines', name='Equity', line=dict(color='#38bdf8', width=2)))
+            fig_eq.update_layout(title=f"📈 Andamento dell'Equity Line — {bt_ticker}", template="plotly_dark", height=400)
+            st.plotly_chart(fig_eq, use_container_width=True)
+            
+            # Tabella e pulsante di download
+            st.dataframe(df_trades, use_container_width=True)
+            
+            csv_dati = df_trades.to_csv(index=False).encode('utf-8')
+            st.markdown(" ") 
+            st.download_button(
+                label="📥 Esporta Storico Operazioni (CSV)",
+                data=csv_dati,
+                file_name=f"backtest_{bt_ticker}_{bt_periodo.replace(' ', '_').lower()}.csv",
+                mime="text/csv",
+                key="btn_download_csv"
+            )
+        else:
+            st.warning("Nessuna operazione eseguita nel periodo selezionato con i parametri attuali.")
+    else:
+        st.error("Dati insufficienti o ticker non valido per completare il calcolo.")
 # --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
 with tab3:
     st.subheader("🔔 Canale Notifiche in Tempo Reale via Telegram")
