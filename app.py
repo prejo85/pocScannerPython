@@ -298,7 +298,7 @@ with tab3:
         mappa_giorni_tg = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}
         g_recenti_scelti = mappa_giorni_tg[orizzonte_recente]
 
-    # RISOLUZIONE BUG AGGIORNAMENTO PANIERI SCANNER
+    # Widget di selezione paniere sincronizzato
     p_selezionato_alert = st.selectbox("Seleziona il paniere completo da scansionare:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto"], key="tg_paniere")
     lista_ticker_alert = [t.strip() for t in ottieni_paniere(p_selezionato_alert).split(",") if t.strip()]
     
@@ -359,15 +359,18 @@ with tab3:
                             take_p = p_vh if p_attuale >= p_poc else p_vl
                             
                             ticker_pulito = str(ticker).replace(".MI", "").strip()
-                            if str(ticker).endswith(".MI"):
-                                borsa_tv = f"MILANO:{ticker_pulito}"
-                            elif "-USD" in str(ticker):
-                                borsa_tv = f"COINBASE:{ticker_pulito.replace('-','')}"
-                            else:
-                                borsa_tv = ticker_pulito
                             
-                            # RISOLTO BUG: Utilizzo esatto della variabile borsa_tv sbloccata
-                            url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={borsa_tv}"
+                            # MODIFICA ASSEGNATA: Integrazione della struttura URL pulita basata sul formato di reindirizzamento dei simboli
+                            if str(ticker).endswith(".MI"):
+                                borsa_codice = "MIL"
+                            elif "-USD" in str(ticker):
+                                borsa_codice = "COINBASE"
+                                ticker_pulito = ticker_pulito.replace("-", "")
+                            else:
+                                borsa_codice = "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
+                            
+                            # Composizione della stringa stringente richiesta
+                            url_stringa_pura = f"https://www.tradingview.com/symbols/{borsa_codice}-{ticker_pulito}/"
                             
                             messaggio_alert = (
                                 f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
@@ -378,7 +381,7 @@ with tab3:
                                 f"🔴 <b>Entry POC Esatto:</b> {round(p_poc, 2)}\n"
                                 f"🟠 <b>Stop Loss (VAL/VAH):</b> {round(stop_l, 2)}\n"
                                 f"🔵 <b>Take Profit (VAH/VAL):</b> {round(take_p, 2)}\n\n"
-                                f"🔗 <b>APRI IL TUO GRAFICO PERSONALIZZATO:</b>\n{url_stringa_pura}"
+                                f"🔗 <b>APRI IL GRAFICO SU TRADINGVIEW:</b>\n{url_stringa_pura}"
                             )
                             invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
                             
