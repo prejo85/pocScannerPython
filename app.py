@@ -349,7 +349,24 @@ with tab2:
                 fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines', name='Equity', line=dict(color='#38bdf8', width=2)))
                 fig_eq.update_layout(title=f"📈 Andamento dell'Equity Line — {bt_ticker}", template="plotly_dark", height=400)
                 st.plotly_chart(fig_eq, use_container_width=True)
+                
+                # Visualizzazione della Tabella Dati
                 st.dataframe(df_trades, use_container_width=True)
+                
+                # --- STRUTTURA DI ESPORTAZIONE IN CSV COMPATIBILE EXCEL ---
+                csv_dati = df_trades.to_csv(index=False).encode('utf-8')
+                
+                st.markdown(" ") # Spaziatore visivo
+                st.download_button(
+                    label="📥 Esporta Storico Operazioni (CSV)",
+                    data=csv_dati,
+                    file_name=f"backtest_{bt_ticker}_{bt_periodo.replace(' ', '_').lower()}.csv",
+                    mime="text/csv",
+                    key="btn_download_csv"
+                )
+            else:
+                st.warning("Nessuna operazione eseguita nel periodo selezionato con i parametri attuali.")
+
 # --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
 with tab3:
     st.subheader("🔔 Canale Notifiche in Tempo Reale via Telegram")
