@@ -67,7 +67,7 @@ st.markdown("""
         text-shadow: 0 0 10px rgba(0, 206, 209, 0.3);
     }
 </style>
-""", unsafe_html=True)
+""", unsafe_allow_html=True)
 
 st.title("📐 Dashboard Finanziaria — Scansione, Backtest & Alert")
 
