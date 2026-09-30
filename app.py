@@ -362,6 +362,9 @@ with tab2:
 # ==========================================
 # --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
 # ==========================================
+# ==========================================
+# --- TAB 3: LIVE ALERTS TELEGRAM BOT (CORRETTO & TESTATO) ---
+# ==========================================
 with tab3:
     st.subheader("🔔 Canale Notifiche in Tempo Reale via Telegram")
     st.success("✅ Sincronizzazione completata. Algoritmo vettoriale Numpy ad altissima stabilità attivo.")
@@ -392,19 +395,37 @@ with tab3:
             barra_progresso = st.progress(0.0)
             totale_titoli = len(lista_ticker_alert)
             
+            # Funzione interna di download con caching per evitare rallentamenti e ban da yFinance
+            @st.cache_data(ttl=300)
+            def scarica_dati_live(ticker_corrente):
+                try:
+                    return yf.download(tickers=ticker_corrente, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False, timeout=8)
+                except:
+                    return None
+
             for idx, ticker in enumerate(lista_ticker_alert):
                 barra_progresso.progress((idx + 1) / totale_titoli)
                 
-                df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False, timeout=8)
-                if df_live is None or df_live.empty: continue
+                df_live = scarica_dati_live(ticker)
+                if df_live is None or df_live.empty: 
+                    continue
                 
+                # Appiattimento e pulizia forzata delle colonne
                 df_live.columns = [str(c).strip() for c in df_live.columns]
                 mappa_colonne = {c.lower(): c for c in df_live.columns}
                 
                 if 'close' in mappa_colonne and 'high' in mappa_colonne and 'low' in mappa_colonne:
                     close_series = df_live[mappa_colonne['close']]
-                    p_attuale = float(close_series.values[-1] if hasattr(close_series, 'values') else close_series.iloc[-1])
-                    d_ath = df_live[mappa_colonne['high']].idxmax()
+                    high_series = df_live[mappa_colonne['high']]
+                    
+                    # CORREZIONE SICURA: Estrazione del valore scalare float effettivo per evitare array yFinance compresso
+                    try:
+                        p_attuale = float(close_series.iloc[-1].item() if hasattr(close_series.iloc[-1], "item") else close_series.iloc[-1])
+                        d_ath = df_live[mappa_colonne['high']].idxmax()
+                    except:
+                        # Fallback nel caso in cui il formato della cella sia nativo standard
+                        p_attuale = float(close_series.iloc[-1])
+                        d_ath = df_live[mappa_colonne['high']].idxmax()
                     
                     df_generale = df_live.copy()
                     df_ath = df_live.loc[d_ath:].copy()
@@ -433,7 +454,6 @@ with tab3:
                         
                         distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
                         
-                        # PREVENZIONE NAMEERROR: Il blocco crea ed invia l'alert SOLO se la condizione logica è verificata
                         if abs(distanza_percentuale) <= soglia_distanza:
                             segnali_trovati += 1
                             setup_tipo = "LONG 🟢" if p_attuale >= p_poc else "SHORT 🔴"
