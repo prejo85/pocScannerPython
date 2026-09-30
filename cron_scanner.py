@@ -172,6 +172,7 @@ if __name__ == "__main__":
                                 dec = 4 if "Crypto" in nome_paniere else 2
                                 
                                 messaggio_alert = (
+
                                 f"🚨 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
                                 f"📈 <b>Ticker:</b> #{ticker_pulito}\n"
                                 f"📊 <b>Profilo:</b> {nome_profilo}\n"
