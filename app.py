@@ -316,9 +316,9 @@ with tab1:
                         fig.add_shape(type="line", x0=df_recent_rsi.index.min(), x1=df_recent_rsi.index[-1], y0=30, y1=30, line=dict(color="rgba(34, 197, 94, 0.5)", width=1.5, dash="dot"), row=4, col=1)
                         fig.update_yaxes(range=[0, 100], row=4, col=1)
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, height=1800, showlegend=False)
-                st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
-                else:
-                st.warning(f"Nessun dato scaricabile da Yahoo Finance per il ticker {ticker}.")
+                        st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
+                    else:
+                        st.warning(f"Nessun dato scaricabile da Yahoo Finance per il ticker {ticker}.")
 
 
 # --- TAB 2: BACKTESTING ---
