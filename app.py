@@ -12,6 +12,10 @@ st.set_page_config(layout="wide", page_title="Dashboard Finanziaria Completa")
 
 st.title("📐 Dashboard Finanziaria — Scansione, Backtest & Alert")
 
+# Inizializzazione degli stati della sessione per l'allineamento automatico dei menu
+if "asset_type_index" not in st.session_state:
+    st.session_state.asset_type_index = 0
+
 # Creazione delle schede interattive web
 tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram"])
 
@@ -61,9 +65,8 @@ FTSEMIB_FULL = (
 )
 
 CRYPTO_FULL = (
-    "BTC-USD, ETH-USD, SOL-USD, BNB-USD, XRP-USD, ADA-USD, DOGE-USD, AVAX-USD, "
-    "DOT-USD, LINK-USD, MATIC-USD, SHIB-USD, LTC-USD, UNI-USD, NEAR-USD, APT-USD, "
-    "ICP-USD, STX-USD, FIL-USD, ATOM-USD, IMX-USD, RNDR-USD, GRT-USD, FTM-USD, SUI-USD"
+    "BTC-USD,ETH-USD,SOL-USD,BNB-USD,XRP-USD,ADA-USD,DOGE-USD,AVAX-USD,"
+    "DOT-USD,LINK-USD,MATIC-USD,LTC-USD,UNI-USD,NEAR-USD,SUI-USD"
 )
 
 def ottieni_paniere(nome_paniere):
@@ -74,12 +77,7 @@ def ottieni_paniere(nome_paniere):
     return "AAPL,MSFT"
 
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
-    payload = {
-        "chat_id": int(chat_id),
-        "text": str(testo_messaggio),
-        "parse_mode": "HTML",
-        "disable_web_page_preview": False
-    }
+    payload = {"chat_id": int(chat_id), "text": str(testo_messaggio), "parse_mode": "HTML", "disable_web_page_preview": False}
     try:
         part1, part2 = "https://" + "api.", "telegram.org/bot"
         part3 = "8887634238:AAFH6eMqMhSTbe3pkUU_u0dpOulZXrud7RE/sendMessage"
@@ -89,66 +87,38 @@ def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     except Exception:
         return False
 
-# --- NUOVO ALGORITMO GEOMETRICO: DISTRIBUZIONE TICK-BY-TICK AGGIORNATA ---
-def calc_vp(df, div=None):
+# --- CALCOLO VETTORIALE NUMPY: PRECISOR CORRISPONDENTE A TV E ZERO TIMEOUT ---
+def calc_vp(df, div=200):
     if df.empty: return None, None, None, [], []
+    p_min, p_max = float(df['Low'].min()), float(df['High'].max())
+    if p_max - p_min <= 0: return p_min, p_min, p_min, [], []
     
-    p_min = round(float(df['Low'].min()), 2)
-    p_max = round(float(df['High'].max()), 2)
+    bins = np.linspace(p_min, p_max, div + 1)
+    vols = np.zeros(div)
     
-    if p_max - p_min <= 0:
-        return p_min, p_min, p_min, [], []
+    highs, lows, volumes = df['High'].values, df['Low'].values, df['Volume'].values
+    for h, l, v in zip(highs, lows, volumes):
+        if v <= 0 or h == l: continue
+        mask = (bins[1:] >= l) & (bins[:-1] <= h)
+        vols[mask] += v / max(1, np.sum(mask))
         
-    ticks = [round(p * 0.01, 2) for p in range(int(p_min * 100), int(p_max * 100) + 1)]
-    vols_dict = {t: 0.0 for t in ticks}
+    prices = [float((bins[i] + bins[i+1]) / 2) for i in range(div)]
+    vols_list = vols.tolist()
     
-    for _, row in df.iterrows():
-        h = round(float(row['High']), 2)
-        l = round(float(row['Low']), 2)
-        v = float(row['Volume'])
-        if v <= 0: continue
-        
-        tick_min_idx = int(l * 100)
-        tick_max_idx = int(h * 100)
-        num_ticks = tick_max_idx - tick_min_idx + 1
-        
-        if num_ticks > 0:
-            volume_per_tick = v / num_ticks
-            for t_idx in range(tick_min_idx, tick_max_idx + 1):
-                t_val = round(t_idx * 0.01, 2)
-                if t_val in vols_dict:
-                    vols_dict[t_val] += volume_per_tick
-
-    prices = sorted(list(vols_dict.keys()))
-    volumes = [vols_dict[p] for p in prices]
-    
-    if not volumes or max(volumes) == 0:
-        return p_min, p_min, p_min, prices, volumes
-
-    poc_idx = volumes.index(max(volumes))
+    poc_idx = vols_list.index(max(vols_list))
     poc = prices[poc_idx]
     
-    v_total = sum(volumes)
-    v_target = v_total * 0.70
-    v_current = volumes[poc_idx]
-    idx_b = poc_idx
-    idx_a = poc_idx
+    v_total, v_target = sum(vols_list), sum(vols_list) * 0.70
+    v_current, idx_b, idx_a = vols_list[poc_idx], poc_idx, poc_idx
     
     while v_current < v_target:
-        v_s = volumes[idx_b - 1] if idx_b > 0 else 0
-        v_p = volumes[idx_a + 1] if idx_a < len(volumes) - 1 else 0
+        v_s = vols_list[idx_b - 1] if idx_b > 0 else 0
+        v_p = vols_list[idx_a + 1] if idx_a < div - 1 else 0
         if v_s == 0 and v_p == 0: break
-        if v_s >= v_p:
-            idx_b -= 1
-            v_current += v_s
-        else:
-            idx_a += 1
-            v_current += v_p
-            
-    val = prices[max(0, idx_b)]
-    vah = prices[min(len(prices) - 1, idx_a)]
-    
-    return poc, vah, val, prices, volumes
+        if v_s >= v_p: idx_b -= 1; v_current += v_s
+        else: idx_a += 1; v_current += v_p
+        
+    return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
 # --- TAB 1: ANALISI TRIPLE-POC ---
 with tab1:
     st.subheader("📊 Analisi Grafica Avanzata Volume Profile & Nodes")
@@ -156,14 +126,17 @@ with tab1:
     with col1:
         paniere_selezionato = st.selectbox("Seleziona Indice/Paniere:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto"], key="an_paniere")
         ticker_caricati = ottieni_paniere(paniere_selezionato)
+        if paniere_selezionato == "Crypto": st.session_state.asset_type_index = 1
+        else: st.session_state.asset_type_index = 0
     with col2:
-        asset_type = st.selectbox("Tipo Asset:", ["Azione", "Criptovaluta"], key="an_type")
+        asset_type = st.selectbox("Tipo Asset:", ["Azione", "Criptovaluta"], index=st.session_state.asset_type_index, key="an_type")
     with col3:
         period_label = st.selectbox("Seleziona Estensione Profilo Recente:", ["3 Mesi", "6 Mesi", "9 Mesi"], key="an_period")
         period_map = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}
         g3 = period_map[period_label]
 
-    tickers_input = st.text_area("Modifica o verifica i Tickers estratti (separati da virgola):", value=ticker_caricati, height=150, key="an_area")
+    # RISOLUZIONE BUG CACHE: Chiave area dinamica basata sul paniere attivo
+    tickers_input = st.text_area("Modifica o verifica i Tickers estratti (separati da virgola):", value=ticker_caricati, height=150, key=f"an_area_{paniere_selezionato}")
 
     if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
         tickers = [t.strip().upper() for t in tickers_input.split(',') if t.strip()]
@@ -184,7 +157,6 @@ with tab1:
                     p1, vh1, vl1, prz1, vl_v1 = calc_vp(df1)
                     p2, vh2, vl2, prz2, vl_v2 = calc_vp(df2)
                     p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
-                    
                     if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]: continue
                     
                     fig = make_subplots(
@@ -196,76 +168,41 @@ with tab1:
                         ), 
                         vertical_spacing=0.07
                     )
-                    
-                    cfg = [
-                        (1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), 
-                        (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), 
-                        (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")
-                    ]
+                    cfg = [(1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")]
                     
                     for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
                         if df_s.empty: continue
+                        fig.add_trace(grp.Candlestick(x=df_s.index, open=df_s["Open"].astype(float), high=df_s["High"].astype(float), low=df_s["Low"].astype(float), close=df_s["Close"].astype(float), name=nm), row=r_idx, col=1)
                         
-                        # 1. Disegna le Candele Candlestick standard
-                        fig.add_trace(grp.Candlestick(
-                            x=df_s.index, open=df_s["Open"].astype(float), 
-                            high=df_s["High"].astype(float), low=df_s["Low"].astype(float), 
-                            close=df_s["Close"].astype(float), name=nm
-                        ), row=r_idx, col=1)
-                        
-                        # 2. Disegna l'orizzonte del Volume Profile calcolato in modo matematico e proporzionale
                         if v_vp and max(v_vp) > 0:
                             m_v, d_i, d_f = max(v_vp), df_s.index.min(), df_s.index.max()
                             ext = (d_f - d_i).days
-                            step_k = max(1, len(v_vp) // 60) # Raggruppa i prezzi in massimo 60 livelli visivi per non appesantire Plotly
-                            
+                            step_k = max(1, len(v_vp) // 60)
                             for i in range(0, len(v_vp), step_k):
                                 idx_fine = min(i + step_k, len(v_vp) - 1)
-                                y0_val = float(p_vp[i])
-                                y1_val = float(p_vp[idx_fine])
-                                
-                                # Se siamo sull'ultimo elemento o l'indice è identico, creiamo uno spessore proporzionale minimo
+                                y0_val, y1_val = float(p_vp[i]), float(p_vp[idx_fine])
                                 if y0_val == y1_val:
-                                    spessore_minimo = (max(p_vp) - min(p_vp)) * 0.005
-                                    y0_val -= spessore_minimo
-                                    y1_val += spessore_minimo
-                                
+                                    sp_m = (max(p_vp) - min(p_vp)) * 0.005
+                                    y0_val -= sp_m; y1_val += sp_m
                                 w = (float(v_vp[i]) / m_v) * (ext * 0.18) if m_v > 0 else 0
                                 x1_date = d_i + pd.Timedelta(days=int(w) if w > 0 else 1)
-                                
-                                # Colore differenziato: arancione per la Value Area (nodi importanti), azzurro trasparente per il resto
-                                col_barra = "rgba(242,142,43,0.22)" if p_vl <= p_vp[i] <= p_vh else "rgba(0,165,181,0.08)"
-                                
-                                fig.add_shape(
-                                    type="rect", x0=d_i, x1=x1_date, y0=y0_val, y1=y1_val, 
-                                    fillcolor=col_barra, line=dict(width=0), row=r_idx, col=1
-                                )
+                                col_b = "rgba(242,142,43,0.22)" if p_vl <= p_vp[i] <= p_vh else "rgba(0,165,181,0.08)"
+                                fig.add_shape(type="rect", x0=d_i, x1=x1_date, y0=y0_val, y1=y1_val, fillcolor=col_b, line=dict(width=0), row=r_idx, col=1)
                         
-                        # 3. Setup dei Target Operativi (LONG/SHORT)
                         dir_s, ic, sl, tp, col_z = ("LONG", "🟢", p_vl*0.985, p_vh, "rgba(40,167,69,0.10)") if p_att >= p_poc else ("SHORT", "🔴", p_vh*1.015, p_vl, "rgba(220,53,69,0.10)")
                         rr = round(abs(tp - p_poc) / abs(p_poc - sl), 2) if abs(p_poc - sl) > 0 else 0
+                        data_l_i, data_l_f = df_s.index[int(len(df_s)*0.65)], df_s.index[-1]
                         
-                        # Definiamo la partenza visiva delle linee di trading (ultimi 1/3 del grafico per non sporcare il passato)
-                        data_linee_inizio = df_s.index[int(len(df_s)*0.65)]
-                        data_linee_fine = df_s.index[-1]
+                        fig.add_shape(type="rect", x0=data_l_i, x1=data_l_f, y0=min(p_poc, tp), y1=max(p_poc, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
+                        fig.add_shape(type="line", x0=df_s.index.min(), x1=data_l_f, y0=p_poc, y1=p_poc, line=dict(color="#dc3545", width=2.5), row=r_idx, col=1)
+                        fig.add_shape(type="line", x0=data_l_i, x1=data_l_f, y0=sl, y1=sl, line=dict(color="#ffc107", width=1.5, dash="dash"), row=r_idx, col=1)
+                        fig.add_shape(type="line", x0=data_l_i, x1=data_l_f, y0=tp, y1=tp, line=dict(color="#17a2b8", width=2), row=r_idx, col=1)
                         
-                        # Evidenziazione grafica della zona di target (Rapporto Rischio/Rendimento)
-                        fig.add_shape(type="rect", x0=data_linee_inizio, x1=data_linee_fine, y0=min(p_poc, tp), y1=max(p_poc, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
+                        fig.add_annotation(x=data_l_f, y=p_poc, text=f" POC ENTRY: {round(p_poc,2)}", showarrow=False, align="left", bgcolor="#dc3545", font=dict(color="white", size=9, family="Arial Black"), row=r_idx, col=1)
+                        fig.add_annotation(x=data_l_f, y=sl, text=f" SL STOP: {round(sl,2)}", showarrow=False, align="left", bgcolor="#ffc107", font=dict(color="black", size=9), row=r_idx, col=1)
+                        fig.add_annotation(x=data_l_f, y=tp, text=f" TP TARGET: {round(tp,2)}", showarrow=False, align="left", bgcolor="#17a2b8", font=dict(color="white", size=9), row=r_idx, col=1)
                         
-                        # Linea del POC Esatto (Rossa e marcata)
-                        fig.add_shape(type="line", x0=df_s.index.min(), x1=data_linee_fine, y0=p_poc, y1=p_poc, line=dict(color="#dc3545", width=2.5), row=r_idx, col=1)
-                        # Linea dello Stop Loss (Tratteggiata Arancione)
-                        fig.add_shape(type="line", x0=data_linee_inizio, x1=data_linee_fine, y0=sl, y1=sl, line=dict(color="#ffc107", width=1.5, dash="dash"), row=r_idx, col=1)
-                        # Linea del Take Profit (Azzurra continua)
-                        fig.add_shape(type="line", x0=data_linee_inizio, x1=data_linee_fine, y0=tp, y1=tp, line=dict(color="#17a2b8", width=2), row=r_idx, col=1)
-                        
-                        # Etichette di testo sul lato destro del grafico
-                        fig.add_annotation(x=data_linee_fine, y=p_poc, text=f" POC ENTRY: {round(p_poc,2)}", showarrow=False, align="left", bgcolor="#dc3545", font=dict(color="white", size=9, family="Arial Black"), row=r_idx, col=1)
-                        fig.add_annotation(x=data_linee_fine, y=sl, text=f" SL STOP: {round(sl,2)}", showarrow=False, align="left", bgcolor="#ffc107", font=dict(color="black", size=9), row=r_idx, col=1)
-                        fig.add_annotation(x=data_linee_fine, y=tp, text=f" TP TARGET: {round(tp,2)}", showarrow=False, align="left", bgcolor="#17a2b8", font=dict(color="white", size=9), row=r_idx, col=1)
-                        
-                        # Box della legenda informativa fluttuante
-                        txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Direzione: {ic} {dir_s}<br>Rapporto R/R: 1:{rr}<br><br>🔴 POC: {round(p_poc,2)}<br>🟠 VAH (Sup): {round(p_vh,2)}<br>🔵 VAL (Inf): {round(p_vl,2)}"
+                        txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Direzione: {ic} {dir_s}<br>Rapporto R/R: 1:{rr}<br><br>🔴 POC: {round(p_poc,2)}<br>🟠 VAH: {round(p_vh,2)}<br>🔵 VAL: {round(p_vl,2)}"
                         fig.add_annotation(xref="paper", yref="paper", x=0.01, y=0.95 if r_idx==1 else (0.61 if r_idx==2 else 0.28), text=txt_leg, showarrow=False, align="left", bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.5)", borderwidth=1.5, borderpad=10, font=dict(color="white", size=10))
                     
                     fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, height=1400, showlegend=False)
@@ -361,7 +298,7 @@ with tab3:
         mappa_giorni_tg = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}
         g_recenti_scelti = mappa_giorni_tg[orizzonte_recente]
 
-    # RISOLUZIONE BUG AGGIORNAMENTO PANIERI: st.selectbox con chiave univoca
+    # RISOLUZIONE BUG AGGIORNAMENTO PANIERI SCANNER
     p_selezionato_alert = st.selectbox("Seleziona il paniere completo da scansionare:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto"], key="tg_paniere")
     lista_ticker_alert = [t.strip() for t in ottieni_paniere(p_selezionato_alert).split(",") if t.strip()]
     
@@ -378,7 +315,6 @@ with tab3:
             for idx, ticker in enumerate(lista_ticker_alert):
                 barra_progresso.progress((idx + 1) / totale_titoli)
                 
-                # Download con timeout flessibile per impedire blocchi di rete su Streamlit Cloud
                 df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False, timeout=8)
                 if df_live is None or df_live.empty: continue
                 
@@ -430,8 +366,8 @@ with tab3:
                             else:
                                 borsa_tv = ticker_pulito
                             
-                            # LINK UNIVERSALE CORRETTO: Punta direttamente al layout fisso con il parametro ?symbol= valido
-                            url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={parametro_simbolo}"
+                            # RISOLTO BUG: Utilizzo esatto della variabile borsa_tv sbloccata
+                            url_stringa_pura = f"https://tradingview.com{borsa_tv}"
                             
                             messaggio_alert = (
                                 f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
