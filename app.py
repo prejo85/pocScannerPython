@@ -7,67 +7,85 @@ from plotly.subplots import make_subplots
 import requests
 import json
 
-# Impostazione della pagina web a tutto schermo e tema scuro nativo
-st.set_page_config(layout="wide", page_title="Dashboard Finanziaria Completa")
+# 1. Impostazione della pagina web a tutto schermo e tema scuro nativo
+st.set_page_config(layout="wide", page_title="Dashboard Finanziaria Completa", page_icon="📐")
+
+# --- INIEZIONE CSS PER DESIGN PREMIUM E MODERNO ---
+st.markdown("""
+<style>
+    .stApp {
+        background: linear-gradient(135deg, #0f111a 0%, #151926 100%);
+        color: #e2e8f0;
+    }
+    h1 {
+        font-family: 'Inter', sans-serif;
+        font-weight: 800;
+        background: linear-gradient(90deg, #ff7e40, #00ced1);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        padding-bottom: 15px;
+        text-shadow: 0px 4px 10px rgba(0, 0, 0, 0.4);
+    }
+    div[data-testid="stMetric"] {
+        background: rgba(30, 37, 56, 0.65) !important;
+        border: 1px solid rgba(242, 142, 43, 0.25) !important;
+        border-radius: 12px !important;
+        padding: 20px 25px !important;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(4px);
+        transition: transform 0.2s ease-in-out, border-color 0.2s ease-in-out;
+    }
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-4px);
+        border-color: rgba(0, 206, 209, 0.6) !important;
+        box-shadow: 0 8px 32px 0 rgba(0, 206, 209, 0.15);
+    }
+    div.stButton > button:first-child {
+        background: linear-gradient(90deg, #ff6a00 0%, #ee0979 100%) !important;
+        color: white !important;
+        font-weight: 700 !important;
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 0.6rem 2.5rem !important;
+        box-shadow: 0 4px 15px rgba(238, 9, 121, 0.3) !important;
+        transition: all 0.3s ease !important;
+    }
+    div.stButton > button:first-child:hover {
+        transform: scale(1.02);
+        box-shadow: 0 6px 20px rgba(238, 9, 121, 0.5) !important;
+    }
+    button[data-baseweb="tab"] {
+        font-size: 16px !important;
+        font-weight: 600 !important;
+        color: #a0aec0 !important;
+        border-bottom: 2px solid transparent !important;
+        transition: all 0.3s ease;
+    }
+    button[aria-selected="true"] {
+        color: #00ced1 !important;
+        border-bottom: 2px solid #00ced1 !important;
+        text-shadow: 0 0 10px rgba(0, 206, 209, 0.3);
+    }
+</style>
+""", unsafe_html=True)
 
 st.title("📐 Dashboard Finanziaria — Scansione, Backtest & Alert")
 
-# Inizializzazione degli stati della sessione per l'allineamento automatico dei menu
+# Inizializzazione degli stati della sessione
 if "asset_type_index" not in st.session_state:
     st.session_state.asset_type_index = 0
 
-# Creazione delle schede interattive web
-tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram"])
-
-# --- CREDENZIALI E CONFIGURAZIONI NATIVE ---
+# --- CONFIGURAZIONI & UTILS CONDIVISE ---
 T_ID = "2072895073"
 TESTA_INTERNET = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Content-Type": "application/json",
 }
 
-# --- DATABASE INTERNO DEI PANIERI ---
-SP500_FULL = (
-    "MMM,AOS,ABT,ABBV,ACN,ADBE,AMD,AES,AFL,A,APD,ABNB,AKAM,ALB,ARE,ALGN,ALLE,LNT,ALL,GOOGL,GOOG,MO,AMZN,AMCR,AEE,"
-    "AEP,AXP,AIG,AMT,AWK,AMP,AME,AMGN,APH,ADI,AON,APA,APO,AAPL,AMAT,APP,APTV,ACGL,ADM,ARES,ANET,AJG,AIZ,T,ATO,ADSK,"
-    "ADP,AZO,AVY,AXON,BKR,BALL,BAC,BAX,BDX,BRK-B,BBY,TECH,BIIB,BLK,BX,BE,BNY,BA,BKNG,BSX,BMY,AVGO,BR,BRO,BF-B,BG,"
-    "BXP,CHRW,CDNS,CPT,COF,CAH,CCL,CARR,CVNA,CASY,CAT,CBOE,CBRE,CDW,COR,CNC,CNP,CF,CRL,SCHW,CHTR,CVX,CMG,CB,CHD,"
-    "CIEN,CI,CINF,CTAS,CSCO,C,CFG,CLX,CME,CMS,KO,CTSH,COHR,COIN,CL,CMCSA,FIX,COP,ED,STZ,CEG,COO,CPRT,GLW,CPAY,CTVA,"
-    "CSGP,COST,CRH,CRWD,CCI,CSX,CMI,CVS,DHR,DRI,DDOG,DVA,DECK,DE,DELL,DAL,DVN,DXCM,FANG,DLR,DG,DLTR,D,DPZ,DASH,DOV,"
-    "DOW,DHI,DTE,DUK,DD,ETN,EBAY,ECHO,ECL,EIX,EW,ELV,EME,EMR,ETR,EOG,EQT,EFX,EQIX,ERIE,ESS,EL,EG,EVRG,P,ES,EXC,EXE,"
-    "EXPE,EXPD,EXR,XOM,FFIV,FDS,FICO,FAST,FRT,FDX,FDXF,FERG,FIS,FITB,FSLR,FE,FISV,FLEX,F,FTNT,FTV,FOXA,FOX,BEN,FCX,"
-    "GRMN,IT,GE,GEHC,GEV,GEN,GNRC,GD,GIS,GM,GPC,GILD,GPN,GL,GDDY,GS,HAL,HIG,HAS,HCA,DOC,HSIC,HSY,HPE,HLT,HD,HON,HRL,"
-    "HST,HWM,HUBB,HUM,HBAN,HII,IBM,IEX,IDXX,ITW,ILMN,INCY,IR,PODD,INTC,IBKR,ICE,IFF,IP,INTU,ISRG,IVZ,INVH,IQV,"
-    "IRM,JBHT,JBL,JKHY,J,JNJ,JCI,JPM,KVUE,KDP,KEY,KEYS,KMB,KIM,KMI,KKR,KLAC,KHC,KR,LHX,LH,LRCX,LVS,LDOS,LEN,LII,LLY,"
-    "LIN,LYV,LMT,L,LOW,LULU,LITE,LYB,MTB,MPC,MAR,MRSH,MLM,MRVL,MAS,MA,MKC,MCD,MCK,MDT,MRK,META,MET,MTD,MGM,MCHP,MU,"
-    "MSFT,MAA,MRNA,MDLZ,MPWR,MNST,MCO,MS,MOS,MSI,MSCI,NDAQ,NTAP,NFLX,NEM,NWSA,NWS,NEE,NKE,NI,NDSN,NSC,NTRS,NOC,NCLH,"
-    "NRG,NUE,NVDA,NVR,NXPI,ORLY,OXY,ODFL,OMC,ON,OKE,ORCL,OTIS,PCAR,PKG,PLTR,PANW,PSKY,PH,PAYX,PYPL,PNR,PEP,PFE,PCG,"
-    "PM,PSX,PNW,PNC,PPG,PPL,PFG,PG,PGR,PLD,PRU,PEG,PTC,PSA,PHM,PWR,QCOM,DGX,Q,RL,RJF,RDDT,RTX,O,REG,REGN,RF,RSG,"
-    "RMD,RVTY,HOOD,ROK,ROL,ROP,ROST,RCL,SPGI,CRM,SBAC,SLB,STX,SRE,NOW,SHW,SPG,SWKS,SJM,SW,SNA,SOLV,SO,LUV,SWK,SBUX,"
-    "STT,STLD,STE,SYK,SMCI,SYF,SNPS,SYY,TMUS,TROW,TTWO,TPR,TRGP,TGT,TEL,TDY,TER,TSLA,TXN,TPL,TXT,TMO,TJX,TKO,TSCO,"
-    "TT,TDG,TRV,TRMB,TFC,TYL,TSN,USB,UBER,UDR,ULTA,UNP,UAL,UPS,URI,UNH,UHS,VLO,VEEV,VTR,VLTO,VRSN,VRSK,VZ,VRTX,VRT,"
-    "VTRS,VICI,V,VST,VMC,WRB,GWW,WAB,WMT,DIS,WBD,WM,WAT,WEC,WFC,WELL,WST,WDC,WY,WSM,WMB,WTW,WDAY,WYNN,XEL,XYL,YUM,"
-    "ZBRA,ZBH,ZTS"
-)
-
-NASDAQ_FULL = (
-    "MDLZ,ADI,ADP,ADSK,AAL,ALGN,AMAT,AMD,AMGN,AMZN,ANSS,ASML,TEAM,ADBE,BIIB,BMRN,BKNG,AVGO,CDNS,CDW,CERN,CHTR,"
-    "CHKP,CTAS,CSCO,CTSH,CMCSA,CPRT,COST,CRWD,DLTR,DXCM,EBAY,EA,EXPE,FAST,FB,FISV,FOXA,FOX,GILD,GOOGL,GOOG,"
-    "IDXX,ILMN,INCY,INTC,INTU,ISRG,JBHT,JD,KDP,KLAC,KHC,LRCX,LULU,MELI,MAR,MTCH,MCHP,MU,MSFT,MRNA,MDLO,MNST,"
-    "NTES,NFLX,NVDA,NXPI,ORLY,OKTA,ODFL,PCAR,PAYX,PYPL,PEP,PDD,REGN,ROST,SIRI,SWKS,SPLK,SBUX,SNPS,TMUS,TSLA,"
-    "TXN,TCOM,VRSN,VRTX,WBA,WDAY,XEL,XLNX,ZM"
-)
-
-FTSEMIB_FULL = (
-    "A2A.MI,AMP.MI,AZM.MI,BAMI.MI,BCA.MI,BMED.MI,BPER.MI,CPR.MI,DIA.MI,ENI.MI,ERG.MI,EVO.MI,FBK.MI,G.MI,"
-    "HER.MI,INW.MI,ISP.MI,LDO.MI,MB.MI,MONC.MI,NEXI.MI,PIRC.MI,PRY.MI,PST.MI,RACE.MI,REC.MI,SGO.MI,SRG.MI,"
-    "STLAM.MI,STMMI.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,YSVP.MI"
-)
-
-CRYPTO_FULL = (
-    "BTC-USD,ETH-USD,SOL-USD,BNB-USD,XRP-USD,ADA-USD,DOGE-USD,AVAX-USD,"
-    "DOT-USD,LINK-USD,MATIC-USD,LTC-USD,UNI-USD,NEAR-USD,SUI-USD"
-)
+SP500_FULL = "MMM,AOS,ABT,ABBV,ACN,ADBE,AMD,AES,AFL,A,APD,ABNB,AKAM,ALB,ARE,ALGN,ALLE,LNT,ALL,GOOGL,GOOG,MO,AMZN,AMCR,AEE,AEP,AXP,AIG,AMT,AWK,AMP,AME,AMGN,APH,ADI,AON,APA,APO,AAPL,AMAT,APP,APTV,ACGL,ADM,ARES,ANET,AJG,AIZ,T,ATO,ADSK,ADP,AZO,AVY,AXON,BKR,BALL,BAC,BAX,BDX,BRK-B,BBY,TECH,BIIB,BLK,BX,BE,BNY,BA,BKNG,BSX,BMY,AVGO,BR,BRO,BF-B,BG,BXP,CHRW,CDNS,CPT,COF,CAH,CCL,CARR,CVNA,CASY,CAT,CBOE,CBRE,CDW,COR,CNC,CNP,CF,CRL,SCHW,CHTR,CVX,CMG,CB,CHD,CIEN,CI,CINF,CTAS,CSCO,C,CFG,CLX,CME,CMS,KO,CTSH,COHR,COIN,CL,CMCSA,FIX,COP,ED,STZ,CEG,COO,CPRT,GLW,CPAY,CTVA,CSGP,COST,CRH,CRWD,CCI,CSX,CMI,CVS,DHR,DRI,DDOG,DVA,DECK,DE,DELL,DAL,DVN,DXCM,FANG,DLR,DG,DLTR,D,DPZ,DASH,DOV,DOW,DHI,DTE,DUK,DD,ETN,EBAY,ECHO,ECL,EIX,EW,ELV,EME,EMR,ETR,EOG,EQT,EFX,EQIX,ERIE,ESS,EL,EG,EVRG,P,ES,EXC,EXE,EXPE,EXPD,EXR,XOM,FFIV,FDS,FICO,FAST,FRT,FDX,FDXF,FERG,FIS,FITB,FSLR,FE,FISV,FLEX,F,FTNT,FTV,FOXA,FOX,BEN,FCX,GRMN,IT,GE,GEHC,GEV,GEN,GNRC,GD,GIS,GM,GPC,GILD,GPN,GL,GDDY,GS,HAL,HIG,HAS,HCA,DOC,HSIC,HSY,HPE,HLT,HD,HON,HRL,HST,HWM,HUBB,HUM,HBAN,HII,IBM,IEX,IDXX,ITW,ILMN,INCY,IR,PODD,INTC,IBKR,ICE,IFF,IP,INTU,ISRG,IVZ,INVH,IQV,IRM,JBHT,JBL,JKHY,J,JNJ,JCI,JPM,KVUE,KDP,KEY,KEYS,KMB,KIM,KMI,KKR,KLAC,KHC,KR,LHX,LH,LRCX,LVS,LDOS,LEN,LII,LLY,LIN,LYV,LMT,L,LOW,LULU,LITE,LYB,MTB,MPC,MAR,MRSH,MLM,MRVL,MAS,MA,MKC,MCD,MCK,MDT,MRK,META,MET,MTD,MGM,MCHP,MU,MSFT,MAA,MRNA,MDLZ,MPWR,MNST,MCO,MS,MOS,MSI,MSCI,NDAQ,NTAP,NFLX,NEM,NWSA,NWS,NEE,NKE,NI,NDSN,NSC,NTRS,NOC,NCLH,NRG,NUE,NVDA,NVR,NXPI,ORLY,OXY,ODFL,OMC,ON,OKE,ORCL,OTIS,PCAR,PKG,PLTR,PANW,PSKY,PH,PAYX,PYPL,PNR,PEP,PFE,PCG,PM,PSX,PNW,PNC,PPG,PPL,PFG,PG,PGR,PLD,PRU,PEG,PTC,PSA,PHM,PWR,QCOM,DGX,Q,RL,RJF,RDDT,RTX,O,REG,REGN,RF,RSG,RMD,RVTY,HOOD,ROK,ROL,ROP,ROST,RCL,SPGI,CRM,SBAC,SLB,STX,SRE,NOW,SHW,SPG,SWKS,SJM,SW,SNA,SOLV,SO,LUV,SWK,SBUX,STT,STLD,STE,SYK,SMCI,SYF,SNPS,SYY,TMUS,TROW,TTWO,TPR,TRGP,TGT,TEL,TDY,TER,TSLA,TXN,TPL,TXT,TMO,TJX,TKO,TSCO,TT,TDG,TRV,TRMB,TFC,TYL,TSN,USB,UBER,UDR,ULTA,UNP,UAL,UPS,URI,UNH,UHS,VLO,VEEV,VTR,VLTO,VRSN,VRSK,VZ,VRTX,VRT,VTRS,VICI,V,VST,VMC,WRB,GWW,WAB,WMT,DIS,WBD,WM,WAT,WEC,WFC,WELL,WST,WDC,WY,WSM,WMB,WTW,WDAY,WYNN,XEL,XYL,YUM,ZBRA,ZBH,ZTS"
+NASDAQ_FULL = "MDLZ,ADI,ADP,ADSK,AAL,ALGN,AMAT,AMD,AMGN,AMZN,ANSS,ASML,TEAM,ADBE,BIIB,BMRN,BKNG,AVGO,CDNS,CDW,CERN,CHTR,CHKP,CTAS,CSCO,CTSH,CMCSA,CPRT,COST,CRWD,DLTR,DXCM,EBAY,EA,EXPE,FAST,FB,FISV,FOXA,FOX,GILD,GOOGL,GOOG,IDXX,ILMN,INCY,INTC,INTU,ISRG,JBHT,JD,KDP,KLAC,KHC,LRCX,LULU,MELI,MAR,MTCH,MCHP,MU,MSFT,MRNA,MDLO,MNST,NTES,NFLX,NVDA,NXPI,ORLY,OKTA,ODFL,PCAR,PAYX,PYPL,PEP,PDD,REGN,ROST,SIRI,SWKS,SPLK,SBUX,SNPS,TMUS,TSLA,TXN,TCOM,VRSN,VRTX,WBA,WDAY,XEL,XLNX,ZM"
+FTSEMIB_FULL = "A2A.MI,AMP.MI,AZM.MI,BAMI.MI,BCA.MI,BMED.MI,BPER.MI,CPR.MI,DIA.MI,ENI.MI,ERG.MI,EVO.MI,FBK.MI,G.MI,HER.MI,INW.MI,ISP.MI,LDO.MI,MB.MI,MONC.MI,NEXI.MI,PIRC.MI,PRY.MI,PST.MI,RACE.MI,REC.MI,SGO.MI,SRG.MI,STLAM.MI,STMMI.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,YSVP.MI"
+CRYPTO_FULL = "BTC-USD,ETH-USD,SOL-USD,BNB-USD,XRP-USD,ADA-USD,DOGE-USD,AVAX-USD,DOT-USD,LINK-USD,MATIC-USD,LTC-USD,UNI-USD,NEAR-USD,SUI-USD"
 
 def ottieni_paniere(nome_paniere):
     if nome_paniere == "S&P 500": return SP500_FULL
@@ -87,7 +105,6 @@ def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     except Exception:
         return False
 
-# --- CALCOLO VETTORIALE NUMPY: PRECISOR CORRISPONDENTE A TV E ZERO TIMEOUT ---
 def calc_vp(df, div=200):
     if df.empty: return None, None, None, [], []
     p_min, p_max = float(df['Low'].min()), float(df['High'].max())
@@ -119,6 +136,9 @@ def calc_vp(df, div=200):
         else: idx_a += 1; v_current += v_p
         
     return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
+
+# Inizializzazione fisica dei Tab
+tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram"])
 # --- TAB 1: ANALISI TRIPLE-POC ---
 with tab1:
     st.subheader("📊 Analisi Grafica Avanzata Volume Profile & Nodes")
@@ -135,7 +155,6 @@ with tab1:
         period_map = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}
         g3 = period_map[period_label]
 
-    # RISOLUZIONE BUG CACHE: Chiave area dinamica basata sul paniere attivo
     tickers_input = st.text_area("Modifica o verifica i Tickers estratti (separati da virgola):", value=ticker_caricati, height=150, key=f"an_area_{paniere_selezionato}")
 
     if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
@@ -298,7 +317,6 @@ with tab3:
         mappa_giorni_tg = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}
         g_recenti_scelti = mappa_giorni_tg[orizzonte_recente]
 
-    # Widget di selezione paniere sincronizzato
     p_selezionato_alert = st.selectbox("Seleziona il paniere completo da scansionare:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto"], key="tg_paniere")
     lista_ticker_alert = [t.strip() for t in ottieni_paniere(p_selezionato_alert).split(",") if t.strip()]
     
@@ -360,7 +378,6 @@ with tab3:
                             
                             ticker_pulito = str(ticker).replace(".MI", "").strip()
                             
-                            # MODIFICA ASSEGNATA: Integrazione della struttura URL pulita basata sul formato di reindirizzamento dei simboli
                             if str(ticker).endswith(".MI"):
                                 borsa_codice = "MIL"
                             elif "-USD" in str(ticker):
@@ -369,8 +386,7 @@ with tab3:
                             else:
                                 borsa_codice = "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             
-                            # Composizione della stringa stringente richiesta
-                            url_stringa_pura = f"https://www.tradingview.com/symbols/{borsa_codice}-{ticker_pulito}/"
+                            url_stringa_pura = f"https://tradingview.com{borsa_codice}-{ticker_pulito}/"
                             
                             messaggio_alert = (
                                 f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
