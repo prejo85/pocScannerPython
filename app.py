@@ -367,6 +367,7 @@ with tab3:
                                 borsa_tv = ticker_pulito
                             
                             # RISOLTO BUG: Utilizzo esatto della variabile borsa_tv sbloccata
+                            url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={parametro_simbolo}"
                             url_stringa_pura = f"https://tradingview.com{borsa_tv}"
                             
                             messaggio_alert = (
