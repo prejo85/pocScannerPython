@@ -187,10 +187,6 @@ with tab1:
     
     # --- TOGGLE DEI LIVELLI ---
     st.markdown("##### ⚙️ Personalizzazione Livelli Grafici")
-    st.markdown(
-        "Utilizza i controlli sottostanti per ottimizzare la pulizia visiva del grafico cartesiano, "
-        "accendendo o spegnendo i nodi volumetrici e le proiezioni algoritmiche calcolate."
-    )
     t_col1, t_col2, t_col3 = st.columns(3)
     with t_col1:
         mostra_poc = st.checkbox("Mostra Linea POC Entry (Rosso)", value=True, key="chk_poc")
@@ -248,21 +244,13 @@ with tab1:
                         rs = gain / np.where(loss == 0, 0.00001, loss)
                         df_c["RSI"] = 100 - (100 / (1 + rs))
                         
-                        # --- INSERIMENTO SPIEGAZIONE DEL MOMENTUM SOTTO IL NOME DELL'INDICATORE ---
-                        st.markdown("#### 📊 Oscillatore Momentum RSI (14)")
-                        st.markdown(
-                            "**Analisi di Momentum Integrata:** La riga dell'RSI in fondo ti permette di verificare all'istante "
-                            "se l'avvicinamento del prezzo al Point of Control (POC) sta avvenendo in una fase di esaurimento "
-                            "del trend o se ha spazio per rimbalzare."
-                        )
-                        
                         fig = make_subplots(
                             rows=4, cols=1, 
                             subplot_titles=(
                                 f"1. STORICO COMPLETO DALL'INIZIO ({ticker}) — POC: {round(p1,2)}", 
                                 f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — POC: {round(p2,2)}", 
                                 f"3. PROFILO RECENTE {period_label.upper()} — POC: {round(p3,2)}",
-                                "Indicator Plot"
+                                "📊 OSCILLATORE MOMENTUM RSI (14)"
                             ), 
                             vertical_spacing=0.08,
                             row_heights=[0.28, 0.28, 0.28, 0.16]
@@ -314,12 +302,14 @@ with tab1:
                         
                         fig.add_shape(type="line", x0=df_recent_rsi.index.min(), x1=df_recent_rsi.index[-1], y0=70, y1=70, line=dict(color="rgba(239, 68, 68, 0.5)", width=1.5, dash="dot"), row=4, col=1)
                         fig.add_shape(type="line", x0=df_recent_rsi.index.min(), x1=df_recent_rsi.index[-1], y0=30, y1=30, line=dict(color="rgba(34, 197, 94, 0.5)", width=1.5, dash="dot"), row=4, col=1)
+                        
                         fig.update_yaxes(range=[0, 100], row=4, col=1)
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, height=1800, showlegend=False)
+                        
+                        # RISOLTO BUG DUPLICATE ID: key dinamica basata sul ticker corrente
                         st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
                     else:
                         st.warning(f"Nessun dato scaricabile da Yahoo Finance per il ticker {ticker}.")
-
 
 # --- TAB 2: BACKTESTING ---
 with tab2:
