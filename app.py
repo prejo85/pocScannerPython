@@ -239,7 +239,6 @@ with tab1:
                         tr = pd.concat([df_c["High"]-df_c["Low"], (df_c["High"]-df_c["Close"].shift(1)).abs(), (df_c["Low"]-df_c["Close"].shift(1)).abs()], axis=1).max(axis=1)
                         df_c["ATR"] = tr.rolling(window=14).mean()
                         
-                        # --- MODIFICA TITOLI SUBPLOTS: Spiegazioni inserite direttamente in linea ---
                         fig = make_subplots(
                             rows=5, cols=1, 
                             vertical_spacing=0.06, 
@@ -288,7 +287,7 @@ with tab1:
                         fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["RSI"], mode="lines", name="RSI", line=dict(color="#c084fc", width=2)), row=4, col=1)
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=70, y1=70, line=dict(color="rgba(239, 68, 68, 0.4)", width=1.5, dash="dot"), row=4, col=1)
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=30, y1=30, line=dict(color="rgba(34, 197, 94, 0.4)", width=1.5, dash="dot"), row=4, col=1)
-                        fig.update_yaxes(range=[0, 100], row=4, col=1) # <--- CORRETTO: Inserito l'intervallo fisso per sbloccare il NameError
+                        fig.update_yaxes(range=[0, 100], row=4, col=1)
                         fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["ATR"], mode="lines", name="ATR", line=dict(color="#34d399", width=2)), row=5, col=1)
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, xaxis5_rangeslider_visible=False, height=2000, showlegend=False)
                         st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
@@ -377,6 +376,7 @@ with tab2:
                 st.download_button(label="📥 Esporta Storico Operazioni (CSV)", data=csv_dati, file_name=f"backtest_{bt_ticker}_{bt_periodo.replace(' ', '_').lower()}.csv", mime="text/csv", key="btn_download_csv")
             else:
                 st.warning("Nessuna operazione eseguita nel periodo selezionato con i parametri attuali.")
+                
 # ==========================================
 # --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
 # ==========================================
@@ -482,7 +482,7 @@ with tab3:
                                 f"🔵 <b>Take Profit (VAH/VAL):</b> {round(take_p, 4 if p_selezionato_alert == 'Crypto' else 2)}\n\n"
                                 f"🔗 <a href='{url_stringa_pura}'>APRI IL GRAFICO SU TRADINGVIEW</a>"
                             )
-                            invia_messaggio_telegram_sbloccato(T_ID, mensaje_alert)
+                            invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert) # <--- CORRETTO: Variabile allineata in lingua italiana
                             
             st.success(f"Scansione terminata con successo! Inviati {segnali_trovati} segnali precisi su Telegram.")
-                
+
