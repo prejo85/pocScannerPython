@@ -391,13 +391,13 @@ with tab3:
                             ticker_pulito = str(ticker).replace(".MI", "").replace("-USD", "").strip()
                             
                             if str(ticker).endswith(".MI"):
-                                borsa_codice = "MILAN"
+                                borsa_codice = ".MI"
                             elif "-USD" in str(ticker) or p_selezionato_alert == "Crypto":
-                                borsa_codice = "BINANCE"
+                                borsa_codice = "USD"
                             else:
                                 borsa_codice = "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             
-                            url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={ticker_pulito}-{borsa_code}"
+                            url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={ticker_pulito}-{borsa_codice}"
                             
                             messaggio_alert = (
                                 f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
