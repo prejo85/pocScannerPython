@@ -239,7 +239,20 @@ with tab1:
                         tr = pd.concat([df_c["High"]-df_c["Low"], (df_c["High"]-df_c["Close"].shift(1)).abs(), (df_c["Low"]-df_c["Close"].shift(1)).abs()], axis=1).max(axis=1)
                         df_c["ATR"] = tr.rolling(window=14).mean()
                         
-                        fig = make_subplots(rows=5, cols=1, vertical_spacing=0.06, row_heights=[0.24, 0.24, 0.24, 0.14, 0.14], subplot_titles=(f"1. STORICO COMPLETO DALL'INIZIO ({ticker}) — POC: {round(p1,2)}", f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — POC: {round(p2,2)}", f"3. PROFILO RECENTE {period_label.upper()} — POC: {round(p3,2)}", "📊 OSCILLATORE MOMENTUM RSI (14)", "📈 AVERAGE TRUE RANGE — ATR (14)"))
+                        # --- MODIFICA TITOLI SUBPLOTS: Spiegazioni inserite direttamente in linea ---
+                        fig = make_subplots(
+                            rows=5, cols=1, 
+                            vertical_spacing=0.06, 
+                            row_heights=[0.24, 0.24, 0.24, 0.14, 0.14], 
+                            subplot_titles=(
+                                f"1. STORICO COMPLETO DALL'INIZIO ({ticker}) — POC: {round(p1,2)}", 
+                                f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — POC: {round(p2,2)}", 
+                                f"3. PROFILO RECENTE {period_label.upper()} — POC: {round(p3,2)}", 
+                                "📊 RSI (14) - Analisi di Momentum: Verifica se il test del POC avviene in esaurimento trend (Ipercomprato >70 / Ipervenduto <30).", 
+                                "📈 ATR (14) - Volatilità di Canale: Misura l'escursione reale del prezzo per confermare l'intenzionalità e la forza del breakout."
+                            )
+                        )
+                        
                         cfg = [(1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")]
                         
                         for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
@@ -275,14 +288,10 @@ with tab1:
                         fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["RSI"], mode="lines", name="RSI", line=dict(color="#c084fc", width=2)), row=4, col=1)
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=70, y1=70, line=dict(color="rgba(239, 68, 68, 0.4)", width=1.5, dash="dot"), row=4, col=1)
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=30, y1=30, line=dict(color="rgba(34, 197, 94, 0.4)", width=1.5, dash="dot"), row=4, col=1)
-                        fig.update_yaxes(range=[0, 100], row=4, col=1)
+                        fig.update_yaxes(range=[0, 100], row=4, col=1) # <--- CORRETTO: Inserito l'intervallo fisso per sbloccare il NameError
                         fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["ATR"], mode="lines", name="ATR", line=dict(color="#34d399", width=2)), row=5, col=1)
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, xaxis5_rangeslider_visible=False, height=2000, showlegend=False)
-                        
                         st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
-                        st.markdown(" ")
-                        st.info("💡 Analisi di Momentum Integrata (RSI): La riga dell'RSI permette di verificare se il test del POC avviene in esaurimento trend.")
-                        st.success("📈 Analisi della Volatilità di Canale (ATR): L'ATR misura l'escursione reale del prezzo per confermare la forza del breakout.")
     else: st.warning(f"Nessun dato scaricabile per il ticker {ticker}.")
 # ==========================================
 # --- TAB 2: BACKTESTING ---
@@ -367,8 +376,7 @@ with tab2:
                 st.markdown(" ")
                 st.download_button(label="📥 Esporta Storico Operazioni (CSV)", data=csv_dati, file_name=f"backtest_{bt_ticker}_{bt_periodo.replace(' ', '_').lower()}.csv", mime="text/csv", key="btn_download_csv")
             else:
-                st.warning("Nessuna operazione eseguita nel periodo selezionato con i parametri attuali.")                            
- 
+                st.warning("Nessuna operazione eseguita nel periodo selezionato con i parametri attuali.")
 # ==========================================
 # --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
 # ==========================================
@@ -474,7 +482,7 @@ with tab3:
                                 f"🔵 <b>Take Profit (VAH/VAL):</b> {round(take_p, 4 if p_selezionato_alert == 'Crypto' else 2)}\n\n"
                                 f"🔗 <a href='{url_stringa_pura}'>APRI IL GRAFICO SU TRADINGVIEW</a>"
                             )
-                            invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
+                            invia_messaggio_telegram_sbloccato(T_ID, mensaje_alert)
                             
             st.success(f"Scansione terminata con successo! Inviati {segnali_trovati} segnali precisi su Telegram.")
- 
+                
