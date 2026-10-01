@@ -112,7 +112,7 @@ if __name__ == "__main__":
     
     invia_messaggio_telegram_sbloccato(T_ID, "🚀 <b>POC Scanner Actions:</b> Avvio del ciclo globale sui panieri...")
     
-    soglia_distanza = 1.5                  # Distanza massima tollerata in % dal POC
+    soglia_distanza = 3.5                  # Distanza massima tollerata in % dal POC
     poc_scelti = ["Generale", "ATH", "Recente (90D)"]
     panieri_da_scansionare = ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto (TOTAL 1-2-3)"]
     segnali_trovati = 0
