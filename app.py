@@ -90,14 +90,14 @@ if "asset_type_index" not in st.session_state:
 
 T_ID = "2072895073"
 TESTA_INTERNET = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
-
+# DATABASE INTERNO DEI PANIERI AZIONARI
 SP500_FULL = (
     "MMM,AOS,ABT,ABBV,ACN,ADBE,AMD,AES,AFL,A,APD,ABNB,AKAM,ALB,ARE,ALGN,ALLE,LNT,ALL,GOOGL,GOOG,MO,AMZN,AMCR,AEE,"
     "AEP,AXP,AIG,AMT,AWK,AMP,AME,AMGN,APH,ADI,AON,APA,APO,AAPL,AMAT,APP,APTV,ACGL,ADM,ARES,ANET,AJG,AIZ,T,ATO,ADSK,"
     "ADP,AZO,AVY,AXON,BKR,BALL,BAC,BAX,BDX,BRK-B,BBY,TECH,BIIB,BLK,BX,BE,BNY,BA,BKNG,BSX,BMY,AVGO,BR,BRO,BF-B,BG,"
     "BXP,CHRW,CDNS,CPT,COF,CAH,CCL,CARR,CVNA,CASY,CAT,CBOE,CBRE,CDW,COR,CNC,CNP,CF,CRL,SCHW,CHTR,CVX,CMG,CB,CHD,"
     "CIEN,CI,CINF,CTAS,CSCO,C,CFG,CLX,CME,CMS,KO,CTSH,COHR,COIN,CL,CMCSA,FIX,COP,ED,STZ,CEG,COO,CPRT,GLW,CPAY,CTVA,"
-    "CSGP,COST,CRH,CRWD,CCI,CSX,CMI,CVS,DHR,DRI,DVA,DECK,DE,DELL,DAL,DVN,DXCM,FANG,DLR,DG,DLTR,D,DPZ,DASH,DOV,"
+    "CSGP,COST,CRH,CRWD,CCI,CSX,CMI,CVS,DHR,DRI,DDOG,DVA,DECK,DE,DELL,DAL,DVN,DXCM,FANG,DLR,DG,DLTR,D,DPZ,DASH,DOV,"
     "DOW,DHI,DTE,DUK,DD,ETN,EBAY,ECHO,ECL,EIX,EW,ELV,EME,EMR,ETR,EOG,EQT,EFX,EQIX,ERIE,ESS,EL,EG,EVRG,P,ES,EXC,EXE,"
     "EXPE,EXPD,EXR,XOM,FFIV,FDS,FICO,FAST,FRT,FDX,FDXF,FERG,FIS,FITB,FSLR,FE,FISV,FLEX,F,FTNT,FTV,FOXA,FOX,BEN,FCX,"
     "GRMN,IT,GE,GEHC,GEV,GEN,GNRC,GD,GIS,GM,GPC,GILD,GPN,GL,GDDY,GS,HAL,HIG,HAS,HCA,DOC,HSIC,HSY,HPE,HLT,HD,HON,HRL,"
@@ -128,10 +128,17 @@ FTSEMIB_FULL = (
     "STLAM.MI,STMMI.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,YSVP.MI"
 )
 
-CRYPTO_FULL = (
-    "BTC-USD,ETH-USD,SOL-USD,BNB-USD,XRP-USD,ADA-USD,DOGE-USD,AVAX-USD,"
-    "DOT-USD,LINK-USD,MATIC-USD,LTC-USD,UNI-USD,NEAR-USD,SUI-USD"
+# --- DATABASE CRYPTO AGGIORNATO (TOTAL 1-2-3) ---
+TOTAL1_LEADERS = "BTC-USD,ETH-USD,USDT-USD,USDC-USD"
+TOTAL2_MAJORS = "SOL-USD,BNB-USD,XRP-USD,ADA-USD,TRX-USD,DOT-USD,LINK-USD,AVAX-USD,TON-USD,SHIB-USD,SUI-USD"
+TOTAL3_ALTS = (
+    "MATIC-USD,LTC-USD,UNI-USD,NEAR-USD,APT-USD,ICP-USD,STX-USD,FIL-USD,ATOM-USD,"
+    "IMX-USD,RNDR-USD,GRT-USD,FTM-USD,OP-USD,ARB-USD,INJ-USD,LDO-USD,TIA-USD,"
+    "SEI-USD,AAVE-USD,MKR-USD,RUNE-USD,EGLD-USD,THETA-USD,ALGO-USD,XLM-USD,VET-USD,"
+    "FLOW-USD,AXS-USD,SAND-USD,MANA-USD,GALA-USD,CHZ-USD,DYDX-USD,CRV-USD,ENS-USD,"
+    "LRC-USD,ANKR-USD,WOO-USD,GMX-USD,JUP-USD,FET-USD,TAO-USD,WLD-USD,ONDO-USD,PYTH-USD,JTO-USD"
 )
+CRYPTO_FULL = f"{TOTAL1_LEADERS},{TOTAL2_MAJORS},{TOTAL3_ALTS}"
 
 def ottieni_paniere(nome_paniere):
     if nome_paniere == "S&P 500": return SP500_FULL
@@ -140,7 +147,6 @@ def ottieni_paniere(nome_paniere):
     elif nome_paniere == "Crypto": return CRYPTO_FULL
     return "AAPL,MSFT"
 
-# CORREZIONE AGGREGATA: Ripristinato l'URL d'instradamento corretto verso l'API dei Bot di Telegram
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     payload = {"chat_id": int(chat_id), "text": str(testo_messaggio), "parse_mode": "HTML", "disable_web_page_preview": False}
     try:
@@ -211,7 +217,7 @@ with tab1:
         if not tickers: st.warning("Inserisci almeno un ticker valido.")
         else:
             st.success("Generazione fogli ticker...")
-            fogli_ticker = st.tabs(tickers)
+            fogli_ticker = st.tabs([t.replace("-USD", "") for t in tickers])
             for ticker, foglio_attivo in zip(tickers, fogli_ticker):
                 with foglio_attivo:
                     tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
@@ -272,12 +278,12 @@ with tab1:
                         fig.update_yaxes(range=[0, 100], row=4, col=1)
                         fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["ATR"], mode="lines", name="ATR", line=dict(color="#34d399", width=2)), row=5, col=1)
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, xaxis5_rangeslider_visible=False, height=2000, showlegend=False)
-                        st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
                         
+                        st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
                         st.markdown(" ")
-                        st.info("💡 **Analisi di Momentum Integrata (RSI):** La riga dell'RSI permette di verificare se il test del POC avviene in esaurimento trend.")
-                        st.success("📈 **Analisi della Volatilità di Canale (ATR):** L'ATR misura l'escursione reale del prezzo per confermare la forza del breakout.")
-                    else: st.warning(f"Nessun dato scaricabile per il ticker {ticker}.")
+                        st.info("💡 Analisi di Momentum Integrata (RSI): La riga dell'RSI permette di verificare se il test del POC avviene in esaurimento trend.")
+                        st.success("📈 Analisi della Volatilità di Canale (ATR): L'ATR misura l'escursione reale del prezzo per confermare la forza del breakout.")
+                            else: st.warning(f"Nessun dato scaricabile per il ticker {ticker}.")
 # ==========================================
 # --- TAB 2: BACKTESTING ---
 # ==========================================
@@ -361,7 +367,8 @@ with tab2:
                 st.markdown(" ")
                 st.download_button(label="📥 Esporta Storico Operazioni (CSV)", data=csv_dati, file_name=f"backtest_{bt_ticker}_{bt_periodo.replace(' ', '_').lower()}.csv", mime="text/csv", key="btn_download_csv")
             else:
-                st.warning("Nessuna operazione eseguita nel periodo selezionato con i parametri attuali.")
+                st.warning("Nessuna operazione eseguita nel periodo selezionato con i parametri attuali.")                            
+ 
 # ==========================================
 # --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
 # ==========================================
@@ -398,7 +405,10 @@ with tab3:
             for idx, ticker in enumerate(lista_ticker_alert):
                 barra_progresso.progress((idx + 1) / totale_titoli)
                 
-                df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False, timeout=8)
+                # Controllo nativo per forzare la formattazione corretta su yfinance
+                tk_yf = ticker + "-USD" if p_selezionato_alert == "Crypto" and not ticker.endswith("-USD") else ticker
+                
+                df_live = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False, timeout=8)
                 if df_live is None or df_live.empty: continue
                 
                 df_live.columns = [str(c).strip() for c in df_live.columns]
@@ -442,13 +452,12 @@ with tab3:
                             stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
                             take_p = p_vh if p_attuale >= p_poc else p_vl
                             
-                            ticker_pulito = str(ticker).replace(".MI", "").strip()
+                            ticker_pulito = str(ticker).replace(".MI", "").replace("-USD", "").strip()
                             
                             if str(ticker).endswith(".MI"):
-                                borsa_codice = "MIL"
-                            elif "-USD" in str(ticker):
-                                borsa_codice = "COINBASE"
-                                ticker_pulito = ticker_pulito.replace("-", "")
+                                borsa_codice = "MILAN"
+                            elif "-USD" in str(ticker) or p_selezionato_alert == "Crypto":
+                                borsa_codice = "BINANCE"
                             else:
                                 borsa_codice = "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             
@@ -459,12 +468,13 @@ with tab3:
                                 f"🎯 <b>Ticker:</b> #{ticker_pulito}\n"
                                 f"🗂️ <b>Profilo Volume:</b> {nome_profilo}\n"
                                 f"⚡ <b>Setup Operativo:</b> {setup_tipo}\n\n"
-                                f"📊 <b>Prezzo Attuale:</b> {round(p_attuale, 2)} USD\n"
-                                f"🔴 <b>Entry POC Esatto:</b> {round(p_poc, 2)}\n"
-                                f"🟠 <b>Stop Loss (VAL/VAH):</b> {round(stop_l, 2)}\n"
-                                f"🔵 <b>Take Profit (VAH/VAL):</b> {round(take_p, 2)}\n\n"
-                                f"🔗 <b>APRI IL GRAFICO SU TRADINGVIEW:</b>\n{url_stringa_pura}"
+                                f"📊 <b>Prezzo Attuale:</b> {round(p_attuale, 4 if p_selezionato_alert == 'Crypto' else 2)} USD\n"
+                                f"🔴 <b>Entry POC Esatto:</b> {round(p_poc, 4 if p_selezionato_alert == 'Crypto' else 2)}\n"
+                                f"🟠 <b>Stop Loss (VAL/VAH):</b> {round(stop_l, 4 if p_selezionato_alert == 'Crypto' else 2)}\n"
+                                f"🔵 <b>Take Profit (VAH/VAL):</b> {round(take_p, 4 if p_selezionato_alert == 'Crypto' else 2)}\n\n"
+                                f"🔗 <a href='{url_stringa_pura}'>APRI IL GRAFICO SU TRADINGVIEW</a>"
                             )
                             invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
                             
             st.success(f"Scansione terminata con successo! Inviati {segnali_trovati} segnali precisi su Telegram.")
+ 
