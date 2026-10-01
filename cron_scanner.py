@@ -107,7 +107,6 @@ def calc_vp(df):
         if v_s >= v_p: idx_b -= 1; v_current += v_s
         else: idx_a += 1; v_current += v_p
     return poc, prices[min(len(prices) - 1, idx_a)], prices[max(0, idx_b)], prices, volumes
-
 if __name__ == "__main__":
     print("Avvio scansione POC automatica globale...")
     
@@ -172,18 +171,19 @@ if __name__ == "__main__":
                                 dec = 4 if "Crypto" in nome_paniere else 2
                                 
                                 messaggio_alert = (
-
-                                f"🚨 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
-                                f"📈 <b>Ticker:</b> #{ticker_pulito}\n"
-                                f"📊 <b>Profilo:</b> {nome_profilo}\n"
-                                f"⚡ <b>Setup:</b> {direzione}\n\n"
-                                f"💵 <b>Prezzo Attuale:</b> {round(p_attuale, dec)} USD\n"
-                                f"🎯 <b>Entry POC:</b> {round(p_poc, dec)}\n"
-                                f"🛑 <b>Stop Loss:</b> {round(stop_1, dec)}\n"
-                                f"💰 <b>Take Profit:</b> {round(take_p, dec)}\n\n"
-                                f"🔗 <b>APRI GRAFICO SU TRADINGVIEW:</b>\n{url_stringa_pura}"
-                            )
-                            invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
-                            print(f"--> Segnale inviato per {ticker} ({nome_profilo})")
+                                    f"🚨 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
+                                    f"📈 <b>Ticker:</b> #{ticker_pulito}\n"
+                                    f"📊 <b>Profilo:</b> {nome_profilo}\n"
+                                    f"⚡ <b>Setup:</b> {direzione}\n\n"
+                                    f"💵 <b>Prezzo Attuale:</b> {round(p_attuale, dec)} USD\n"
+                                    f"🎯 <b>Entry POC:</b> {round(p_poc, dec)}\n"
+                                    f"🛑 <b>Stop Loss:</b> {round(stop_1, dec)}\n"
+                                    f"💰 <b>Take Profit:</b> {round(take_p, dec)}\n\n"
+                                    f"🔗 <a href='{url_stringa_pura}'>APRI GRAFICO SU TRADINGVIEW</a>"
+                                )
+                                invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
+                                print(f"--> Segnale inviato per {ticker} ({nome_profilo})")
+            except Exception as single_err:
+                print(f"Errore temporaneo su {ticker}: {single_err}")
                         
     print(f"\nScansione completata. Trovati {segnali_trovati} segnali totali.")
