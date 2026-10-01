@@ -187,3 +187,5 @@ if __name__ == "__main__":
                 print(f"Errore temporaneo su {ticker}: {single_err}")
                         
     print(f"\nScansione completata. Trovati {segnali_trovati} segnali totali.")
+    messaggio_fine = f"🏁 <b>POC Scanner Actions:</b> Scansione terminata con successo!\n📊 Trovati <b>{segnali_trovati}</b> segnali totali."
+    invia_messaggio_telegram_sbloccato(T_ID, messaggio_fine)
