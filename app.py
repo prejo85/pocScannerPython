@@ -397,7 +397,7 @@ with tab3:
                             else:
                                 borsa_codice = "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             
-                            url_stringa_pura = f"https://tradingview.com{borsa_codice}-{ticker_pulito}/"
+                            url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={ticker_pulito}-{borsa_code}"
                             
                             messaggio_alert = (
                                 f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
