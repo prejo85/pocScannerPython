@@ -7,79 +7,18 @@ from plotly.subplots import make_subplots
 import requests
 import json
 
-# 1. Impostazione della pagina web a tutto schermo e tema premium
 st.set_page_config(layout="wide", page_title="POC Scanner Pro", page_icon="📐")
 
-# --- INIEZIONE CSS PER DESIGN PREMIUM E MODERNO (Glassmorphism & SaaS) ---
 st.markdown("""
 <style>
     @import url('https://googleapis.com');
-    
-    .stApp {
-        background: radial-gradient(circle at top right, #1a1f36 0%, #0d0f18 100%);
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        color: #f8fafc;
-    }
-    
-    h1 {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-weight: 800;
-        background: linear-gradient(90deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        padding-bottom: 15px;
-        text-shadow: 0px 4px 10px rgba(0, 0, 0, 0.4);
-    }
-    
-    div[data-testid="stMetric"] {
-        background: rgba(15, 23, 42, 0.6) !important;
-        border: 1px solid rgba(56, 189, 248, 0.15) !important;
-        border-radius: 14px !important;
-        padding: 20px !important;
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3) !important;
-        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    div[data-testid="stMetric"]:hover {
-        transform: translateY(-2px);
-        border-color: rgba(56, 189, 248, 0.4) !important;
-        box-shadow: 0 10px 30px -5px rgba(56, 189, 248, 0.15) !important;
-    }
-    
-    div.stButton > button:first-child {
-        background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%) !important;
-        color: #ffffff !important;
-        font-weight: 600 !important;
-        border: none !important;
-        border-radius: 10px !important;
-        padding: 0.7rem 2.2rem !important;
-        box-shadow: 0 4px 14px 0 rgba(79, 70, 229, 0.3) !important;
-        transition: all 0.2s ease !important;
-    }
-    div.stButton > button:first-child:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 6px 20px 0 rgba(59, 130, 246, 0.45) !important;
-    }
-    
-    button[data-baseweb="tab"] {
-        font-size: 15px !important;
-        font-weight: 600 !important;
-        color: #64748b !important;
-        padding: 12px 24px !important;
-        border-bottom: 2px solid transparent !important;
-        transition: all 0.3s ease;
-    }
-    button[aria-selected="true"] {
-        color: #38bdf8 !important;
-        border-bottom: 2px solid #38bdf8 !important;
-        text-shadow: 0 0 10px rgba(0, 206, 209, 0.3);
-    }
-    
-    div[data-baseweb="select"], input, textarea {
-        background-color: #0f172a !important;
-        border-color: #334155 !important;
-        color: #f8fafc !important;
-        border-radius: 8px !important;
-    }
+    .stApp { background: radial-gradient(circle at top right, #1a1f36 0%, #0d0f18 100%); font-family: 'Plus Jakarta Sans', sans-serif; color: #f8fafc; }
+    h1 { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 800; background: linear-gradient(90deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; padding-bottom: 15px; }
+    div[data-testid="stMetric"] { background: rgba(15, 23, 42, 0.6) !important; border: 1px solid rgba(56, 189, 248, 0.15) !important; border-radius: 14px !important; padding: 20px !important; }
+    div.stButton > button:first-child { background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%) !important; color: #ffffff !important; font-weight: 600 !important; border-radius: 10px !important; padding: 0.7rem 2.2rem !important; }
+    button[data-baseweb="tab"] { font-size: 15px !important; font-weight: 600 !important; color: #64748b !important; }
+    button[aria-selected="true"] { color: #38bdf8 !important; border-bottom: 2px solid #38bdf8 !important; }
+    div[data-baseweb="select"], input, textarea { background-color: #0f172a !important; border-color: #334155 !important; color: #f8fafc !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -90,7 +29,6 @@ if "asset_type_index" not in st.session_state:
 
 T_ID = "2072895073"
 TESTA_INTERNET = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
-# DATABASE INTERNO DEI PANIERI AZIONARI
 SP500_FULL = (
     "MMM,AOS,ABT,ABBV,ACN,ADBE,AMD,AES,AFL,A,APD,ABNB,AKAM,ALB,ARE,ALGN,ALLE,LNT,ALL,GOOGL,GOOG,MO,AMZN,AMCR,AEE,"
     "AEP,AXP,AIG,AMT,AWK,AMP,AME,AMGN,APH,ADI,AON,APA,APO,AAPL,AMAT,APP,APTV,ACGL,ADM,ARES,ANET,AJG,AIZ,T,ATO,ADSK,"
@@ -128,7 +66,6 @@ FTSEMIB_FULL = (
     "STLAM.MI,STMMI.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,YSVP.MI"
 )
 
-# --- DATABASE CRYPTO AGGIORNATO (TOTAL 1-2-3) ---
 TOTAL1_LEADERS = "BTC-USD,ETH-USD,USDT-USD,USDC-USD"
 TOTAL2_MAJORS = "SOL-USD,BNB-USD,XRP-USD,ADA-USD,TRX-USD,DOT-USD,LINK-USD,AVAX-USD,TON-USD,SHIB-USD,SUI-USD"
 TOTAL3_ALTS = (
@@ -139,7 +76,6 @@ TOTAL3_ALTS = (
     "LRC-USD,ANKR-USD,WOO-USD,GMX-USD,JUP-USD,FET-USD,TAO-USD,WLD-USD,ONDO-USD,PYTH-USD,JTO-USD"
 )
 CRYPTO_FULL = f"{TOTAL1_LEADERS},{TOTAL2_MAJORS},{TOTAL3_ALTS}"
-
 def ottieni_paniere(nome_paniere):
     if nome_paniere == "S&P 500": return SP500_FULL
     elif nome_paniere == "NASDAQ 100": return NASDAQ_FULL
@@ -184,12 +120,8 @@ def calc_vp(df, div=200):
     return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
 
 tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram"])
-# ==========================================
-# --- TAB 1: ANALISI TRIPLE-POC ---
-# ==========================================
 with tab1:
     st.subheader("📊 Analisi Grafica Avanzata Volume Profile & Indicatori")
-    
     st.markdown("##### ⚙️ Personalizzazione Livelli Grafici")
     t_col1, t_col2, t_col3, t_col4 = st.columns(4)
     with t_col1: mostra_poc = st.checkbox("Mostra Linea POC Entry (Rosso)", value=True, key="chk_poc")
@@ -240,9 +172,7 @@ with tab1:
                         df_c["ATR"] = tr.rolling(window=14).mean()
                         
                         fig = make_subplots(
-                            rows=5, cols=1, 
-                            vertical_spacing=0.06, 
-                            row_heights=[0.24, 0.24, 0.24, 0.14, 0.14], 
+                            rows=5, cols=1, vertical_spacing=0.06, row_heights=[0.24, 0.24, 0.24, 0.14, 0.14], 
                             subplot_titles=(
                                 f"1. STORICO COMPLETO DALL'INIZIO ({ticker}) — POC: {round(p1,2)}", 
                                 f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — POC: {round(p2,2)}", 
@@ -291,7 +221,7 @@ with tab1:
                         fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["ATR"], mode="lines", name="ATR", line=dict(color="#34d399", width=2)), row=5, col=1)
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, xaxis5_rangeslider_visible=False, height=2000, showlegend=False)
                         st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
-    else: st.warning(f"Nessun dato scaricabile per il ticker {ticker}.")
+                    else: st.warning(f"Nessun dato scaricabile per il ticker {ticker}.")
 # ==========================================
 # --- TAB 2: BACKTESTING ---
 # ==========================================
@@ -376,7 +306,6 @@ with tab2:
                 st.download_button(label="📥 Esporta Storico Operazioni (CSV)", data=csv_dati, file_name=f"backtest_{bt_ticker}_{bt_periodo.replace(' ', '_').lower()}.csv", mime="text/csv", key="btn_download_csv")
             else:
                 st.warning("Nessuna operazione eseguita nel periodo selezionato con i parametri attuali.")
-                
 # ==========================================
 # --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
 # ==========================================
@@ -413,7 +342,6 @@ with tab3:
             for idx, ticker in enumerate(lista_ticker_alert):
                 barra_progresso.progress((idx + 1) / totale_titoli)
                 
-                # Controllo nativo per forzare la formattazione corretta su yfinance
                 tk_yf = ticker + "-USD" if p_selezionato_alert == "Crypto" and not ticker.endswith("-USD") else ticker
                 
                 df_live = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False, timeout=8)
@@ -482,7 +410,6 @@ with tab3:
                                 f"🔵 <b>Take Profit (VAH/VAL):</b> {round(take_p, 4 if p_selezionato_alert == 'Crypto' else 2)}\n\n"
                                 f"🔗 <a href='{url_stringa_pura}'>APRI IL GRAFICO SU TRADINGVIEW</a>"
                             )
-                            invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert) # <--- CORRETTO: Variabile allineata in lingua italiana
+                            invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
                             
             st.success(f"Scansione terminata con successo! Inviati {segnali_trovati} segnali precisi su Telegram.")
-
