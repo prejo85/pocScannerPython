@@ -283,7 +283,7 @@ with tab1:
                         st.markdown(" ")
                         st.info("💡 Analisi di Momentum Integrata (RSI): La riga dell'RSI permette di verificare se il test del POC avviene in esaurimento trend.")
                         st.success("📈 Analisi della Volatilità di Canale (ATR): L'ATR misura l'escursione reale del prezzo per confermare la forza del breakout.")
-                            else: st.warning(f"Nessun dato scaricabile per il ticker {ticker}.")
+                        else: st.warning(f"Nessun dato scaricabile per il ticker {ticker}.")
 # ==========================================
 # --- TAB 2: BACKTESTING ---
 # ==========================================
