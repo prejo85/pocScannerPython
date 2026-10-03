@@ -9,6 +9,7 @@ import json
 
 st.set_page_config(layout="wide", page_title="POC Scanner Pro", page_icon="📐")
 
+# Stile scuro personalizzato per rendere la dashboard moderna
 st.markdown("""
 <style>
     @import url('https://googleapis.com');
@@ -26,9 +27,9 @@ st.title("📐 Analisi POC Pro — Dashboard Multitasking")
 
 if "asset_type_index" not in st.session_state:
     st.session_state.asset_type_index = 0
-
 T_ID = "2072895073"
 TESTA_INTERNET = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
+
 SP500_FULL = (
     "MMM,AOS,ABT,ABBV,ACN,ADBE,AMD,AES,AFL,A,APD,ABNB,AKAM,ALB,ARE,ALGN,ALLE,LNT,ALL,GOOGL,GOOG,MO,AMZN,AMCR,AEE,"
     "AEP,AXP,AIG,AMT,AWK,AMP,AME,AMGN,APH,ADI,AON,APA,APO,AAPL,AMAT,APP,APTV,ACGL,ADM,ARES,ANET,AJG,AIZ,T,ATO,ADSK,"
@@ -76,13 +77,13 @@ TOTAL3_ALTS = (
     "LRC-USD,ANKR-USD,WOO-USD,GMX-USD,JUP-USD,FET-USD,TAO-USD,WLD-USD,ONDO-USD,PYTH-USD,JTO-USD"
 )
 CRYPTO_FULL = f"{TOTAL1_LEADERS},{TOTAL2_MAJORS},{TOTAL3_ALTS}"
+
 def ottieni_paniere(nome_paniere):
     if nome_paniere == "S&P 500": return SP500_FULL
     elif nome_paniere == "NASDAQ 100": return NASDAQ_FULL
     elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
     elif nome_paniere == "Crypto": return CRYPTO_FULL
     return "AAPL,MSFT"
-
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     payload = {"chat_id": int(chat_id), "text": str(testo_messaggio), "parse_mode": "HTML", "disable_web_page_preview": False}
     try:
@@ -94,6 +95,7 @@ def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     except Exception:
         return False
 
+# Algoritmo vettoriale a 200 cassetti (Bins)
 def calc_vp(df, div=200):
     if df.empty: return None, None, None, [], []
     p_min, p_max = float(df['Low'].min()), float(df['High'].max())
@@ -126,7 +128,7 @@ with tab1:
     t_col1, t_col2, t_col3, t_col4 = st.columns(4)
     with t_col1: mostra_poc = st.checkbox("Mostra Linea POC Entry (Rosso)", value=True, key="chk_poc")
     with t_col2: mostra_va = st.checkbox("Mostra Value Area & Istogrammi (VAH/VAL)", value=True, key="chk_va")
-    with t_col3: mostra_rr = st.checkbox("Mostra Zone Target / Stop Loss (R/R)", value=True, key="chk_rr")
+    with t_col3: mostra_rr = st.checkbox("Mostra Zone Target / Stop Loss Strategici (ATR 1:2)", value=True, key="chk_rr")
     with t_col4: mostra_bb = st.checkbox("Mostra Bande di Bollinger (Volatilità Price)", value=True, key="chk_bb")
     
     st.markdown("---")
@@ -143,7 +145,7 @@ with tab1:
         tf_label = st.selectbox("Seleziona Timeframe Candele:", ["Giornaliero (Daily)", "Settimanale (Weekly)"], key="an_timeframe")
         tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[tf_label]
 
-    tickers_input = st.text_area("Modifica o verifica i Tickers estratti (separati da virgola):", value=ticker_caricati, height=150, key=f"an_area_{paniere_selezionato}")
+    tickers_input = st.text_area("Modifica o verifica i Tickers estratti:", value=ticker_caricati, height=150, key=f"an_area_{paniere_selezionato}")
     if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
         tickers = [t.strip().upper() for t in tickers_input.split(',') if t.strip()]
         if not tickers: st.warning("Inserisci almeno un ticker valido.")
@@ -154,31 +156,45 @@ with tab1:
                 with foglio_attivo:
                     tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
                     df_c = yf.download(tickers=tk_yf, period="max", interval=tf_attivo, auto_adjust=False, multi_level_index=False, progress=False)
-                    if df_c is not None and not df_c.empty:
-                        df1, df2, df3 = df_c.copy(), df_c.loc[df_c["High"].idxmax():].copy(), df_c.tail(g3).copy()
-                        p1, vh1, vl1, prz1, vl_v1 = calc_vp(df1)
-                        p2, vh2, vl2, prz2, vl_v2 = calc_vp(df2)
-                        p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
-                        if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]: continue
+                    if df_c is not None and len(df_c) > 200:
+                        df_c.columns = [str(c).strip() for c in df_c.columns]
                         
-                        close_series = df_c["Close"]; d_ath = df_c["High"].idxmax()
-                        p_att = float(close_series.values[-1] if hasattr(close_series, 'values') else close_series.iloc[-1])
+                        close_series = df_c["Close"].astype(float)
+                        high_series = df_c["High"].astype(float)
+                        low_series = df_c["Low"].astype(float)
                         
-                        delta = df_c["Close"].diff()
+                        d_ath = high_series.idxmax()
+                        p_att = float(close_series.iloc[-1])
+                        
+                        # Calcolo EMA 200, RSI, ATR strategici
+                        df_c["EMA200"] = close_series.ewm(span=200, adjust=False).mean()
+                        ema200_att = df_c["EMA200"].iloc[-1]
+                        
+                        delta = close_series.diff()
                         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
                         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
                         df_c["RSI"] = 100 - (100 / (1 + (gain / np.where(loss == 0, 0.00001, loss))))
-                        tr = pd.concat([df_c["High"]-df_c["Low"], (df_c["High"]-df_c["Close"].shift(1)).abs(), (df_c["Low"]-df_c["Close"].shift(1)).abs()], axis=1).max(axis=1)
+                        rsi_att = df_c["RSI"].iloc[-1]
+                        
+                        tr = pd.concat([high_series-low_series, (high_series-close_series.shift(1)).abs(), (low_series-close_series.shift(1)).abs()], axis=1).max(axis=1)
                         df_c["ATR"] = tr.rolling(window=14).mean()
+                        atr_att = df_c["ATR"].iloc[-1]
+                        
+                        df1, df2, df3 = df_c.copy(), df_c.loc[d_ath:].copy(), df_c.tail(g3).copy()
+                        p1, vh1, vl1, prz1, vl_v1 = calc_vp(df1)
+                        p2, vh2, vl2, prz2, vl_v2 = calc_vp(df2)
+                        p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
+                        
+                        if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]: continue
                         
                         fig = make_subplots(
                             rows=5, cols=1, vertical_spacing=0.06, row_heights=[0.24, 0.24, 0.24, 0.14, 0.14], 
                             subplot_titles=(
-                                f"1. STORICO COMPLETO DALL'INIZIO ({ticker}) — POC: {round(p1,2)}", 
+                                f"1. STORICO COMPLETO ({ticker}) — POC: {round(p1,2)} | EMA200: {round(ema200_att,2)}", 
                                 f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — POC: {round(p2,2)}", 
                                 f"3. PROFILO RECENTE {period_label.upper()} — POC: {round(p3,2)}", 
-                                "📊 RSI (14) - Analisi di Momentum: Verifica se il test del POC avviene in esaurimento trend (Ipercomprato >70 / Ipervenduto <30).", 
-                                "📈 ATR (14) - Volatilità di Canale: Misura l'escursione reale del prezzo per confermare l'intenzionalità e la forza del breakout."
+                                "📊 RSI (14) — Momentum di Filtro (Validazione Iperestensione)", 
+                                "📈 ATR (14) — Volatilità Dinamica di Canale (Dimensionamento Rischio)"
                             )
                         )
                         
@@ -187,10 +203,13 @@ with tab1:
                         for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
                             if df_s.empty: continue
                             fig.add_trace(grp.Candlestick(x=df_s.index, open=df_s["Open"].astype(float), high=df_s["High"].astype(float), low=df_s["Low"].astype(float), close=df_s["Close"].astype(float), name=nm), row=r_idx, col=1)
+                            fig.add_trace(grp.Scatter(x=df_s.index, y=df_s["EMA200"], mode="lines", name="EMA 200", line=dict(color="#f43f5e", width=1.5)), row=r_idx, col=1)
+                            
                             if mostra_bb and len(df_s) > 20:
                                 b_m = df_s["Close"].rolling(20).mean(); b_s = df_s["Close"].rolling(20).std()
-                                fig.add_trace(grp.Scatter(x=df_s.index, y=b_m+(b_s*2), mode="lines", name="BB Upper", line=dict(color="rgba(56,189,248,0.3)", width=1, dash="dash")), row=r_idx, col=1)
-                                fig.add_trace(grp.Scatter(x=df_s.index, y=b_m-(b_s*2), mode="lines", name="BB Lower", line=dict(color="rgba(56,189,248,0.3)", width=1, dash="dash")), row=r_idx, col=1)
+                                fig.add_trace(grp.Scatter(x=df_s.index, y=b_m+(b_s*2), mode="lines", name="BB Upper", line=dict(color="rgba(56,189,248,0.25)", width=1, dash="dash")), row=r_idx, col=1)
+                                fig.add_trace(grp.Scatter(x=df_s.index, y=b_m-(b_s*2), mode="lines", name="BB Lower", line=dict(color="rgba(56,189,248,0.25)", width=1, dash="dash")), row=r_idx, col=1)
+                            
                             if mostra_va and v_vp and max(v_vp) > 0:
                                 m_v, d_i, d_f = max(v_vp), df_s.index.min(), df_s.index.max()
                                 ext = (d_f - d_i).days; step_k = max(1, len(v_vp) // 60)
@@ -198,30 +217,39 @@ with tab1:
                                     idx_f = min(i + step_k, len(v_vp) - 1); y0_v, y1_v = float(p_vp[i]), float(p_vp[idx_f])
                                     if y0_v == y1_v: sp_m = (max(p_vp) - min(p_vp)) * 0.005; y0_v -= sp_m; y1_v += sp_m
                                     w = (float(v_vp[i]) / m_v) * (ext * 0.18) if m_v > 0 else 0
-                                    fig.add_shape(type="rect", x0=d_i, x1=d_i + pd.Timedelta(days=int(w) if w > 0 else 1), y0=y0_v, y1=y1_v, fillcolor="rgba(242,142,43,0.22)" if p_vl <= p_vp[i] <= p_vh else "rgba(0,165,181,0.08)", line=dict(width=0), row=r_idx, col=1)
-                            dir_s, ic, sl, tp, col_z = ("LONG", "🟢", p_vl*0.985, p_vh, "rgba(40,167,69,0.10)") if p_att >= p_poc else ("SHORT", "🔴", p_vh*1.015, p_vl, "rgba(220,53,69,0.10)")
-                            rr = round(abs(tp - p_poc) / max(0.01, abs(p_poc - sl)), 2); d_li, d_lf = df_s.index[int(len(df_s)*0.65)], df_s.index[-1]
-                            if mostra_rr:
-                                fig.add_shape(type="rect", x0=d_li, x1=d_lf, y0=min(p_poc, tp), y1=max(p_poc, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
-                                fig.add_shape(type="line", x0=d_li, x1=d_lf, y0=sl, y1=sl, line=dict(color="#ffc107", width=1.5, dash="dash"), row=r_idx, col=1)
-                                fig.add_shape(type="line", x0=d_li, x1=d_lf, y0=tp, y1=tp, line=dict(color="#17a2b8", width=2), row=r_idx, col=1)
-                                fig.add_annotation(x=d_lf, y=sl, text=f" SL: {round(sl,2)}", showarrow=False, align="left", bgcolor="#ffc107", font=dict(color="black", size=9), row=r_idx, col=1)
-                                fig.add_annotation(x=d_lf, y=tp, text=f" TP: {round(tp,2)}", showarrow=False, align="left", bgcolor="#17a2b8", font=dict(color="white", size=9), row=r_idx, col=1)
+                                    fig.add_shape(type="rect", x0=d_i, x1=d_i + pd.Timedelta(days=int(w) if w > 0 else 1), y0=y0_v, y1=y1_v, fillcolor="rgba(242,142,43,0.20)" if p_vl <= p_vp[i] <= p_vh else "rgba(0,165,181,0.06)", line=dict(width=0), row=r_idx, col=1)
+                            
+                            is_long = p_att >= p_poc
+                            sl = p_att - (1.5 * atr_att) if is_long else p_att + (1.5 * atr_att)
+                            tp = p_att + (3.0 * atr_att) if is_long else p_att - (3.0 * atr_att)
+                            col_z = "rgba(34, 197, 94, 0.08)" if is_long else "rgba(239, 68, 68, 0.08)"
+                            ic, dir_n = ("🟢", "LONG") if is_long else ("🔴", "SHORT")
+                            
+                            d_li, d_lf = df_s.index[int(len(df_s)*0.70)], df_s.index[-1]
+                            if mostra_rr and not np.isnan(atr_att):
+                                fig.add_shape(type="rect", x0=d_li, x1=d_lf, y0=min(p_att, tp), y1=max(p_att, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
+                                fig.add_shape(type="line", x0=d_li, x1=d_lf, y0=sl, y1=sl, line=dict(color="#f59e0b", width=1.5, dash="dash"), row=r_idx, col=1)
+                                fig.add_shape(type="line", x0=d_li, x1=d_lf, y0=tp, y1=tp, line=dict(color="#06b6d4", width=2), row=r_idx, col=1)
+                                fig.add_annotation(x=d_lf, y=sl, text=f" SL: {round(sl,2)}", showarrow=False, align="left", bgcolor="#f59e0b", font=dict(color="black", size=9), row=r_idx, col=1)
+                                fig.add_annotation(x=d_lf, y=tp, text=f" TP: {round(tp,2)}", showarrow=False, align="left", bgcolor="#06b6d4", font=dict(color="white", size=9), row=r_idx, col=1)
+                            
                             if mostra_poc:
-                                fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=p_poc, y1=p_poc, line=dict(color="#dc3545", width=2.5), row=r_idx, col=1)
-                                fig.add_annotation(x=d_lf, y=p_poc, text=f" POC: {round(p_poc,2)}", showarrow=False, align="left", bgcolor="#dc3545", font=dict(color="white", size=9, family="Arial Black"), row=r_idx, col=1)
-                            txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Direzione: {ic} {dir_s}<br>Rapporto R/R: 1:{rr}<br><br>🔴 POC: {round(p_poc,2)}<br>🟠 VAH: {round(p_vh,2)}<br>🔵 VAL: {round(p_vl,2)}"
-                            fig.add_annotation(xref="paper", yref="paper", x=0.01, y={1:0.98, 2:0.72, 3:0.44}[r_idx], text=txt_leg, showarrow=False, align="left", bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.5)", borderwidth=1.5, borderpad=10, font=dict(color="white", size=10))
+                                fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=p_poc, y1=p_poc, line=dict(color="#ef4444", width=2.5), row=r_idx, col=1)
+                                fig.add_annotation(x=d_lf, y=p_poc, text=f" POC: {round(p_poc,2)}", showarrow=False, align="left", bgcolor="#ef4444", font=dict(color="white", size=9, family="Arial Black"), row=r_idx, col=1)
+                            
+                            txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Setup Ideale: {ic} {dir_n}<br>R/R Strutturale: 1:2.0<br><br>🔴 POC: {round(p_poc,2)}<br>🟠 VAH: {round(p_vh,2)}<br>🔵 VAL: {round(p_vl,2)}"
+                            fig.add_annotation(xref="paper", yref="paper", x=0.01, y={1:0.98, 2:0.72, 3:0.44}[r_idx], text=txt_leg, showarrow=False, align="left", bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.4)", borderwidth=1.5, borderpad=8, font=dict(color="white", size=10))
                         
                         df_recent_ind = df_c.tail(180 if tf_attivo == "1wk" else 365)
-                        fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["RSI"], mode="lines", name="RSI", line=dict(color="#c084fc", width=2)), row=4, col=1)
-                        fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=70, y1=70, line=dict(color="rgba(239, 68, 68, 0.4)", width=1.5, dash="dot"), row=4, col=1)
-                        fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=30, y1=30, line=dict(color="rgba(34, 197, 94, 0.4)", width=1.5, dash="dot"), row=4, col=1)
+                        fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["RSI"], mode="lines", name="RSI", line=dict(color="#a855f7", width=2)), row=4, col=1)
+                        fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=75, y1=75, line=dict(color="rgba(239, 68, 68, 0.4)", width=1.5, dash="dot"), row=4, col=1)
+                        fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=25, y1=25, line=dict(color="rgba(34, 197, 94, 0.4)", width=1.5, dash="dot"), row=4, col=1)
                         fig.update_yaxes(range=[0, 100], row=4, col=1)
-                        fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["ATR"], mode="lines", name="ATR", line=dict(color="#34d399", width=2)), row=5, col=1)
+                        
+                        fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["ATR"], mode="lines", name="ATR", line=dict(color="#10b981", width=2)), row=5, col=1)
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, xaxis5_rangeslider_visible=False, height=2000, showlegend=False)
                         st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
-                    else: st.warning(f"Nessun dato scaricabile per il ticker {ticker}.")
+                    else: st.warning(f"Dati storici insufficienti (<200 righe) per il calcolo strategico su {ticker}.")
 # ==========================================
 # --- TAB 2: BACKTESTING ---
 # ==========================================
@@ -307,109 +335,121 @@ with tab2:
             else:
                 st.warning("Nessuna operazione eseguita nel periodo selezionato con i parametri attuali.")
 # ==========================================
-# --- TAB 3: LIVE ALERTS TELEGRAM BOT ---
+# --- TAB 3: LIVE ALERTS STRATEGICI ---
 # ==========================================
 with tab3:
-    st.subheader("🔔 Canale Notifiche in Tempo Reale via Telegram")
-    st.success("✅ Sincronizzazione completata. Algoritmo vettoriale Numpy ad altissima stabilità attivo.")
+    st.subheader("🔔 Canale Notifiche Quantitative in Tempo Reale via Telegram")
+    st.success("✅ Algoritmo di Strategia Bilanciata (EMA + RSI + ATR Volatility) Integrato.")
     
     st.markdown("---")
     st.subheader("📡 Configurazione Selettiva Parametri Scanner")
     
     fl1, fl2, fl3 = st.columns(3)
     with fl1:
-        soglia_distanza = st.slider("Seleziona la distanza massima dal POC per inviare l'alert (%):", min_value=0.1, max_value=3.0, value=0.5, step=0.1, key="tg_dist")
+        soglia_distanza = st.slider("Seleziona la distanza massima dal POC per l'alert (%):", min_value=0.5, max_value=4.0, value=2.0, step=0.1, key="tg_dist")
     with fl2:
-        poc_scelti = st.multiselect("Seleziona quali profili analizzare:", options=["Generale (Inizio)", "Dall'ATH", "Recente (Timeframe)"], default=["Generale (Inizio)", "Dall'ATH", "Recente (Timeframe)"], key="tg_sel_p")
+        poc_scelti = st.multiselect("Seleziona quali profili analizzare:", options=["Generale", "ATH", "Recente (90D)"], default=["Generale", "ATH", "Recente (90D)"], key="tg_sel_p")
     with fl3:
-        orizzonte_recente = st.selectbox("Imposta l'estensione del profilo Recente:", ["3 Mesi", "6 Mesi", "9 Mesi"], index=1, key="tg_oriz_t")
+        orizzonte_recente = st.selectbox("Imposta l'estensione del profilo Recente:", ["3 Mesi", "6 Mesi", "9 Mesi"], index=0, key="tg_oriz_t")
         mappa_giorni_tg = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}
         g_recenti_scelti = mappa_giorni_tg[orizzonte_recente]
 
     p_selezionato_alert = st.selectbox("Seleziona il paniere completo da scansionare:", ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto"], key="tg_paniere")
     lista_ticker_alert = [t.strip() for t in ottieni_paniere(p_selezionato_alert).split(",") if t.strip()]
     
-    if st.button("🚀 Attiva Scansione & Invia Alert su Telegram", type="primary"):
+    if st.button("🚀 Attiva Scansione Strategica", type="primary"):
         if not poc_scelti:
-            st.error("❌ Seleziona almeno una tipologia di POC nei filtri per far partire il monitoraggio.")
+            st.error("❌ Seleziona almeno una tipologia di POC nei filtri.")
         else:
-            st.info(f"Avvio scansione globale rapida. Analisi vettoriale di tutti i titoli del paniere {p_selezionato_alert}...")
+            st.info(f"Avvio scansione quantitativa bilanciata su {p_selezionato_alert}...")
             segnali_trovati = 0
-            
             barra_progresso = st.progress(0.0)
             totale_titoli = len(lista_ticker_alert)
             
             for idx, ticker in enumerate(lista_ticker_alert):
                 barra_progresso.progress((idx + 1) / totale_titoli)
-                
                 tk_yf = ticker + "-USD" if p_selezionato_alert == "Crypto" and not ticker.endswith("-USD") else ticker
-                
                 df_live = yf.download(tickers=tk_yf, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False, timeout=8)
-                if df_live is None or df_live.empty: continue
+                if df_live is None or len(df_live) < 200: continue
                 
                 df_live.columns = [str(c).strip() for c in df_live.columns]
                 mappa_colonne = {c.lower(): c for c in df_live.columns}
+                close_series = df_live[mappa_colonne['close']].astype(float)
+                high_series = df_live[mappa_colonne['high']].astype(float)
+                low_series = df_live[mappa_colonne['low']].astype(float)
+                p_attuale = float(close_series.iloc[-1])
+                d_ath = high_series.idxmax()
                 
-                if 'close' in mappa_colonne and 'high' in mappa_colonne and 'low' in mappa_colonne:
-                    close_series = df_live[mappa_colonne['close']]
-                    p_attuale = float(close_series.values[-1] if hasattr(close_series, 'values') else close_series.iloc[-1])
-                    d_ath = df_live[mappa_colonne['high']].idxmax()
+                # Indicatori di Trend e Volatilità
+                ema200 = close_series.ewm(span=200, adjust=False).mean().iloc[-1]
+                delta = close_series.diff()
+                gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                rsi_attuale = (100 - (100 / (1 + (gain / np.where(loss == 0, 0.00001, loss))))).iloc[-1]
+                tr = pd.concat([high_series - low_series, (high_series - close_series.shift(1)).abs(), (low_series - close_series.shift(1)).abs()], axis=1).max(axis=1)
+                atr_attuale = tr.rolling(window=14).mean().iloc[-1]
+                
+                df_generale = df_live.copy()
+                df_ath_data = df_live.loc[d_ath:].copy()
+                df_recente = df_live.tail(g_recenti_scelti).copy()
+                
+                controlli_da_effettuare = []
+                if "Generale" in poc_scelti: controlli_da_effettuare.append(("GENERALE", df_generale))
+                if "ATH" in poc_scelti: controlli_da_effettuare.append(("DALL'ATH", df_ath_data))
+                if "Recente (90D)" in poc_scelti: controlli_da_effettuare.append((f"RECENTE ({orizzonte_recente})", df_recente))
                     
-                    df_generale = df_live.copy()
-                    df_ath = df_live.loc[d_ath:].copy()
-                    df_recente = df_live.tail(g_recenti_scelti).copy()
+                for nome_profilo, df_singolo_profilo in controlli_da_effettuare:
+                    if df_singolo_profilo.empty: continue
+                    p_poc, p_vh, p_vl, prz_v, vl_v = calc_vp(df_singolo_profilo)
+                    if p_poc is None or atr_attuale is None or np.isnan(atr_attuale): continue
+                    distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
                     
-                    controlli_da_effettuare = []
-                    if "Generale (Inizio)" in poc_scelti: 
-                        controlli_da_effettuare.append(("GENERALE (Dall'Inizio)", df_generale))
-                    if "Dall'ATH" in poc_scelti: 
-                        controlli_da_effettuare.append(("DALL'ATH", df_ath))
-                    if "Recente (Timeframe)" in poc_scelti: 
-                        controlli_da_effettuare.append((f"RECENTE ({orizzonte_recente})", df_recente))
+                    if abs(distanza_percentuale) <= soglia_distanza:
+                        is_rsi_ok_long = rsi_attuale < 75
+                        is_rsi_ok_short = rsi_attuale > 25
+                        if "RECENTE" in nome_profilo:
+                            passa_trend_long = p_attuale > ema200
+                            passa_trend_short = p_attuale < ema200
+                        else:
+                            passa_trend_long, passa_trend_short = True, True
                         
-                    for nome_profilo, df_singolo_profilo in controlli_da_effettuare:
-                        if df_singolo_profilo.empty: continue
+                        setup_valido = False
+                        if p_attuale >= p_poc and passa_trend_long and is_rsi_ok_long:
+                            direzione = "LONG 🟢"
+                            stop_l = p_attuale - (1.5 * atr_attuale)
+                            take_p = p_attuale + (3.0 * atr_attuale)
+                            setup_valido = True
+                        elif p_attuale < p_poc and passa_trend_short and is_rsi_ok_short:
+                            direzione = "SHORT 🔴"
+                            stop_l = p_attuale + (1.5 * atr_attuale)
+                            take_p = p_attuale - (3.0 * atr_attuale)
+                            setup_valido = True
                         
-                        df_input_vp = pd.DataFrame(index=df_singolo_profilo.index)
-                        df_input_vp['Open'] = df_singolo_profilo[mappa_colonne.get('open', mappa_colonne['close'])].astype(float)
-                        df_input_vp['High'] = df_singolo_profilo[mappa_colonne['high']].astype(float)
-                        df_input_vp['Low'] = df_singolo_profilo[mappa_colonne['low']].astype(float)
-                        df_input_vp['Close'] = df_singolo_profilo[mappa_colonne['close']].astype(float)
-                        df_input_vp['Volume'] = df_singolo_profilo[mappa_colonne.get('volume', df_singolo_profilo.columns)].astype(float)
-                        
-                        p_poc, p_vh, p_vl, prz_v, vl_v = calc_vp(df_input_vp)
-                        if p_poc is None: continue
-                        
-                        distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
-                        
-                        if abs(distanza_percentuale) <= soglia_distanza:
+                        if setup_valido:
                             segnali_trovati += 1
-                            setup_tipo = "LONG 🟢" if p_attuale >= p_poc else "SHORT 🔴"
-                            stop_l = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
-                            take_p = p_vh if p_attuale >= p_poc else p_vl
-                            
                             ticker_pulito = str(ticker).replace(".MI", "").replace("-USD", "").strip()
+                            if str(ticker).endswith(".MI"): borsa_codice = "MILAN"
+                            elif "-USD" in str(ticker) or p_selezionato_alert == "Crypto": borsa_codice = "BINANCE"
+                            else: borsa_codice = "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             
-                            if str(ticker).endswith(".MI"):
-                                borsa_codice = ".MI"
-                            elif "-USD" in str(ticker) or p_selezionato_alert == "Crypto":
-                                borsa_codice = "USD"
-                            else:
-                                borsa_codice = "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
-                            
-                            url_stringa_pura = f"https://www.tradingview.com/chart/sqBvK6ky/?symbol={ticker_pulito}-{borsa_codice}"
+                            url_stringa_pura = f"https://tradingview.com{ticker_pulito}-{borsa_codice}"
+                            dec = 4 if p_selezionato_alert == 'Crypto' else 2
                             
                             messaggio_alert = (
-                                f"📐 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
-                                f"🎯 <b>Ticker:</b> #{ticker_pulito}\n"
+                                f"🚨 <b>STRATEGIA QUANT BILANCIATA (DASHBOARD)</b>\n\n"
+                                f"🎯 <b>Ticker:</b> #{ticker_pulito} ({p_selezionato_alert})\n"
                                 f"🗂️ <b>Profilo Volume:</b> {nome_profilo}\n"
-                                f"⚡ <b>Setup Operativo:</b> {setup_tipo}\n\n"
-                                f"📊 <b>Prezzo Attuale:</b> {round(p_attuale, 4 if p_selezionato_alert == 'Crypto' else 2)} USD\n"
-                                f"🔴 <b>Entry POC Esatto:</b> {round(p_poc, 4 if p_selezionato_alert == 'Crypto' else 2)}\n"
-                                f"🟠 <b>Stop Loss (VAL/VAH):</b> {round(stop_l, 4 if p_selezionato_alert == 'Crypto' else 2)}\n"
-                                f"🔵 <b>Take Profit (VAH/VAL):</b> {round(take_p, 4 if p_selezionato_alert == 'Crypto' else 2)}\n\n"
+                                f"⚡ <b>Setup Operativo:</b> {direzione}\n\n"
+                                f"📊 <b>Prezzo Attuale:</b> {round(p_attuale, dec)} USD\n"
+                                f"🔴 <b>Entry Prezzo:</b> {round(p_attuale, dec)}\n"
+                                f"🟠 <b>Stop Loss (1.5 ATR):</b> {round(stop_l, dec)}\n"
+                                f"🔵 <b>Take Profit (3.0 ATR):</b> {round(take_p, dec)}\n\n"
+                                f"🔍 <b>Metriche di Controllo:</b>\n"
+                                f"|— <i>Rapporto R/R:</i> 1:2.0 (Fisso)\n"
+                                f"|— <i>RSI (14):</i> {round(rsi_attuale, 1)}\n"
+                                f"|— <i>EMA200 Filtro:</i> {'SOPRA' if p_attuale > ema200 else 'SOTTO'}\n\n"
                                 f"🔗 <a href='{url_stringa_pura}'>APRI IL GRAFICO SU TRADINGVIEW</a>"
                             )
                             invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
                             
-            st.success(f"Scansione terminata con successo! Inviati {segnali_trovati} segnali precisi su Telegram.")
+            st.success(f"Scansione terminata! Inviati {segnali_trovati} segnali bilanciati ad alta probabilità.")
