@@ -303,7 +303,7 @@ with tab2:
             date_curve = [df_bt.index[200]]  # Partiamo dal punto in cui gli indicatori sono pronti
             trade_history = []
             soglia_dist_bt = 2.0  # Tolleranza coerente con i segnali
-                        # 2. CICLO DI SIMULAZIONE STORICA CANDELA PER CANDELA (LOGICA CORRETTA MULTI-GIORNO)
+            # 2. CICLO DI SIMULAZIONE STORICA CANDELA PER CANDELA (LOGICA AD ALTA PRECISIONE DECIMALE)
             for i in range(200, len(df_bt)):
                 riga_attuale = df_bt.iloc[i]
                 p_corrente = float(riga_attuale["Close"])
@@ -338,7 +338,7 @@ with tab2:
                             if dist_sl_valore > 0:
                                 in_posizione = True
                                 size_contratti = (capitale * (rischio_trade / 100)) / dist_sl_valore
-                                index_ingresso = i  # Memorizziamo il giorno di ingresso
+                                index_ingresso = i
                         
                         elif p_corrente < p_poc and p_corrente < ema200_g and is_rsi_short_ok:
                             posizione_tipo = "SHORT"
@@ -349,11 +349,10 @@ with tab2:
                             if dist_sl_valore > 0:
                                 in_posizione = True
                                 size_contratti = (capitale * (rischio_trade / 100)) / dist_sl_valore
-                                index_ingresso = i  # Memorizziamo il giorno di ingresso
+                                index_ingresso = i
                                 
-                # SE SIAMO IN POSIZIONE, IL CONTROLLO AVVIENE SOLO SUI GIORNI SUCCESSIVI
+                # SE SIAMO IN POSIZIONE, IL CONTROLLO AVVIENE SUI GIORNI SUCCESSIVI
                 else:
-                    # Impedisce la chiusura nello stesso identico giorno d'ingresso
                     if i <= index_ingresso:
                         continue
                         
@@ -364,32 +363,35 @@ with tab2:
                     
                     if i == len(df_bt) - 1:
                         uscito = True
-                        p_chiusura = p_corrente  # Liquidazione forzata alla fine dello storico
+                        p_chiusura = p_corrente
                     elif posizione_tipo == "LONG":
                         if low_g <= livello_sl: 
                             uscito = True
-                            p_chiusura = livello_sl  # Stop Loss colpito
+                            p_chiusura = livello_sl
                         elif high_g >= livello_tp: 
                             uscito = True
-                            p_chiusura = livello_tp  # Take Profit colpito
+                            p_chiusura = livello_tp
                     elif posizione_tipo == "SHORT":
                         if high_g >= livello_sl: 
                             uscito = True
-                            p_chiusura = livello_sl  # Stop Loss colpito
+                            p_chiusura = livello_sl
                         elif low_g <= livello_tp: 
                             uscito = True
-                            p_chiusura = livello_tp  # Take Profit colpito
+                            p_chiusura = livello_tp
                             
                     if uscito:
                         pnl_lordo = (p_chiusura - prezzo_ingresso) * size_contratti if posizione_tipo == "LONG" else (prezzo_ingresso - p_chiusura) * size_contratti
                         pnl_netto = pnl_lordo - (comun_fee * 2)
                         capitale += pnl_netto
                         
+                        # CORREZIONE: arrotondamento dinamico basato sul valore dell'asset per non perdere i decimali
+                        precisione = 4 if prezzo_ingresso < 1.0 else 2
+                        
                         trade_history.append({
                             "Data": data_corrente.strftime("%d/%m/%Y"),
                             "Tipo": posizione_tipo,
-                            "Ingresso": round(prezzo_ingresso, 2),
-                            "Uscita": round(p_chiusura, 2),
+                            "Ingresso": round(prezzo_ingresso, precisione),
+                            "Uscita": round(p_chiusura, precisione),
                             "PnL Netto ($)": round(pnl_netto, 2),
                             "Capitale Attuale": round(capitale, 2)
                         })
@@ -397,7 +399,7 @@ with tab2:
                         date_curve.append(data_corrente)
                         in_posizione = False
 
-            # 3. COMPOSIZIONE METRICHE E REPORT VISIVO (IDENTICO A PRIMA)
+            # 3. COMPOSIZIONE METRICHE E REPORT VISIVO
             st.subheader("📊 Statistiche di Performance Bilanciate")
             if trade_history:
                 df_trades = pd.DataFrame(trade_history)
@@ -421,7 +423,9 @@ with tab2:
                 fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines+markers' if len(date_curve)<50 else 'lines', name='Capitale Netto', line=dict(color='#38bdf8', width=2.5)))
                 fig_eq.update_layout(title=f"📈 Andamento dell'Equity Line Storica — Ticker: {bt_ticker}", template="plotly_dark", height=450, xaxis=dict(title="Data Chiusura Operazioni"), yaxis=dict(title="Valore Bilancio ($)"))
                 st.plotly_chart(fig_eq, use_container_width=True)
-                st.dataframe(df_trades, use_container_width=True)
+                
+                # CORREZIONE: forziamo Streamlit a mostrare i decimali reali nella tabella visiva
+                st.dataframe(df_trades.style.format({"Ingresso": "{:.4f}", "Uscita": "{:.4f}", "PnL Netto ($)": "{:.2f}", "Capitale Attuale": "{:.2f}"}), use_container_width=True)
                 
                 csv_dati = df_trades.to_csv(index=False).encode('utf-8')
                 st.markdown(" ")
