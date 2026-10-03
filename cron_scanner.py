@@ -69,7 +69,49 @@ def ottieni_paniere(nome_paniere):
     elif nome_paniere == "Crypto (TOTAL 1-2-3)": return CRYPTO_FULL
     return "AAPL,MSFT"
 
-def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
+import datetime  # Assicurati che sia importato in cima al file, serve per gestire le date
+
+def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio, ticker_segnalato=None, profilo_segnalato=None):
+    # File locale che fungerà da memoria dello scanner
+    FILE_REGISTRO = "registro_segnali.json"
+    
+    # Se il segnale è operativo (ha ticker e profilo), verifichiamo la memoria storica
+    if ticker_segnalato and profilo_segnalato:
+        registro = {}
+        # 1. Carichiamo il registro esistente se presente
+        if os.path.exists(FILE_REGISTRO):
+            try:
+                with open(FILE_REGISTRO, "r") as f:
+                    registro = json.load(f)
+            except Exception:
+                registro = {}
+                
+        chiave_univoca = f"{ticker_segnalato}_{profilo_segnalato}".upper()
+        ora_attuale = datetime.datetime.now()
+        
+        # 2. Controlliamo se la chiave esiste già nel registro
+        if chiave_univoca in registro:
+            try:
+                ultima_notifica = datetime.datetime.strptime(registro[chiave_univoca], "%Y-%m-%d %H:%M:%S")
+                # Calcoliamo quanti giorni sono passati dall'ultimo alert
+                giorni_passati = (ora_attuale - ultima_notifica).days
+                
+                # Se sono passati meno di 7 giorni, blocchiamo il duplicato
+                if giorni_passati < 7:
+                    print(f"   [ANTI-SPAM] Segnale per {ticker_segnalato} ({profilo_segnalato}) bloccato. Notificato {giorni_passati} giorni fa (limite 7).")
+                    return False
+            except Exception:
+                pass # Se la data nel file è corrotta, procediamo comunque all'invio
+
+        # 3. Se il controllo è passato, aggiorniamo la data nel registro per questo asset
+        registro[chiave_univoca] = ora_attuale.strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            with open(FILE_REGISTRO, "w") as f:
+                json.dump(registro, f, indent=4)
+        except Exception as e:
+            print(f"Errore nel salvataggio del registro JSON: {e}")
+
+    # 4. Procediamo con il reale invio del messaggio su Telegram
     payload = {"chat_id": int(chat_id), "text": str(testo_messaggio), "parse_mode": "HTML", "disable_web_page_preview": False}
     try:
         part1, part2 = "https://" + "api.", "telegram.org/bot"
@@ -79,6 +121,7 @@ def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
         return res.status_code == 200
     except Exception:
         return False
+
 
 # MOTORE VETTORIALE DINAMICO (A 200 BINS)
 def calc_vp(df, div=200):
@@ -242,7 +285,9 @@ if __name__ == "__main__":
                                     f"|— <i>ATR Volatilità:</i> {round(atr_attuale, dec)}\n\n"
                                     f"🔗 <a href='{url_stringa_pura}'>APRI GRAFICO SU TRADINGVIEW</a>"
                                 )
-                                invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
+                                # Passiamo anche il ticker e il profilo per attivare il controllo della memoria a 7 giorni
+                                invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert, ticker_segnalato=ticker_pulito, profilo_segnalato=nome_profilo)
+
                                 print(f"--> [SEGNALE INVIATO] {ticker} ({nome_profilo})")
                                 
             except Exception as single_err:
