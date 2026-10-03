@@ -50,14 +50,14 @@ FTSEMIB_FULL = (
     "STLAM.MI,STMMI.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,YSVP.MI"
 )
 
-TOTAL1_LEADERS = "BTC-USD,ETH-USD,USDT-USD,USDC-USD"
-TOTAL2_MAJORS = "SOL-USD,BNB-USD,XRP-USD,ADA-USD,TRX-USD,DOT-USD,LINK-USD,AVAX-USD,TON-USD,SHIB-USD,SUI-USD"
+TOTAL1_LEADERS = "BTC-USD,ETH-USD"
+TOTAL2_MAJORS = "SOL-USD,BNB-USD,XRP-USD,ADA-USD,TRX-USD,DOT-USD,LINK-USD,AVAX-USD,TON-USD,SHIB-USD"
 TOTAL3_ALTS = (
     "MATIC-USD,LTC-USD,UNI-USD,NEAR-USD,APT-USD,ICP-USD,STX-USD,FIL-USD,ATOM-USD,"
-    "IMX-USD,RNDR-USD,GRT-USD,FTM-USD,OP-USD,ARB-USD,INJ-USD,LDO-USD,TIA-USD,"
-    "SEI-USD,AAVE-USD,MKR-USD,RUNE-USD,EGLD-USD,THETA-USD,ALGO-USD,XLM-USD,VET-USD,"
-    "FLOW-USD,AXS-USD,SAND-USD,MANA-USD,GALA-USD,CHZ-USD,DYDX-USD,CRV-USD,ENS-USD,"
-    "LRC-USD,ANKR-USD,WOO-USD,GMX-USD,JUP-USD,FET-USD,TAO-USD,WLD-USD,ONDO-USD,PYTH-USD,JTO-USD"
+    "IMX-USD,RNDR-USD,GRT-USD,FTM-USD,SUI-USD,OP-USD,ARB-USD,INJ-USD,LDO-USD,"
+    "TIA-USD,SEI-USD,AAVE-USD,MKR-USD,RUNE-USD,EGLD-USD,THETA-USD,ALGO-USD,XLM-USD,"
+    "VET-USD,FLOW-USD,AXS-USD,SAND-USD,MANA-USD,GALA-USD,CHZ-USD,DYDX-USD,CRV-USD,"
+    "ENS-USD,LRC-USD,ANKR-USD,WOO-USD,GMX-USD,JUP-USD"
 )
 
 CRYPTO_FULL = f"{TOTAL1_LEADERS},{TOTAL2_MAJORS},{TOTAL3_ALTS}"
@@ -80,39 +80,48 @@ def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     except Exception:
         return False
 
-def calc_vp(df):
+# MOTORE VETTORIALE DINAMICO (A 200 BINS)
+def calc_vp(df, div=200):
     if df.empty: return None, None, None, [], []
-    df_calc = df.copy()
     
-    col_close = next((c for c in df_calc.columns if c.lower() == 'close'), 'Close')
-    col_volume = next((c for c in df_calc.columns if c.lower() == 'volume'), 'Volume')
-    col_low = next((c for c in df_calc.columns if c.lower() == 'low'), 'Low')
-    col_high = next((c for c in df_calc.columns if c.lower() == 'high'), 'High')
+    col_volume = next((c for c in df.columns if c.lower() == 'volume'), 'Volume')
+    col_low = next((c for c in df.columns if c.lower() == 'low'), 'Low')
+    col_high = next((c for c in df.columns if c.lower() == 'high'), 'High')
     
-    df_calc['Round_Close'] = df_calc[col_close].round(4)
-    vp_data = df_calc.groupby('Round_Close')[col_volume].sum().sort_index()
-    if vp_data.empty or vp_data.sum() == 0:
-        p_min = float(df[col_low].min())
-        return p_min, p_min, p_min, [], []
-    prices = vp_data.index.astype(float).tolist()
-    volumes = vp_data.values.astype(float).tolist()
-    poc_idx = volumes.index(max(volumes))
+    p_min, p_max = float(df[col_low].min()), float(df[col_high].max())
+    if p_max - p_min <= 0: return p_min, p_min, p_min, [], []
+    
+    bins = np.linspace(p_min, p_max, div + 1)
+    vols = np.zeros(div)
+    highs, lows, volumes = df[col_high].values, df[col_low].values, df[col_volume].values
+    
+    for h, l, v in zip(highs, lows, volumes):
+        if v <= 0 or h == l: continue
+        mask = (bins[1:] >= l) & (bins[:-1] <= h)
+        vols[mask] += v / max(1, np.sum(mask))
+        
+    prices = [float((bins[i] + bins[i+1]) / 2) for i in range(div)]
+    vols_list = vols.tolist()
+    poc_idx = vols_list.index(max(vols_list))
     poc = prices[poc_idx]
-    v_total, v_target = sum(volumes), sum(volumes) * 0.70
-    v_current, idx_b, idx_a = volumes[poc_idx], poc_idx, poc_idx
+    v_total, v_target = sum(vols_list), sum(vols_list) * 0.70
+    v_current, idx_b, idx_a = vols_list[poc_idx], poc_idx, poc_idx
+    
     while v_current < v_target:
-        v_s = volumes[idx_b - 1] if idx_b > 0 else 0
-        v_p = volumes[idx_a + 1] if idx_a < len(volumes) - 1 else 0
+        v_s = vols_list[idx_b - 1] if idx_b > 0 else 0
+        v_p = vols_list[idx_a + 1] if idx_a < div - 1 else 0
         if v_s == 0 and v_p == 0: break
         if v_s >= v_p: idx_b -= 1; v_current += v_s
         else: idx_a += 1; v_current += v_p
-    return poc, prices[min(len(prices) - 1, idx_a)], prices[max(0, idx_b)], prices, volumes
+        
+    return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
+
 if __name__ == "__main__":
-    print("Avvio scansione POC automatica globale...")
+    print("Avvio scansione POC automatica globale (Motore Vettoriale 200 Bins)...")
     
-    invia_messaggio_telegram_sbloccato(T_ID, "🚀 <b>POC Scanner Actions:</b> Avvio del ciclo globale sui panieri...")
+    invia_messaggio_telegram_sbloccato(T_ID, "🚀 <b>POC Scanner Actions:</b> Avvio del ciclo globale sui panieri (Algoritmo Corretto)...")
     
-    soglia_distanza = 3.5                  # Distanza massima tollerata in % dal POC
+    soglia_distanza = 1.5                  # Distanza massima tollerata in % dal POC
     poc_scelti = ["Generale", "ATH", "Recente (90D)"]
     panieri_da_scansionare = ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto (TOTAL 1-2-3)"]
     segnali_trovati = 0
@@ -128,7 +137,8 @@ if __name__ == "__main__":
         
             print(f"[{idx+1}/{totale_titoli}] Scansione di {ticker}...")
             try:
-                df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=True, progress=False, timeout=8)
+                # auto_adjust impostato a False per non deformare i dati storici High/Low necessari ai Bins
+                df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=False, progress=False, timeout=8)
                 
                 if df_live is not None and not df_live.empty:
                     df_live.columns = [str(c).strip() for c in df_live.columns]
@@ -167,7 +177,7 @@ if __name__ == "__main__":
                                 elif "-USD" in str(ticker): borsa_code = "BINANCE"
                                 else: borsa_code = "NASDAQ" if nome_paniere == "NASDAQ 100" else "NYSE"
                                 
-                                url_stringa_pura = f"https://tradingview.com{borsa_code}-{ticker_pulito}/"
+                                url_stringa_pura = f"https://tradingview.com{ticker_pulito}-{borsa_code}"
                                 dec = 4 if "Crypto" in nome_paniere else 2
                                 
                                 messaggio_alert = (
