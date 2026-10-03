@@ -116,12 +116,16 @@ def calc_vp(df, div=200):
         
     return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
 
+# ==============================================================================
+# PARTE 2: CICLO LOGICO CON STRATEGIA AVANZATA (EMA200 + RSI + ATR VOLATILITY)
+# ==============================================================================
+
 if __name__ == "__main__":
-    print("Avvio scansione POC automatica globale (Motore Vettoriale 200 Bins)...")
+    print("Avvio scansione POC con Strategia Avanzata (EMA + RSI + ATR)...")
     
-    invia_messaggio_telegram_sbloccato(T_ID, "🚀 <b>POC Scanner Actions:</b> Avvio del ciclo globale sui panieri (Algoritmo Corretto)...")
+    invia_messaggio_telegram_sbloccato(T_ID, "🚀 <b>POC PRO Scanner:</b> Avvio ciclo globale con filtri di Trend e Volatilità...")
     
-    soglia_distanza = 1.5                  # Distanza massima tollerata in % dal POC
+    soglia_distanza = 1.2                  # Distanza massima tollerata dal POC (più stretta per maggiore precisione)
     poc_scelti = ["Generale", "ATH", "Recente (90D)"]
     panieri_da_scansionare = ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto (TOTAL 1-2-3)"]
     segnali_trovati = 0
@@ -135,42 +139,86 @@ if __name__ == "__main__":
             ticker = ticker.strip()
             if not ticker: continue
         
-            print(f"[{idx+1}/{totale_titoli}] Scansione di {ticker}...")
+            print(f"[{idx+1}/{totale_titoli}] Analisi quantitativa su {ticker}...")
             try:
-                # auto_adjust impostato a False per non deformare i dati storici High/Low necessari ai Bins
+                # Scarichiamo uno storico sufficiente a calcolare la EMA 200 in sicurezza
                 df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=False, progress=False, timeout=8)
                 
-                if df_live is not None and not df_live.empty:
+                if df_live is not None and len(df_live) > 200:
                     df_live.columns = [str(c).strip() for c in df_live.columns]
                     mappa_colonne = {c.lower(): c for c in df_live.columns}
                     
-                    if 'close' in mappa_colonne and 'high' in mappa_colonne and 'low' in mappa_colonne:
-                        p_attuale = float(df_live[mappa_colonne['close']].iloc[-1])
-                        d_ath = df_live[mappa_colonne['high']].idxmax()
+                    # 1. CALCOLO INDICATORI SULLA SERIE STORICA GENERALE
+                    close_series = df_live[mappa_colonne['close']].astype(float)
+                    high_series = df_live[mappa_colonne['high']].astype(float)
+                    low_series = df_live[mappa_colonne['low']].astype(float)
+                    
+                    p_attuale = float(close_series.iloc[-1])
+                    d_ath = high_series.idxmax()
+                    
+                    # Calcolo EMA 200
+                    ema200 = close_series.ewm(span=200, adjust=False).mean().iloc[-1]
+                    
+                    # Calcolo RSI (14)
+                    delta = close_series.diff()
+                    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                    rsi_series = 100 - (100 / (1 + (gain / np.where(loss == 0, 0.00001, loss))))
+                    rsi_attuale = rsi_series.iloc[-1]
+                    
+                    # Calcolo ATR (14) per la volatilità delle zone di stop
+                    tr = pd.concat([high_series - low_series, 
+                                    (high_series - close_series.shift(1)).abs(), 
+                                    (low_series - close_series.shift(1)).abs()], axis=1).max(axis=1)
+                    atr_attuale = tr.rolling(window=14).mean().iloc[-1]
+                    
+                    # Generazione dei segmenti temporali per il Volume Profile
+                    df_generale = df_live.copy()
+                    df_ath_data = df_live.loc[d_ath:].copy()
+                    df_recente = df_live.tail(90).copy()
+                    
+                    controlli_da_effettuare = []
+                    if "Generale" in poc_scelti: controlli_da_effettuare.append(("GENERALE", df_generale))
+                    if "ATH" in poc_scelti: controlli_da_effettuare.append(("DALL'ATH", df_ath_data))
+                    if "Recente (90D)" in poc_scelti: controlli_da_effettuare.append(("RECENTE (90D)", df_recente))
+                    
+                    for nome_profilo, df_singolo_profilo in controlli_da_effettuare:
+                        if df_singolo_profilo.empty: continue
                         
-                        df_generale = df_live.copy()
-                        df_ath_data = df_live.loc[d_ath:].copy()
-                        df_recente = df_live.tail(90).copy()
+                        p_poc, p_vh, p_vl, prz_v, vl_v = calc_vp(df_singolo_profilo)
+                        if p_poc is None or atr_attuale is None or np.isnan(atr_attuale): continue
                         
-                        controlli_da_effettuare = []
-                        if "Generale" in poc_scelti: controlli_da_effettuare.append(("GENERALE", df_generale))
-                        if "ATH" in poc_scelti: controlli_da_effettuare.append(("DALL'ATH", df_ath_data))
-                        if "Recente (90D)" in poc_scelti: controlli_da_effettuare.append(("RECENTE (90D)", df_recente))
+                        distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
                         
-                        for nome_profilo, df_singolo_profilo in controlli_da_effettuare:
-                            if df_singolo_profilo.empty: continue
+                        # Verifica vicinanza al POC
+                        if abs(distanza_percentuale) <= soglia_distanza:
                             
-                            p_poc, p_vh, p_vl, prz_v, vl_v = calc_vp(df_singolo_profilo)
-                            if p_poc is None: continue
+                            # 2. APPLICAZIONE DEI FILTRI FILOSOFICI DELLA STRATEGIA
+                            is_trend_long = p_attuale > ema200
+                            is_rsi_ok_long = rsi_attuale < 65
+                            is_rsi_ok_short = rsi_attuale > 35
                             
-                            distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
-                            
-                            if abs(distanza_percentuale) <= soglia_distanza:
-                                segnali_trovati += 1
-                                direzione = "LONG 🟢" if p_attuale >= p_poc else "SHORT 🔴"
-                                stop_1 = p_vl * 0.985 if p_attuale >= p_poc else p_vh * 1.015
-                                take_p = p_vh if p_attuale >= p_poc else p_vl
+                            # Determinazione del setup validato dai filtri
+                            setup_valido = False
+                            if p_attuale >= p_poc and is_trend_long and is_rsi_ok_long:
+                                direzione = "LONG 🟢 (Trend Concorde)"
+                                # Stop Loss posizionato a 1.5 volte l'ATR sotto l'ingresso
+                                stop_1 = p_attuale - (1.5 * atr_attuale)
+                                # Take Profit a 3 volte l'ATR sopra l'ingresso (R/R fisso 1:2)
+                                take_p = p_attuale + (3.0 * atr_attuale)
+                                setup_valido = True
                                 
+                            elif p_attuale < p_poc and not is_trend_long and is_rsi_ok_short:
+                                direzione = "SHORT 🔴 (Trend Concorde)"
+                                # Stop Loss posizionato a 1.5 volte l'ATR sopra l'ingresso
+                                stop_1 = p_attuale + (1.5 * atr_attuale)
+                                # Take Profit a 3 volte l'ATR sotto l'ingresso (R/R fisso 1:2)
+                                take_p = p_attuale - (3.0 * atr_attuale)
+                                setup_valido = True
+                            
+                            # 3. INVIO SEGNALE SOLO SE PASSA TUTTI I FILTRI FILTRANTI
+                            if setup_valido:
+                                segnali_trovati += 1
                                 ticker_pulito = str(ticker).replace(".MI", "").replace("-USD", "")
                                 
                                 if ".MI" in str(ticker): borsa_code = "MILAN"
@@ -181,21 +229,28 @@ if __name__ == "__main__":
                                 dec = 4 if "Crypto" in nome_paniere else 2
                                 
                                 messaggio_alert = (
-                                    f"🚨 <b>SEGNALE TRIPLE-POC RILEVATO</b>\n\n"
-                                    f"📈 <b>Ticker:</b> #{ticker_pulito}\n"
-                                    f"📊 <b>Profilo:</b> {nome_profilo}\n"
-                                    f"⚡ <b>Setup:</b> {direzione}\n\n"
+                                    f"🚨 <b>STRATEGIA QUANT VALIDATA</b>\n\n"
+                                    f"📈 <b>Ticker:</b> #{ticker_pulito} ({nome_paniere})\n"
+                                    f"📊 <b>Profilo Volume:</b> {nome_profilo}\n"
+                                    f"⚡ <b>Setup Operativo:</b> {direzione}\n\n"
                                     f"💵 <b>Prezzo Attuale:</b> {round(p_attuale, dec)} USD\n"
-                                    f"🎯 <b>Entry POC:</b> {round(p_poc, dec)}\n"
-                                    f"🛑 <b>Stop Loss:</b> {round(stop_1, dec)}\n"
-                                    f"💰 <b>Take Profit:</b> {round(take_p, dec)}\n\n"
+                                    f"🎯 <b>Entry (Prezzo):</b> {round(p_attuale, dec)}\n"
+                                    f"🔴 <b>Stop Loss (1.5 ATR):</b> {round(stop_1, dec)}\n"
+                                    f"💰 <b>Take Profit (3.0 ATR):</b> {round(take_p, dec)}\n\n"
+                                    f"🔍 <b>Metriche di Controllo:</b>\n"
+                                    f"|— <i>Rapporto R/R:</i> 1:2.0\n"
+                                    f"|— <i>RSI (14):</i> {round(rsi_attuale, 1)}\n"
+                                    f"|— <i>Filtro EMA200:</i> {'SOPRA' if is_trend_long else 'SOTTO'}\n"
+                                    f"|— <i>ATR Volatilità:</i> {round(atr_attuale, dec)}\n\n"
                                     f"🔗 <a href='{url_stringa_pura}'>APRI GRAFICO SU TRADINGVIEW</a>"
                                 )
                                 invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
-                                print(f"--> Segnale inviato per {ticker} ({nome_profilo})")
+                                print(f"--> [STRATEGIA APPROVATA] Inviato segnale per {ticker} ({nome_profilo})")
+                                
             except Exception as single_err:
-                print(f"Errore temporaneo su {ticker}: {single_err}")
+                print(f"Errore nell'analisi di {ticker}: {single_err}")
                         
-    print(f"\nScansione completata. Trovati {segnali_trovati} segnali totali.")
-    messaggio_fine = f"🏁 <b>POC Scanner Actions:</b> Scansione terminata con successo!\n📊 Trovati <b>{segnali_trovati}</b> segnali totali."
+    print(f"\nScansione completata. Trovati {segnali_trovati} segnali filtrati ad alta probabilità.")
+    messaggio_fine = f"🏁 <b>POC PRO Scanner:</b> Ciclo terminato.\n📊 Inviati <b>{segnali_trovati}</b> segnali ad alta probabilità."
     invia_messaggio_telegram_sbloccato(T_ID, messaggio_fine)
+
