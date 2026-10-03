@@ -303,14 +303,10 @@ with tab2:
             date_curve = [df_bt.index[200]]  # Partiamo dal punto in cui gli indicatori sono pronti
             trade_history = []
             soglia_dist_bt = 2.0  # Tolleranza coerente con i segnali
-            # 2. CICLO DI SIMULAZIONE STORICA CANDELA PER CANDELA
+                        # 2. CICLO DI SIMULAZIONE STORICA CANDELA PER CANDELA (LOGICA CORRETTA MULTI-GIORNO)
             for i in range(200, len(df_bt)):
-                df_passato_finora = df_bt.iloc[:i]
                 riga_attuale = df_bt.iloc[i]
-                
                 p_corrente = float(riga_attuale["Close"])
-                high_g = float(riga_attuale["High"])
-                low_g = float(riga_attuale["Low"])
                 data_corrente = df_bt.index[i]
                 
                 ema200_g = float(riga_attuale["EMA200"])
@@ -320,8 +316,9 @@ with tab2:
                 if np.isnan(ema200_g) or np.isnan(rsi_g) or np.isnan(atr_g) or atr_g <= 0:
                     continue
                 
-                # SE NON SIAMO IN POSIZIONE, CERCHIAMO UN INGRESSO STRATEGICO
+                # SE NON SIAMO IN POSIZIONE, CERCHIAMO UN INGRESSO SULLA CHIUSURA DI OGGI
                 if not in_posizione:
+                    df_passato_finora = df_bt.iloc[:i]
                     df_finestra_vp = df_passato_finora.tail(90)
                     p_poc, _, _, _, _ = calc_vp(df_finestra_vp)
                     if p_poc is None: continue
@@ -341,6 +338,7 @@ with tab2:
                             if dist_sl_valore > 0:
                                 in_posizione = True
                                 size_contratti = (capitale * (rischio_trade / 100)) / dist_sl_valore
+                                index_ingresso = i  # Memorizziamo il giorno di ingresso
                         
                         elif p_corrente < p_poc and p_corrente < ema200_g and is_rsi_short_ok:
                             posizione_tipo = "SHORT"
@@ -351,21 +349,36 @@ with tab2:
                             if dist_sl_valore > 0:
                                 in_posizione = True
                                 size_contratti = (capitale * (rischio_trade / 100)) / dist_sl_valore
+                                index_ingresso = i  # Memorizziamo il giorno di ingresso
                                 
-                # SE SIAMO IN POSIZIONE, CONTROLLIAMO SE IL PREZZO HA COLPITO LO STOP O IL TARGET
+                # SE SIAMO IN POSIZIONE, IL CONTROLLO AVVIENE SOLO SUI GIORNI SUCCESSIVI
                 else:
+                    # Impedisce la chiusura nello stesso identico giorno d'ingresso
+                    if i <= index_ingresso:
+                        continue
+                        
+                    high_g = float(riga_attuale["High"])
+                    low_g = float(riga_attuale["Low"])
                     uscito = False
                     p_chiusura = 0.0
                     
                     if i == len(df_bt) - 1:
                         uscito = True
-                        p_chiusura = p_corrente
+                        p_chiusura = p_corrente  # Liquidazione forzata alla fine dello storico
                     elif posizione_tipo == "LONG":
-                        if low_g <= livello_sl: uscito, p_chiusura = True, livello_sl
-                        elif high_g >= livello_tp: uscito, p_chiusura = True, livello_tp
+                        if low_g <= livello_sl: 
+                            uscito = True
+                            p_chiusura = livello_sl  # Stop Loss colpito
+                        elif high_g >= livello_tp: 
+                            uscito = True
+                            p_chiusura = livello_tp  # Take Profit colpito
                     elif posizione_tipo == "SHORT":
-                        if high_g >= livello_sl: uscito, p_chiusura = True, livello_sl
-                        elif low_g <= livello_tp: uscito, p_chiusura = True, livello_tp
+                        if high_g >= livello_sl: 
+                            uscito = True
+                            p_chiusura = livello_sl  # Stop Loss colpito
+                        elif low_g <= livello_tp: 
+                            uscito = True
+                            p_chiusura = livello_tp  # Take Profit colpito
                             
                     if uscito:
                         pnl_lordo = (p_chiusura - prezzo_ingresso) * size_contratti if posizione_tipo == "LONG" else (prezzo_ingresso - p_chiusura) * size_contratti
@@ -384,7 +397,7 @@ with tab2:
                         date_curve.append(data_corrente)
                         in_posizione = False
 
-            # 3. COMPOSIZIONE METRICHE E REPOUT VISIVO
+            # 3. COMPOSIZIONE METRICHE E REPORT VISIVO (IDENTICO A PRIMA)
             st.subheader("📊 Statistiche di Performance Bilanciate")
             if trade_history:
                 df_trades = pd.DataFrame(trade_history)
@@ -417,8 +430,6 @@ with tab2:
                 st.warning("Nessuna operazione eseguita nel periodo selezionato con i filtri di trend (EMA200) e di volatilità attuali.")
         else:
             st.error("Dati storici insufficienti per far girare il backtest quantitativo. Assicurati che l'asset scelto abbia almeno 1 anno di contrattazioni.")
-
-
 
 
 # ==========================================
