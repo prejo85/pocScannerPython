@@ -250,11 +250,14 @@ with tab1:
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, xaxis5_rangeslider_visible=False, height=2000, showlegend=False)
                         st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
                     else: st.warning(f"Dati storici insufficienti (<200 righe) per il calcolo strategico su {ticker}.")
+
 # ==========================================
-# --- TAB 2: BACKTESTING ---
+# --- TAB 2: BACKTESTING PROFESSIONALE ---
 # ==========================================
 with tab2:
-    st.subheader("⚙️ Motore di Simulazione Storica (Backtest)")
+    st.subheader("⚙️ Motore di Simulazione Storica Avanzata (Backtest EMA + RSI + ATR)")
+    st.markdown("##### 🚀 Testa la strategia quantistica sui dati storici reali con gestione della volatilità")
+    
     b_col1, b_col2, b_col3 = st.columns(3)
     with b_col1:
         bt_ticker = st.text_input("Inserisci un singolo Ticker da testare:", value="AAPL")
@@ -265,75 +268,159 @@ with tab2:
         rischio_trade = st.slider("Rischio percentuale per operazione (%):", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
     with b_col3:
         comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5)
-
     if st.button("🚀 Esegui Backtest Strategia", type="primary"):
         st.info(f"Elaborazione della simulazione algoritmica per {bt_ticker}...")
+        
+        # Scarichiamo lo storico con le stesse opzioni di protezione dei dati
         df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
-        if df_bt is not None and len(df_bt) > 60:
-            capitale, in_posizione, prezzo_ingresso, livello_sl, livello_tp = capitale_iniziale, False, 0, 0, 0
-            equity_curve, date_curve, trade_history = [capitale_iniziale], [df_bt.index], []
-
-            for i in range(50, len(df_bt)):
-                df_storico_finora = df_bt.iloc[:i]
+        
+        if df_bt is not None and len(df_bt) > 200:
+            df_bt.columns = [str(c).strip() for c in df_bt.columns]
+            
+            # 1. PRE-CALCOLO DEGLI INDICATORI SU TUTTA LA SERIE PER EFFICIENZA
+            close_all = df_bt["Close"].astype(float)
+            high_all = df_bt["High"].astype(float)
+            low_all = df_bt["Low"].astype(float)
+            
+            df_bt["EMA200"] = close_all.ewm(span=200, adjust=False).mean()
+            
+            delta = close_all.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            df_bt["RSI"] = 100 - (100 / (1 + (gain / np.where(loss == 0, 0.00001, loss))))
+            
+            tr = pd.concat([high_all - low_all, (high_all - close_all.shift(1)).abs(), (low_all - close_all.shift(1)).abs()], axis=1).max(axis=1)
+            df_bt["ATR"] = tr.rolling(window=14).mean()
+            
+            # Parametri della simulazione
+            capitale = capitale_iniziale
+            in_posizione = False
+            prezzo_ingresso, livello_sl, livello_tp = 0.0, 0.0, 0.0
+            posizione_tipo = ""
+            size_contratti = 0.0
+            
+            equity_curve = [capitale_iniziale]
+            date_curve = [df_bt.index[200]]  # Partiamo dal punto in cui gli indicatori sono pronti
+            trade_history = []
+            soglia_dist_bt = 2.0  # Tolleranza coerente con i segnali
+            # 2. CICLO DI SIMULAZIONE STORICA CANDELA PER CANDELA
+            for i in range(200, len(df_bt)):
+                df_passato_finora = df_bt.iloc[:i]
                 riga_attuale = df_bt.iloc[i]
-                prezzo_corrente = float(riga_attuale["Close"].values if hasattr(riga_attuale["Close"], "values") else riga_attuale["Close"])
+                
+                p_corrente = float(riga_attuale["Close"])
+                high_g = float(riga_attuale["High"])
+                low_g = float(riga_attuale["Low"])
                 data_corrente = df_bt.index[i]
-
+                
+                ema200_g = float(riga_attuale["EMA200"])
+                rsi_g = float(riga_attuale["RSI"])
+                atr_g = float(riga_attuale["ATR"])
+                
+                if np.isnan(ema200_g) or np.isnan(rsi_g) or np.isnan(atr_g) or atr_g <= 0:
+                    continue
+                
+                # SE NON SIAMO IN POSIZIONE, CERCHIAMO UN INGRESSO STRATEGICO
                 if not in_posizione:
-                    p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora)
+                    df_finestra_vp = df_passato_finora.tail(90)
+                    p_poc, _, _, _, _ = calc_vp(df_finestra_vp)
                     if p_poc is None: continue
-                    posizione_tipo = "LONG" if prezzo_corrente >= p_poc else "SHORT"
-                    prezzo_ingresso = prezzo_corrente
-                    livello_sl, livello_tp = (p_vl * 0.985, p_vh) if posizione_tipo == "LONG" else (p_vh * 1.015, p_vl)
-
-                    if livello_sl > 0 and abs(prezzo_ingresso - livello_sl) > 0:
-                        in_posizione = True
-                        size_contratti = (capitale * (rischio_trade / 100)) / abs(prezzo_ingresso - livello_sl)
+                        
+                    dist_percentuale = ((p_corrente - p_poc) / p_poc) * 100
+                    
+                    if abs(dist_percentuale) <= soglia_dist_bt:
+                        is_rsi_long_ok = rsi_g < 75
+                        is_rsi_short_ok = rsi_g > 25
+                        
+                        if p_corrente >= p_poc and p_corrente > ema200_g and is_rsi_long_ok:
+                            posizione_tipo = "LONG"
+                            prezzo_ingresso = p_corrente
+                            livello_sl = prezzo_ingresso - (1.5 * atr_g)
+                            livello_tp = prezzo_ingresso + (3.0 * atr_g)
+                            dist_sl_valore = abs(prezzo_ingresso - livello_sl)
+                            if dist_sl_valore > 0:
+                                in_posizione = True
+                                size_contratti = (capitale * (rischio_trade / 100)) / dist_sl_valore
+                        
+                        elif p_corrente < p_poc and p_corrente < ema200_g and is_rsi_short_ok:
+                            posizione_tipo = "SHORT"
+                            prezzo_ingresso = p_corrente
+                            livello_sl = prezzo_ingresso + (1.5 * atr_g)
+                            livello_tp = prezzo_ingresso - (3.0 * atr_g)
+                            dist_sl_valore = abs(prezzo_ingresso - livello_sl)
+                            if dist_sl_valore > 0:
+                                in_posizione = True
+                                size_contratti = (capitale * (rischio_trade / 100)) / dist_sl_valore
+                                
+                # SE SIAMO IN POSIZIONE, CONTROLLIAMO SE IL PREZZO HA COLPITO LO STOP O IL TARGET
                 else:
-                    high_g = float(riga_attuale["High"].values if hasattr(riga_attuale["High"], "values") else riga_attuale["High"])
-                    low_g = float(riga_attuale["Low"].values if hasattr(riga_attuale["Low"], "values") else riga_attuale["Low"])
-                    uscito, p_chiusura = False, 0
-                    if posizione_tipo == "LONG":
+                    uscito = False
+                    p_chiusura = 0.0
+                    
+                    if i == len(df_bt) - 1:
+                        uscito = True
+                        p_chiusura = p_corrente
+                    elif posizione_tipo == "LONG":
                         if low_g <= livello_sl: uscito, p_chiusura = True, livello_sl
                         elif high_g >= livello_tp: uscito, p_chiusura = True, livello_tp
                     elif posizione_tipo == "SHORT":
                         if high_g >= livello_sl: uscito, p_chiusura = True, livello_sl
                         elif low_g <= livello_tp: uscito, p_chiusura = True, livello_tp
-
+                            
                     if uscito:
-                        pnl = ((p_chiusura - prezzo_ingresso) if posizione_tipo == "LONG" else (prezzo_ingresso - p_chiusura)) * size_contratti - (comun_fee * 2)
-                        capitale += pnl
-                        trade_history.append({"Data": data_corrente.strftime("%d/%m/%Y"), "Tipo": posizione_tipo, "Ingresso": round(prezzo_ingresso, 2), "Uscita": round(p_chiusura, 2), "PnL ($)": round(pnl, 2), "Capitale": round(capitale, 2)})
+                        pnl_lordo = (p_chiusura - prezzo_ingresso) * size_contratti if posizione_tipo == "LONG" else (prezzo_ingresso - p_chiusura) * size_contratti
+                        pnl_netto = pnl_lordo - (comun_fee * 2)
+                        capitale += pnl_netto
+                        
+                        trade_history.append({
+                            "Data": data_corrente.strftime("%d/%m/%Y"),
+                            "Tipo": posizione_tipo,
+                            "Ingresso": round(prezzo_ingresso, 2),
+                            "Uscita": round(p_chiusura, 2),
+                            "PnL Netto ($)": round(pnl_netto, 2),
+                            "Capitale Attuale": round(capitale, 2)
+                        })
                         equity_curve.append(capitale)
                         date_curve.append(data_corrente)
                         in_posizione = False
 
-            st.subheader("📊 Statistiche di Performance Log")
+            # 3. COMPOSIZIONE METRICHE E REPOUT VISIVO
+            st.subheader("📊 Statistiche di Performance Bilanciate")
             if trade_history:
                 df_trades = pd.DataFrame(trade_history)
-                profitti = df_trades[df_trades["PnL ($)"] > 0]["PnL ($)"].sum()
-                perdite = abs(df_trades[df_trades["PnL ($)"] < 0]["PnL ($)"].sum())
-                win_rate = round((len(df_trades[df_trades["PnL ($)"] > 0]) / len(df_trades)) * 100, 2)
+                profitti = df_trades[df_trades["PnL Netto ($)"] > 0]["PnL Netto ($)"].sum()
+                perdite = abs(df_trades[df_trades["PnL Netto ($)"] < 0]["PnL Netto ($)"].sum())
+                
+                win_rate = round((len(df_trades[df_trades["PnL Netto ($)"] > 0]) / len(df_trades)) * 100, 2)
                 profit_factor = round(profitti / max(0.01, perdite), 2)
-                max_dd = round(abs(((np.array(equity_curve) - np.maximum.accumulate(equity_curve)) / np.maximum.accumulate(equity_curve)).min()) * 100, 2)
+                
+                arr_eq = np.array(equity_curve)
+                max_dd = round(abs(((arr_eq - np.maximum.accumulate(equity_curve)) / np.maximum.accumulate(equity_curve)).min()) * 100, 2)
+                ritorno_totale = round(((capitale - capitale_iniziale) / capitale_iniziale) * 100, 2)
                 
                 m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-                m_col1.metric("Ritorno Totale", f"{round(((capitale - capitale_iniziale) / capitale_iniziale) * 100, 2)} %")
-                m_col2.metric("Percentuale Win Rate", f"{win_rate} %")
+                m_col1.metric("Ritorno Strategia", f"{ritorno_totale} %")
+                m_col2.metric("Win Rate Reale", f"{win_rate} %")
                 m_col3.metric("Profit Factor", f"{profit_factor}")
                 m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
 
                 fig_eq = grp.Figure()
-                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines', name='Equity', line=dict(color='#38bdf8', width=2)))
-                fig_eq.update_layout(title=f"📈 Andamento dell'Equity Line — {bt_ticker}", template="plotly_dark", height=400)
+                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines+markers' if len(date_curve)<50 else 'lines', name='Capitale Netto', line=dict(color='#38bdf8', width=2.5)))
+                fig_eq.update_layout(title=f"📈 Andamento dell'Equity Line Storica — Ticker: {bt_ticker}", template="plotly_dark", height=450, xaxis=dict(title="Data Chiusura Operazioni"), yaxis=dict(title="Valore Bilancio ($)"))
                 st.plotly_chart(fig_eq, use_container_width=True)
                 st.dataframe(df_trades, use_container_width=True)
                 
                 csv_dati = df_trades.to_csv(index=False).encode('utf-8')
                 st.markdown(" ")
-                st.download_button(label="📥 Esporta Storico Operazioni (CSV)", data=csv_dati, file_name=f"backtest_{bt_ticker}_{bt_periodo.replace(' ', '_').lower()}.csv", mime="text/csv", key="btn_download_csv")
+                st.download_button(label="📥 Esporta Registro Operazioni Quant (CSV)", data=csv_dati, file_name=f"backtest_quant_{bt_ticker}_{bt_periodo.lower()}.csv", mime="text/csv")
             else:
-                st.warning("Nessuna operazione eseguita nel periodo selezionato con i parametri attuali.")
+                st.warning("Nessuna operazione eseguita nel periodo selezionato con i filtri di trend (EMA200) e di volatilità attuali.")
+        else:
+            st.error("Dati storici insufficienti per far girare il backtest quantitativo. Assicurati che l'asset scelto abbia almeno 1 anno di contrattazioni.")
+
+
+
+
 # ==========================================
 # --- TAB 3: LIVE ALERTS STRATEGICI ---
 # ==========================================
