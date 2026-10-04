@@ -304,8 +304,9 @@ with tab2:
             size_2 = 0
             
             poc_riferimento_trade = 0
+            
             # ==========================================
-            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 ---
+            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 CORRETTA (NO TYPO) ---
             # ==========================================
             pocs_line = [np.nan] * len(df_bt)
             sl_line = [np.nan] * len(df_bt)
@@ -351,7 +352,8 @@ with tab2:
                             
                             distanza_r = abs(p_chiusura - ipotetico_sl)
                             distanza_t = abs(ipotetico_tp - p_chiusura)
-                            rr_ipotetico = distanza_t / max(0.01, distancia_r)
+                            # CORRETTO: Sostituito distancia_r con distanza_r
+                            rr_ipotetico = distanza_t / max(0.01, distanza_r)
                             
                             # APPLICAZIONE DEL FILTRO: Se il R:R strutturale è inferiore alle attese, scarta l'operazione
                             if rr_ipotetico >= rr_minimo_filtro:
@@ -371,7 +373,8 @@ with tab2:
                             
                             distanza_r = abs(ipotetico_sl - p_chiusura)
                             distanza_t = abs(p_chiusura - ipotetico_tp)
-                            rr_ipotetico = distanza_t / max(0.01, distancia_r)
+                            # CORRETTO: Sostituito distancia_r con distanza_r
+                            rr_ipotetico = distanza_t / max(0.01, distanza_r)
                             
                             if rr_ipotetico >= rr_minimo_filtro:
                                 in_posizione = True
@@ -400,7 +403,7 @@ with tab2:
                             massimo_raggiunto_trade = p_massimo
                         sl_trailing_atr = massimo_raggiunto_trade - (moltiplicatore_trailing_atr * atr_corrente)
                         if sl_trailing_atr > livello_sl and sl_trailing_atr < p_chiusura:
-                            livello_sl = sl_trailing_atr
+                            level_sl = sl_trailing_atr
                     else:
                         if p_minimo < minimo_raggiunto_trade:
                             minimo_raggiunto_trade = p_minimo
@@ -465,6 +468,7 @@ with tab2:
             df_bt["POC_Dinamico"] = pocs_line
             df_bt["SL_Dinamico"] = sl_line
             df_bt["TP_Dinamico"] = tp_line
+
             # ==========================================
             # --- RENDERING METRICHE E OUTPUT AVANZATO - PARTE 3 ---
             # ==========================================
