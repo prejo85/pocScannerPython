@@ -305,19 +305,22 @@ with tab2:
             
             poc_riferimento_trade = 0
             
-            # ==========================================
-            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 CORRETTA (NO TYPO) ---
+                        # ==========================================
+            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 TOTALMENTE RIGENERATA ---
             # ==========================================
             pocs_line = [np.nan] * len(df_bt)
             sl_line = [np.nan] * len(df_bt)
             tp_line = [np.nan] * len(df_bt)
 
-            moltiplicatore_trailing_atr = 2.0 
-            massimo_raggiunto_trade = 0
-            minimo_raggiunto_trade = 999999
+            # Inizializziamo un POC di backup per evitare il blocco del ciclo (continue)
+            ultimo_poc_valido = None
+            ultimo_vh_valido = None
+            ultimo_vl_valido = None
+            
+            finestra_struttura = 30 
 
-            for i in range(30, len(df_bt)):
-                df_storico_finora = df_bt.iloc[:i]
+            for i in range(finestra_struttura, len(df_bt)):
+                df_struttura_recente = df_bt.iloc[i - finestra_struttura : i]
                 riga_attuale = df_bt.iloc[i]
                 
                 p_chiusura = float(riga_attuale["Close"])
@@ -327,18 +330,28 @@ with tab2:
                 atr_corrente = float(df_bt["ATR"].iloc[i]) if not np.isnan(df_bt["ATR"].iloc[i]) else (p_massimo - p_minimo)
                 data_corrente = df_bt.index[i]
 
-                # Calcolo del POC dinamico basato sui dati storici progressivi
-                p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora)
+                # Tentativo di calcolo del Volume Profile sulla finestra recente
+                p_poc, p_vh, p_vl, _, _ = calc_vp(df_struttura_recente)
+                
+                # PROTEZIONE CONTRO IL BLOCCO: Se fallisce, recuperiamo l'ultimo dato valido noto
                 if p_poc is not None:
-                    pocs_line[i] = p_poc
+                    ultimo_poc_valido = p_poc
+                    ultimo_vh_valido = p_vh
+                    ultimo_vl_valido = p_vl
+                
+                # Se non abbiamo mai calcolato nemmeno un POC, usiamo la media della chiusura come paracadute estremo
+                if ultimo_poc_valido is None:
+                    ultimo_poc_valido = float(df_struttura_recente["Close"].mean())
+                    ultimo_vh_valido = float(df_struttura_recente["High"].max())
+                    ultimo_vl_valido = float(df_struttura_recente["Low"].min())
 
-                # FASE A: APERTURA POSIZIONE CON FILTRO R:R STRUTTURALE
+                pocs_line[i] = ultimo_poc_valido
+
+                # FASE A: RICERCA INGRESSO (NESSUNA POSIZIONE APERTA)
                 if not in_posizione:
-                    if p_poc is None: 
-                        continue
-                    
-                    resistenza_struttura = p_vh
-                    supporto_struttura = p_vl
+                    # Usiamo i massimi/minimi storici della finestra per definire i confini fisici dell'accumulazione
+                    resistenza_struttura = float(df_struttura_recente["High"].max())
+                    supporto_struttura = float(df_struttura_recente["Low"].min())
                     
                     breakout_rialzista = (p_chiusura > resistenza_struttura) and (p_chiusura > p_apertura)
                     breakout_ribassista = (p_chiusura < supporto_struttura) and (p_chiusura < p_apertura)
@@ -346,35 +359,39 @@ with tab2:
                     if breakout_rialzista or breakout_ribassista:
                         
                         if breakout_rialzista:
-                            ipotetico_sl = supporto_struttura - (0.3 * atr_corrente)
-                            # Cerca l'efficienza/massimo macro reale estendendo lo sguardo a 90 candele indietro
-                            ipotetico_tp = float(df_storico_finora["High"].tail(min(len(df_storico_finora), 90)).max())
+                            # Lo stop iniziale rimane protetto SOTTO il supporto strutturale statico dell'accumulazione
+                            ipotetico_sl = supporto_struttura - (0.1 * atr_corrente)
+                            # Il Target proietta verso i massimi macro precedenti assoluti
+                            ipotetico_tp = float(df_bt["High"].iloc[:i].max()) # Massimo assoluto registrato dall'inizio della storia
                             
+                            # Se il massimo storico assoluto è troppo vicino o distorto, usiamo un target geometrico sano
+                            if ipotetico_tp <= p_chiusura + (1.5 * abs(p_chiusura - ipotetico_sl)):
+                                ipotetico_tp = p_chiusura + (3.5 * atr_corrente)
+                                
                             distanza_r = abs(p_chiusura - ipotetico_sl)
                             distanza_t = abs(ipotetico_tp - p_chiusura)
-                            # CORRETTO: Sostituito distancia_r con distanza_r
                             rr_ipotetico = distanza_t / max(0.01, distanza_r)
                             
-                            # APPLICAZIONE DEL FILTRO: Se il R:R strutturale è inferiore alle attese, scarta l'operazione
                             if rr_ipotetico >= rr_minimo_filtro:
                                 in_posizione = True
                                 posizione_tipo = "LONG"
                                 prezzo_ingresso_1 = p_chiusura
                                 livello_sl = ipotetico_sl
                                 livello_tp = ipotetico_tp
-                                poc_riferimento_trade = p_poc
+                                poc_riferimento_trade = ultimo_poc_valido
                                 ha_fatto_retest = False
-                                massimo_raggiunto_trade = p_massimo
                                 rr_trade = round(rr_ipotetico, 2)
                         
                         elif breakout_ribassista:
-                            ipotetico_sl = resistenza_struttura + (0.3 * atr_corrente)
-                            ipotetico_tp = float(df_storico_finora["Low"].tail(min(len(df_storico_finora), 90)).min())
+                            ipotetico_sl = resistenza_struttura + (0.1 * atr_corrente)
+                            ipotetico_tp = float(df_bt["Low"].iloc[:i].min())
                             
+                            if ipotetico_tp >= p_chiusura - (1.5 * abs(ipotetico_sl - p_chiusura)):
+                                ipotetico_tp = p_chiusura - (3.5 * atr_corrente)
+                                
                             distanza_r = abs(ipotetico_sl - p_chiusura)
                             distanza_t = abs(p_chiusura - ipotetico_tp)
-                            # CORRETTO: Sostituito distancia_r con distanza_r
-                            rr_ipotetico = distanza_t / max(0.01, distanza_r)
+                            rr_ipotetico = distances_t = distanza_t / max(0.01, distanza_r)
                             
                             if rr_ipotetico >= rr_minimo_filtro:
                                 in_posizione = True
@@ -382,35 +399,22 @@ with tab2:
                                 prezzo_ingresso_1 = p_chiusura
                                 livello_sl = ipotetico_sl
                                 livello_tp = ipotetico_tp
-                                poc_riferimento_trade = p_poc
+                                poc_riferimento_trade = ultimo_poc_valido
                                 ha_fatto_retest = False
-                                minimo_raggiunto_trade = p_minimo
                                 rr_trade = round(rr_ipotetico, 2)
                         
                         if in_posizione:
-                            # Money Management robusto contro l'impatto dei costi fissi
                             rischio_monetario_parziale = capitale * ((rischio_trade / 2) / 100)
                             size_1 = rischio_monetario_parziale / max(0.01, abs(prezzo_ingresso_1 - livello_sl))
                             size_2, prezzo_ingresso_2 = 0, 0
 
-                # FASE B: GESTIONE POSIZIONE ATTIVA CON TRAILING STOP ATR
+                # FASE B: GESTIONE POSIZIONE ATTIVA (PROTEZIONE STRUTTURALE MACRO)
                 else:
                     sl_line[i] = livello_sl
                     tp_line[i] = livello_tp
 
-                    if posizione_tipo == "LONG":
-                        if p_massimo > massimo_raggiunto_trade:
-                            massimo_raggiunto_trade = p_massimo
-                        sl_trailing_atr = massimo_raggiunto_trade - (moltiplicatore_trailing_atr * atr_corrente)
-                        if sl_trailing_atr > livello_sl and sl_trailing_atr < p_chiusura:
-                            level_sl = sl_trailing_atr
-                    else:
-                        if p_minimo < minimo_raggiunto_trade:
-                            minimo_raggiunto_trade = p_minimo
-                        sl_trailing_atr = minimo_raggiunto_trade + (moltiplicatore_trailing_atr * atr_corrente)
-                        if sl_trailing_atr < livello_sl and sl_trailing_atr > p_chiusura:
-                            livello_sl = sl_trailing_atr
-
+                    # CORREZIONE 2: RIMOSSO IL TRAILING ATR SOFFOCANTE.
+                    # Il prezzo ha bisogno di respirare sui TF macro. Lo stop si muove SOLO a Break-Even (BE).
                     colpito_sl = (posizione_tipo == "LONG" and p_minimo <= livello_sl) or (posizione_tipo == "SHORT" and p_massimo >= livello_sl)
                     colpito_tp = (posizione_tipo == "LONG" and p_massimo >= livello_tp) or (posizione_tipo == "SHORT" and p_minimo <= livello_tp)
                     
@@ -424,9 +428,10 @@ with tab2:
                             distanza_sl_2 = abs(prezzo_ingresso_2 - livello_sl)
                             size_2 = rischio_monetario_parziale / max(0.01, distanza_sl_2)
                         else:
-                            meta_strada = prezzo_ingresso_1 + (livello_tp - prezzo_ingresso_1) * 0.5 if posizione_tipo == "LONG" else prezzo_ingresso_1 - (prezzo_ingresso_1 - livello_tp) * 0.5
+                            # Se il prezzo raggiunge il 40% del cammino verso il TP senza fare il retest, blindiamo la posizione a BE
+                            meta_strada = prezzo_ingresso_1 + (livello_tp - prezzo_ingresso_1) * 0.4 if posizione_tipo == "LONG" else prezzo_ingresso_1 - (prezzo_ingresso_1 - livello_tp) * 0.4
                             if (posizione_tipo == "LONG" and p_chiusura >= meta_strada) or (posizione_tipo == "SHORT" and p_chiusura <= meta_strada):
-                                livello_sl = prezzo_ingresso_1 
+                                livello_sl = prezzo_ingresso_1 # Spostamento a Break-Even Protettivo statico
                     
                     if colpito_sl or colpito_tp:
                         p_uscita = livello_sl if colpito_sl else livello_tp
@@ -440,10 +445,8 @@ with tab2:
                         
                         if colpito_tp:
                             esito_label = "TP 🎯"
-                        elif abs(p_uscita - prezzo_ingresso_1) < 0.05:
+                        elif abs(p_uscita - prezzo_ingresso_1) < 0.02 * prezzo_ingresso_1:
                             esito_label = "BE 🛡️"
-                        elif pnl_totale > 0:
-                            esito_label = "Prot. ATR 👍"
                         else:
                             esito_label = "SL 🛑"
 
@@ -456,11 +459,11 @@ with tab2:
                             "R:R Iniziale": f"1:{rr_trade}",
                             "Esito": esito_label,
                             "PnL ($)": round(pnl_totale, 2),
-                            "Capitale": round(capitale, 2)
+                            "Capitalizzazione": round(capitale, 2)
                         })
                         equity_curve.append(capitale)
                         date_curve.append(data_corrente)
-                        
+                                             
                         in_posizione = False
                         ha_fatto_retest = False
                         size_1, size_2 = 0, 0
