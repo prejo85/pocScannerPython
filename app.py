@@ -297,9 +297,14 @@ with tab2:
             size_2 = 0
             
             poc_riferimento_trade = 0
+                        # ==========================================
+            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 AGGIORNATA ---
             # ==========================================
-            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 ---
-            # ==========================================
+            # Array per tracciare le linee continue sul grafico finale
+            pocs_line = [np.nan] * len(df_bt)
+            sl_line = [np.nan] * len(df_bt)
+            tp_line = [np.nan] * len(df_bt)
+
             for i in range(50, len(df_bt)):
                 df_storico_finora = df_bt.iloc[:i]
                 riga_attuale = df_bt.iloc[i]
@@ -311,9 +316,13 @@ with tab2:
                 atr_corrente = float(df_bt["ATR"].iloc[i]) if not np.isnan(df_bt["ATR"].iloc[i]) else (p_massimo - p_minimo)
                 data_corrente = df_bt.index[i]
 
+                # Calcolo del POC corrente per la candela attuale
+                p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora)
+                if p_poc is not None:
+                    pocs_line[i] = p_poc
+
                 # FASE A: RICERCA SETUP (NESSUNA POSIZIONE APERTA)
                 if not in_posizione:
-                    p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora)
                     if p_poc is None: 
                         continue
                     
@@ -326,7 +335,7 @@ with tab2:
                         resistenza_locale = float(df_storico_finora["High"].tail(5).max())
                         supporto_locale = float(df_storico_finora["Low"].tail(5).min())
                         
-                        # 3. Controllo Breakout Importante (Candela direzionale estesa rispetto all'ATR)
+                        # 3. Controllo Breakout Importante
                         corpo_candela = abs(p_chiusura - p_apertura)
                         breakout_rialzista = (p_chiusura > resistenza_locale) and (corpo_candela > 0.8 * atr_corrente)
                         breakout_ribassista = (p_chiusura < supporto_locale) and (corpo_candela > 0.8 * atr_corrente)
@@ -352,7 +361,7 @@ with tab2:
                                 if livello_tp >= prezzo_ingresso_1: 
                                     livello_tp = prezzo_ingresso_1 - (2.5 * atr_corrente)
                             
-                            # Primo Ingresso (metà del rischio totale a budget)
+                            # Primo Ingresso
                             rischio_monetario_parziale = capitale * ((rischio_trade / 2) / 100)
                             distanza_sl = abs(prezzo_ingresso_1 - livello_sl)
                             size_1 = rischio_monetario_parziale / distanza_sl if distanza_sl > 0 else 0
@@ -360,6 +369,10 @@ with tab2:
 
                 # FASE B: GESTIONE POSIZIONE ATTIVA
                 else:
+                    # Se siamo in posizione, registriamo i livelli correnti di SL e TP per i grafici
+                    sl_line[i] = livello_sl
+                    tp_line[i] = livello_tp
+
                     colpito_sl = (posizione_tipo == "LONG" and p_minimo <= livello_sl) or (posizione_tipo == "SHORT" and p_massimo >= livello_sl)
                     colpito_tp = (posizione_tipo == "LONG" and p_massimo >= livello_tp) or (posizione_tipo == "SHORT" and p_minimo <= livello_tp)
                     
@@ -399,7 +412,13 @@ with tab2:
                         date_curve.append(data_corrente)
                         in_posizione, ha_fatto_retest = False, False
                         size_1, size_2 = 0, 0
-                        # ==========================================
+
+            # Aggiungiamo le linee calcolate al DataFrame per facilitare il plotting nella parte 3
+            df_bt["POC_Dinamico"] = pocs_line
+            df_bt["SL_Dinamico"] = sl_line
+            df_bt["TP_Dinamico"] = tp_line
+
+            # ==========================================
             # --- RENDERING METRICHE E OUTPUT AVANZATO - PARTE 3 ---
             # ==========================================
             st.subheader("📊 Statistiche di Performance Istituzionale")
