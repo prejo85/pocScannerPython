@@ -306,18 +306,18 @@ with tab2:
             poc_riferimento_trade = 0
             
             # ==========================================
-            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 RISOLTA (MOMENTUM SBLOCCATO) ---
+            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 RISOLTA DEFINITIVAMENTE ---
             # ==========================================
             sl_line = [np.nan] * len(df_bt)
             tp_line = [np.nan] * len(df_bt)
             atr_protezione_line = [np.nan] * len(df_bt)
 
-            # Inizializziamo la media per intercettare i cambi di momentum macro
+            # Calcolo della media per il momentum macro
             df_bt["EMA_Momentum"] = df_bt["Close"].ewm(span=20, adjust=False).mean()
 
-            # Lista per memorizzare i POC istituzionali unici rilevati
+            # Struttura dati per archiviare TUTTI i livelli di POC statici indipendenti
             pocs_istituzionali_storici = []
-
+            
             indice_ancoraggio_vp = 0
             ultimo_poc_valido = None
             moltiplicatore_atr_sl = 2.0 
@@ -333,19 +333,21 @@ with tab2:
                 atr_corrente = float(df_bt["ATR"].iloc[i]) if not np.isnan(df_bt["ATR"].iloc[i]) else (p_massimo - p_minimo)
                 data_corrente = df_bt.index[i]
 
-                # RILEVATORE CAMBIO DI MOMENTUM MACRO (CORRETTO: Rimosso 'and not in_posizione')
+                # RILEVATORE DI MOMENTUM INDIPENDENTE (SBLOCCATO)
                 cross_rialzista_mom = (riga_precedente["Close"] <= riga_precedente["EMA_Momentum"]) and (p_chiusura > riga_attuale["EMA_Momentum"])
                 cross_ribassista_mom = (riga_precedente["Close"] >= riga_precedente["EMA_Momentum"]) and (p_chiusura < riga_attuale["EMA_Momentum"])
                 
-                # Il POC si aggiorna e si storicizza SEMPRE al cambio di momentum, tracciando le rette macro sul grafico
-                if cross_rialzista_mom or cross_ribassista_mom:
-                    indice_ancoraggio_vp = i - 5
+                # Se c'è un cambio di momentum o se la lista è vuota all'inizio, calcoliamo e salviamo il livello statico
+                if cross_rialzista_mom or cross_ribassista_mom or len(pocs_istituzionali_storici) == 0:
+                    if len(pocs_istituzionali_storici) > 0:
+                        indice_ancoraggio_vp = i - 5
                     
                     df_blocco_concluso = df_bt.iloc[max(0, indice_ancoraggio_vp) : i]
-                    if len(df_blocco_concluso) >= 10:
+                    if len(df_blocco_concluso) >= 5:
                         p_poc_nuovo, _, _, _, _ = calc_vp(df_blocco_concluso, div=200)
-                        # Evitiamo duplicati o linee troppo vicine (tolleranza del 3%)
-                        if p_poc_nuovo is not None and (not pocs_istituzionali_storici or abs(p_poc_nuovo - pocs_istituzionali_storici[-1]["livello"]) > 0.03 * p_poc_nuovo):
+                        
+                        # Evitiamo duplicati identici (tolleranza del 2%)
+                        if p_poc_nuovo is not None and (not pocs_istituzionali_storici or abs(p_poc_nuovo - pocs_istituzionali_storici[-1]["livello"]) > 0.02 * p_poc_nuovo):
                             pocs_istituzionali_storici.append({
                                 "data_inizio": data_corrente,
                                 "livello": p_poc_nuovo
@@ -355,16 +357,10 @@ with tab2:
                 df_blocco_momentum = df_bt.iloc[max(0, indice_ancoraggio_vp) : i]
                 atr_protezione_line[i] = p_chiusura - (moltiplicatore_atr_sl * atr_corrente)
 
-                # Inizializzazione paracadute se la lista è ancora vuota all'inizio
-                if not pocs_istituzionali_storici:
-                    p_poc_init, _, _, _, _ = calc_vp(df_blocco_momentum, div=200)
-                    if p_poc_init is not None:
-                        pocs_istituzionali_storici.append({"data_inizio": data_corrente, "livello": p_poc_init})
-                        ultimo_poc_valido = p_poc_init
-                    else:
-                        ultimo_poc_valido = p_chiusura
+                if ultimo_poc_valido is None:
+                    ultimo_poc_valido = p_chiusura
 
-                # FASE A: RICERCA INGRESSO STRUTTURALE MACRO
+                # FASE A: RICERCA INGRESSO SULLA STRUTTURA MACRO RECENTE
                 if not in_posizione:
                     if len(df_blocco_momentum) < 5:
                         continue
@@ -392,6 +388,7 @@ with tab2:
                                 livello_breakout_riferimento = resistenza_macro
                                 ha_fatto_retest = False
                                 rr_trade = round(rr_ipotetico, 2)
+                                poc_riferimento_trade = ultimo_poc_valido
                         
                         elif breakout_ribassista:
                             ipotetico_sl = supporto_macro + (moltiplicatore_atr_sl * atr_corrente)
@@ -410,6 +407,7 @@ with tab2:
                                 livello_breakout_riferimento = supporto_macro
                                 ha_fatto_retest = False
                                 rr_trade = round(rr_ipotetico, 2)
+                                poc_riferimento_trade = ultimo_poc_valido
                         
                         if in_posizione:
                             rischio_monetario_parziale = capitale * ((rischio_trade / 2) / 100)
@@ -469,7 +467,7 @@ with tab2:
                         equity_curve.append(capitale)
                         date_curve.append(data_corrente)
                         
-                        in_posizione = False
+                        in_posizione, ha_fatto_retest = False, False
                         ha_fatto_retest = False
                         size_1, size_2 = 0, 0
 
@@ -478,7 +476,7 @@ with tab2:
             df_bt["ATR_Protezione_Continuo"] = atr_protezione_line
 
 # ==========================================
-            # --- RENDERING METRICHE E OUTPUT CON RETTE POC INFINITE COMPLETO - PARTE 3 ---
+            # --- RENDERING METRICHE E OUTPUT CON RETTE POC INFINITE - PARTE 3 ---
             # ==========================================
             st.subheader("📊 Statistiche di Performance Istituzionale")
             if trade_history:
@@ -513,10 +511,9 @@ with tab2:
                 fig_strat = make_subplots(rows=1, cols=1, shared_xaxes=True)
                 fig_strat.add_trace(grp.Candlestick(x=df_bt.index, open=df_bt["Open"], high=df_bt["High"], low=df_bt["Low"], close=df_bt["Close"], name="Prezzo"), row=1, col=1)
                 
-                # TRACCIAMENTO DI TUTTI I POC GENERATI (A, B, C, D...) FINO A FINE GRAFICO
+                # TRACCIAMENTO SBLOCCATO: Disegna ogni singola retta orizzontale archiviata
                 fine_grafico_data = df_bt.index[-1]
                 for idx, poc_info in enumerate(pocs_istituzionali_storici):
-                    # Genera etichette sequenziali (A, B, C... Z) basate sull'indice
                     lettera_poc = chr(65 + (idx % 26))
                     fig_strat.add_trace(grp.Scatter(
                         x=[poc_info["data_inizio"], fine_grafico_data], 
@@ -561,6 +558,8 @@ with tab2:
                 st.warning("Nessun trade convalidato: i setup rilevati avevano un R:R inferiore alla soglia minima impostata o la struttura macro non è stata rotta.")
         else:
             st.error("Dati storici insufficienti sul timeframe selezionato.")
+            
+
 # ==========================================
 # --- TAB 3: LIVE ALERTS STRATEGICI ---
 # ==========================================
