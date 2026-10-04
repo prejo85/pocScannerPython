@@ -305,8 +305,8 @@ with tab2:
             
             poc_riferimento_trade = 0
             
-                        # ==========================================
-            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 CON POC PERMANENTI ---
+            # ==========================================
+            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 RISOLTA (MOMENTUM SBLOCCATO) ---
             # ==========================================
             sl_line = [np.nan] * len(df_bt)
             tp_line = [np.nan] * len(df_bt)
@@ -315,8 +315,7 @@ with tab2:
             # Inizializziamo la media per intercettare i cambi di momentum macro
             df_bt["EMA_Momentum"] = df_bt["Close"].ewm(span=20, adjust=False).mean()
 
-            # Lista per memorizzare i POC istituzionali unici rilevati (con data di inizio e livello)
-            # Ogni elemento sarà un dizionario: {"data_inizio": Timestamp, "livello": float}
+            # Lista per memorizzare i POC istituzionali unici rilevati
             pocs_istituzionali_storici = []
 
             indice_ancoraggio_vp = 0
@@ -334,19 +333,19 @@ with tab2:
                 atr_corrente = float(df_bt["ATR"].iloc[i]) if not np.isnan(df_bt["ATR"].iloc[i]) else (p_massimo - p_minimo)
                 data_corrente = df_bt.index[i]
 
-                # RILEVATORE CAMBIO DI MOMENTUM MACRO
+                # RILEVATORE CAMBIO DI MOMENTUM MACRO (CORRETTO: Rimosso 'and not in_posizione')
                 cross_rialzista_mom = (riga_precedente["Close"] <= riga_precedente["EMA_Momentum"]) and (p_chiusura > riga_attuale["EMA_Momentum"])
                 cross_ribassista_mom = (riga_precedente["Close"] >= riga_precedente["EMA_Momentum"]) and (p_chiusura < riga_attuale["EMA_Momentum"])
                 
-                # Se c'è un cambio di momentum, resettiamo l'ancoraggio e registriamo il nuovo livello stabile
-                if (cross_rialzista_mom or cross_ribassista_mom) and not in_posizione:
+                # Il POC si aggiorna e si storicizza SEMPRE al cambio di momentum, tracciando le rette macro sul grafico
+                if cross_rialzista_mom or cross_ribassista_mom:
                     indice_ancoraggio_vp = i - 5
                     
-                    # Calcoliamo immediatamente il profilo volumetrico sul blocco appena concluso per isolare il POC statico
                     df_blocco_concluso = df_bt.iloc[max(0, indice_ancoraggio_vp) : i]
                     if len(df_blocco_concluso) >= 10:
                         p_poc_nuovo, _, _, _, _ = calc_vp(df_blocco_concluso, div=200)
-                        if p_poc_nuovo is not None and (not pocs_istituzionali_storici or abs(p_poc_nuovo - pocs_istituzionali_storici[-1]["livello"]) > 0.02 * p_poc_nuovo):
+                        # Evitiamo duplicati o linee troppo vicine (tolleranza del 3%)
+                        if p_poc_nuovo is not None and (not pocs_istituzionali_storici or abs(p_poc_nuovo - pocs_istituzionali_storici[-1]["livello"]) > 0.03 * p_poc_nuovo):
                             pocs_istituzionali_storici.append({
                                 "data_inizio": data_corrente,
                                 "livello": p_poc_nuovo
@@ -356,7 +355,7 @@ with tab2:
                 df_blocco_momentum = df_bt.iloc[max(0, indice_ancoraggio_vp) : i]
                 atr_protezione_line[i] = p_chiusura - (moltiplicatore_atr_sl * atr_corrente)
 
-                # Gestione paracadute per la prima esecuzione se la lista è vuota
+                # Inizializzazione paracadute se la lista è ancora vuota all'inizio
                 if not pocs_istituzionali_storici:
                     p_poc_init, _, _, _, _ = calc_vp(df_blocco_momentum, div=200)
                     if p_poc_init is not None:
@@ -365,7 +364,7 @@ with tab2:
                     else:
                         ultimo_poc_valido = p_chiusura
 
-                # FASE A: RICERCA INGRESSO STRUTTURALE
+                # FASE A: RICERCA INGRESSO STRUTTURALE MACRO
                 if not in_posizione:
                     if len(df_blocco_momentum) < 5:
                         continue
@@ -478,8 +477,8 @@ with tab2:
             df_bt["TP_Dinamico"] = tp_line
             df_bt["ATR_Protezione_Continuo"] = atr_protezione_line
 
-            # ==========================================
-            # --- RENDERING METRICHE E OUTPUT CON RETTE POC INFINITE - PARTE 3 ---
+# ==========================================
+            # --- RENDERING METRICHE E OUTPUT CON RETTE POC INFINITE COMPLETO - PARTE 3 ---
             # ==========================================
             st.subheader("📊 Statistiche di Performance Istituzionale")
             if trade_history:
@@ -514,17 +513,19 @@ with tab2:
                 fig_strat = make_subplots(rows=1, cols=1, shared_xaxes=True)
                 fig_strat.add_trace(grp.Candlestick(x=df_bt.index, open=df_bt["Open"], high=df_bt["High"], low=df_bt["Low"], close=df_bt["Close"], name="Prezzo"), row=1, col=1)
                 
-                # Tracciamento di ogni POC registrato come retta orizzontale permanente fino alla fine dell'asse X
+                # TRACCIAMENTO DI TUTTI I POC GENERATI (A, B, C, D...) FINO A FINE GRAFICO
                 fine_grafico_data = df_bt.index[-1]
                 for idx, poc_info in enumerate(pocs_istituzionali_storici):
+                    # Genera etichette sequenziali (A, B, C... Z) basate sull'indice
+                    lettera_poc = chr(65 + (idx % 26))
                     fig_strat.add_trace(grp.Scatter(
                         x=[poc_info["data_inizio"], fine_grafico_data], 
                         y=[poc_info["livello"], poc_info["livello"]],
                         mode="lines+text",
-                        name=f"POC Macro {chr(65+idx)}",
-                        text=[f"POC {chr(65+idx)} ", ""],
+                        name=f"POC Macro {lettera_poc}",
+                        text=[f"POC {lettera_poc} ", ""],
                         textposition="top right",
-                        line=dict(color="rgba(242, 142, 43, 0.75)", width=2),
+                        line=dict(color="rgba(242, 142, 43, 0.8)", width=2),
                         connectgaps=True
                     ), row=1, col=1)
                 
@@ -560,7 +561,6 @@ with tab2:
                 st.warning("Nessun trade convalidato: i setup rilevati avevano un R:R inferiore alla soglia minima impostata o la struttura macro non è stata rotta.")
         else:
             st.error("Dati storici insufficienti sul timeframe selezionato.")
-
 # ==========================================
 # --- TAB 3: LIVE ALERTS STRATEGICI ---
 # ==========================================
