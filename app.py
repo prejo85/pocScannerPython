@@ -306,18 +306,19 @@ with tab2:
             poc_riferimento_trade = 0
             
             # ==========================================
-            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 CON POC ANCORATO COMPLETO ---
+            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 
             # ==========================================
             pocs_line = [np.nan] * len(df_bt)
             sl_line = [np.nan] * len(df_bt)
             tp_line = [np.nan] * len(df_bt)
+            
+            # Tracciamento continuo dell'ATR su tutto il grafico per misurare la volatilità di fondo
+            atr_protezione_line = [np.nan] * len(df_bt)
 
             ultimo_poc_valido = None
-            
-            # Partiamo dopo 30 candele per avere uno storico minimo di volumi su cui calcolare il primo POC
+            moltiplicatore_atr_sl = 2.0 # Distanza protettiva calcolata dall'ATR
+
             for i in range(30, len(df_bt)):
-                # CORREZIONE FONDAMENTALE: Lo storico si accumula dall'inizio (0) fino alla candela corrente (i).
-                # Questo garantisce che il POC rimanga statico sulle zone ad altissima densità di volume macro.
                 df_storico_progressivo = df_bt.iloc[0 : i]
                 riga_attuale = df_bt.iloc[i]
                 
@@ -328,40 +329,37 @@ with tab2:
                 atr_corrente = float(df_bt["ATR"].iloc[i]) if not np.isnan(df_bt["ATR"].iloc[i]) else (p_massimo - p_minimo)
                 data_corrente = df_bt.index[i]
 
-                # Calcolo del Volume Profile sull'intero blocco storico accumulato fino a ieri (forzando 200 bins per la massima precisione)
+                # 1. Calcolo e tracciamento continuo dell'ATR di protezione su tutto il grafico
+                atr_protezione_line[i] = p_chiusura - (moltiplicatore_atr_sl * atr_corrente)
+
+                # Calcolo del Volume Profile sull'intero blocco storico progressivo
                 p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_progressivo, div=200)
-                
                 if p_poc is not None:
                     ultimo_poc_valido = p_poc
-                
                 if ultimo_poc_valido is None:
                     ultimo_poc_valido = float(df_storico_progressivo["Close"].mean())
 
-                # Registriamo il POC: vedrai che ora rimarrà una linea retta e costante per lunghissimi periodi
                 pocs_line[i] = ultimo_poc_valido
 
-                # FASE A: RICERCA INGRESSO (NESSUNA POSIZIONE APERTA)
+                # FASE A: RICERCA INGRESSO (PREZZO SOTTO LA RESISTENZA MACRO)
                 if not in_posizione:
-                    # Identifichiamo l'accumulazione recente guardando le ultime 12 candele rispetto al POC macro
-                    df_recente_check = df_bt.iloc[max(0, i-12) : i]
-                    resistenza_struttura = float(df_recente_check["High"].max())
-                    supporto_struttura = float(df_recente_check["Low"].min())
+                    # Troviamo il massimo assoluto di tutto lo storico precedente (la linea bianca di resistenza macro)
+                    resistenza_macro = float(df_storico_progressivo["High"].max())
+                    supporto_macro = float(df_storico_progressivo["Low"].min())
                     
-                    # Il prezzo rompe i massimi/minimi del periodo di compressione recente
-                    breakout_rialzista = (p_chiusura > resistenza_struttura) and (p_chiusura > p_apertura)
-                    breakout_ribassista = (p_chiusura < supporto_struttura) and (p_chiusura < p_apertura)
+                    # Il Breakout avviene quando una candela rompe e chiude sopra il livello di resistenza macro
+                    breakout_rialzista = (p_chiusura > resistenza_macro) and (p_chiusura > p_apertura)
+                    # Speculare per il ribasso su rottura del supporto macro
+                    breakout_ribassista = (p_chiusura < supporto_macro) and (p_chiusura < p_apertura)
                     
                     if breakout_rialzista or breakout_ribassista:
                         
                         if breakout_rialzista:
-                            # Lo stop loss iniziale si ancora in modo rigido sotto il supporto della struttura di accumulazione
-                            ipotetico_sl = supporto_struttura - (0.1 * atr_corrente)
-                            # Il Target punta al massimo storico assoluto registrato dalla Price Action fino a quel momento
-                            ipotetico_tp = float(df_bt["High"].iloc[:i].max()) 
+                            # Lo Stop Loss iniziale si ancora in modo sicuro sotto il POC o sotto la linea di protezione ATR della candela di breakout
+                            ipotetico_sl = resistenza_macro - (moltiplicatore_atr_sl * atr_corrente)
+                            # Il Target proietta verso una estensione macro della struttura precedente
+                            ipotetico_tp = p_chiusura + (5.0 * atr_corrente) 
                             
-                            if ipotetico_tp <= p_chiusura + (1.5 * abs(p_chiusura - ipotetico_sl)):
-                                ipotetico_tp = p_chiusura + (3.5 * atr_corrente)
-                                
                             distanza_r = abs(p_chiusura - ipotetico_sl)
                             distanza_t = abs(ipotetico_tp - p_chiusura)
                             rr_ipotetico = distanza_t / max(0.01, distanza_r)
@@ -372,17 +370,14 @@ with tab2:
                                 prezzo_ingresso_1 = p_chiusura
                                 livello_sl = ipotetico_sl
                                 livello_tp = ipotetico_tp
-                                poc_riferimento_trade = ultimo_poc_valido
+                                livello_breakout_riferimento = resistenza_macro
                                 ha_fatto_retest = False
                                 rr_trade = round(rr_ipotetico, 2)
                         
                         elif breakout_ribassista:
-                            ipotetico_sl = resistenza_struttura + (0.1 * atr_corrente)
-                            ipotetico_tp = float(df_bt["Low"].iloc[:i].min())
+                            ipotetico_sl = supporto_macro + (moltiplicatore_atr_sl * atr_corrente)
+                            ipotetico_tp = p_chiusura - (5.0 * atr_corrente)
                             
-                            if ipotetico_tp >= p_chiusura - (1.5 * abs(ipotetico_sl - p_chiusura)):
-                                ipotetico_tp = p_chiusura - (3.5 * atr_corrente)
-                                
                             distanza_r = abs(ipotetico_sl - p_chiusura)
                             distanza_t = abs(p_chiusura - ipotetico_tp)
                             rr_ipotetico = distanza_t / max(0.01, distanza_r)
@@ -393,7 +388,7 @@ with tab2:
                                 prezzo_ingresso_1 = p_chiusura
                                 livello_sl = ipotetico_sl
                                 livello_tp = ipotetico_tp
-                                poc_riferimento_trade = ultimo_poc_valido
+                                livello_breakout_riferimento = supporto_macro
                                 ha_fatto_retest = False
                                 rr_trade = round(rr_ipotetico, 2)
                         
@@ -402,7 +397,7 @@ with tab2:
                             size_1 = rischio_monetario_parziale / max(0.01, abs(prezzo_ingresso_1 - livello_sl))
                             size_2, prezzo_ingresso_2 = 0, 0
 
-                # FASE B: GESTIONE POSIZIONE ATTIVA
+                # FASE B: GESTIONE POSIZIONE ATTIVA CON RETEST DELLA STRUTTURA
                 else:
                     sl_line[i] = livello_sl
                     tp_line[i] = livello_tp
@@ -410,19 +405,22 @@ with tab2:
                     colpito_sl = (posizione_tipo == "LONG" and p_minimo <= livello_sl) or (posizione_tipo == "SHORT" and p_massimo >= livello_sl)
                     colpito_tp = (posizione_tipo == "LONG" and p_massimo >= livello_tp) or (posizione_tipo == "SHORT" and p_minimo <= livello_tp)
                     
+                    # Gestione del RETEST istituzionale sulla linea di breakout precedente (la vecchia resistenza)
                     if not ha_fatto_retest:
-                        toccato_poc = (posizione_tipo == "LONG" and p_minimo <= poc_riferimento_trade) or (posizione_tipo == "SHORT" and p_massimo >= poc_riferimento_trade)
+                        # Il retest avviene se il minimo della candela torna a testare il livello di breakout della struttura
+                        toccato_livello_breakout = (posizione_tipo == "LONG" and p_minimo <= livello_breakout_riferimento) or (posizione_tipo == "SHORT" and p_massimo >= livello_breakout_riferimento)
                         
-                        if toccato_poc and not colpito_sl:
+                        if toccato_livello_breakout and not colpito_sl:
                             ha_fatto_retest = True
-                            prezzo_ingresso_2 = poc_riferimento_trade
+                            prezzo_ingresso_2 = livello_breakout_riferimento
                             rischio_monetario_parziale = capitale * ((rischio_trade / 2) / 100)
                             distanza_sl_2 = abs(prezzo_ingresso_2 - livello_sl)
                             size_2 = rischio_monetario_parziale / max(0.01, distanza_sl_2)
                         else:
-                            meta_strada = prezzo_ingresso_1 + (livello_tp - prezzo_ingresso_1) * 0.4 if posizione_tipo == "LONG" else prezzo_ingresso_1 - (prezzo_ingresso_1 - livello_tp) * 0.4
+                            # Protezione a Break-Even se il prezzo corre via del 50% verso il TP senza fare il retest
+                            meta_strada = prezzo_ingresso_1 + (livello_tp - prezzo_ingresso_1) * 0.5 if posizione_tipo == "LONG" else prezzo_ingresso_1 - (prezzo_ingresso_1 - livello_tp) * 0.5
                             if (posizione_tipo == "LONG" and p_chiusura >= meta_strada) or (posizione_tipo == "SHORT" and p_chiusura <= meta_strada):
-                                livello_sl = prezzo_ingresso_1 # Break-Even
+                                livello_sl = prezzo_ingresso_1 
                     
                     if colpito_sl or colpito_tp:
                         p_uscita = livello_sl if colpito_sl else livello_tp
@@ -462,11 +460,13 @@ with tab2:
             df_bt["POC_Dinamico"] = pocs_line
             df_bt["SL_Dinamico"] = sl_line
             df_bt["TP_Dinamico"] = tp_line
+            df_bt["ATR_Protezione_Continuo"] = atr_protezione_line
 
             # ==========================================
-            # --- RENDERING METRICHE E OUTPUT AVANZATO - PARTE 3 ---
+            # --- RENDERING METRICHE E OUTPUT AVANZATO COMPLETO - PARTE 3 ---
             # ==========================================
             st.subheader("📊 Statistiche di Performance Istituzionale")
+            
             if trade_history:
                 df_trades = pd.DataFrame(trade_history)
                 profitti = df_trades[df_trades["PnL ($)"] > 0]["PnL ($)"].sum()
@@ -479,32 +479,75 @@ with tab2:
                 drawdowns = (arr_equity - peaks) / peaks
                 max_dd = round(abs(drawdowns.min()) * 100, 2) if len(drawdowns) > 0 else 0.0
                 
+                # 1. VISUALIZZAZIONE DELLE METRICHE CHIAVE IN RIGHE
                 m_col1, m_col2, m_col3, m_col4 = st.columns(4)
                 m_col1.metric("Ritorno Totale", f"{round(((capitale - capitale_iniziale) / capitale_iniziale) * 100, 2)} %")
                 m_col2.metric("Percentuale Win Rate", f"{win_rate} %")
                 m_col3.metric("Profit Factor", f"{profit_factor}")
                 m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
 
-                # Grafico 1: Equity Curve
+                # 2. GRAFICO 1: CURVA DI CRESCITA DEL CAPITALE (EQUITY LINE)
                 fig_eq = grp.Figure()
-                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines+markers', name='Equity Line', line=dict(color='#38bdf8', width=2)))
-                fig_eq.update_layout(title=f"📈 Curva di Crescita del Capitale (Equity Line)", template="plotly_dark", height=320)
+                fig_eq.add_trace(grp.Scatter(
+                    x=date_curve, y=equity_curve, 
+                    mode='lines+markers', name='Equity Line', 
+                    line=dict(color='#38bdf8', width=2),
+                    hovertemplate="Data: %{x}<br>Capitale: $%{y:,.2f}<extra></extra>"
+                ))
+                fig_eq.update_layout(
+                    title=f"📈 Curva di Crescita del Capitale (Equity Line)", 
+                    template="plotly_dark", 
+                    height=320,
+                    margin=dict(l=40, r=40, t=50, b=40)
+                )
                 st.plotly_chart(fig_eq, use_container_width=True, key="bt_equity_chart")
                 
-                # Tabella Log Operazioni Filtrate
-                st.markdown("##### 📝 Registro Storico Esecuzioni Filtrate (R:R Convalidati)")
+                # 3. TABELLA REGISTRO OPERAZIONI
+                st.markdown("##### 📝 Registro Storico Esecuzioni Istituzionali")
                 st.dataframe(df_trades, use_container_width=True)
 
-                # Grafico 2: Candele + Tracciato POC e Canali
+                # 4. GRAFICO 2: ANALISI VISIVA DELLA STRATEGIA (PREZZO + POC + ATR)
                 st.markdown("---")
-                st.markdown("##### 🔍 Analisi Visiva della Strategia (Prezzo + POC + Trailing SL)")
+                st.markdown("##### 🔍 Analisi Visiva della Strategia (Prezzo + POC Istituzionale + ATR Continuo)")
                 
                 fig_strat = make_subplots(rows=1, cols=1, shared_xaxes=True)
-                fig_strat.add_trace(grp.Candlestick(x=df_bt.index, open=df_bt["Open"], high=df_bt["High"], low=df_bt["Low"], close=df_bt["Close"], name="Prezzo"), row=1, col=1)
-                fig_strat.add_trace(grp.Scatter(x=df_bt.index, y=df_bt["POC_Dinamico"], mode="lines", name="POC Dinamico", line=dict(color="rgba(242, 142, 43, 0.8)", width=2)), row=1, col=1)
-                fig_strat.add_trace(grp.Scatter(x=df_bt.index, y=df_bt["TP_Dinamico"], mode="lines", name="Price Action TP", line=dict(color="#22c55e", width=1.5, dash="dash"), connectgaps=False), row=1, col=1)
-                fig_strat.add_trace(grp.Scatter(x=df_bt.index, y=df_bt["SL_Dinamico"], mode="lines", name="Trailing SL (Protezione ATR)", line=dict(color="#ef4444", width=1.5, dash="dash"), connectgaps=False), row=1, col=1)
                 
+                # Candele del grafico dei prezzi
+                fig_strat.add_trace(grp.Candlestick(
+                    x=df_bt.index, open=df_bt["Open"], high=df_bt["High"], low=df_bt["Low"], close=df_bt["Close"], 
+                    name="Prezzo"
+                ), row=1, col=1)
+                
+                # Tracciato stabile del POC Dinamico
+                fig_strat.add_trace(grp.Scatter(
+                    x=df_bt.index, y=df_bt["POC_Dinamico"], 
+                    mode="lines", name="POC Dinamico (Volume)", 
+                    line=dict(color="rgba(242, 142, 43, 0.8)", width=2.5)
+                ), row=1, col=1)
+                
+                # Linea ATR continua su tutto il grafico per studiare i canali di volatilità
+                fig_strat.add_trace(grp.Scatter(
+                    x=df_bt.index, y=df_bt["ATR_Protezione_Continuo"], 
+                    mode="lines", name="Filtro Volatilità (ATR)", 
+                    line=dict(color="rgba(168, 85, 247, 0.4)", width=1.5, dash="dash")
+                ), row=1, col=1)
+
+                # Canali di Take Profit e Stop Loss agganciati solo alla durata dei trade attivi
+                fig_strat.add_trace(grp.Scatter(
+                    x=df_bt.index, y=df_bt["TP_Dinamico"], 
+                    mode="lines", name="Price Action TP Target", 
+                    line=dict(color="#22c55e", width=1.5, dash="dash"), 
+                    connectgaps=False
+                ), row=1, col=1)
+                
+                fig_strat.add_trace(grp.Scatter(
+                    x=df_bt.index, y=df_bt["SL_Dinamico"], 
+                    mode="lines", name="Stop Loss / Break-Even", 
+                    line=dict(color="#ef4444", width=1.5, dash="dash"), 
+                    connectgaps=False
+                ), row=1, col=1)
+                
+                # Disegno dei marker operativi storici (Ingressi breakout/retest e chiusure)
                 for _, trade in df_trades.iterrows():
                     try:
                         data_evento = pd.to_datetime(trade["Data"], format="%d/%m/%Y")
@@ -523,14 +566,15 @@ with tab2:
                     except Exception:
                         pass
                 
-                fig_strat.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=600, showlegend=True, margin=dict(l=40, r=40, t=30, b=40))
-                st.plotly_chart(fig_strat, use_container_width=True, key="bt_strategy_chart_final")
+                fig_strat.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=650, showlegend=True, margin=dict(l=40, r=40, t=30, b=40))
+                st.plotly_chart(fig_strat, use_container_width=True, key="bt_strategy_chart_intu_final")
                 
+                # 5. PULSANTE DI ESPORTAZIONE FILE CSV
                 csv_dati = df_trades.to_csv(index=False).encode('utf-8')
                 st.markdown(" ")
                 st.download_button(label="📥 Esporta Storico Operazioni (CSV)", data=csv_dati, file_name=f"backtest_{bt_ticker}_{bt_periodo.replace(' ', '_').lower()}.csv", mime="text/csv", key="btn_download_csv")
             else:
-                st.warning("Nessun trade convalidato: i setup rilevati avevano un R:R inferiore alla soglia minima impostata.")
+                st.warning("Nessun trade convalidato: i setup rilevati avevano un R:R inferiore alla soglia minima impostata o la struttura non è stata rotta.")
         else:
             st.error("Dati storici insufficienti sul timeframe selezionato.")
 
