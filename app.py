@@ -297,14 +297,14 @@ with tab2:
             size_2 = 0
             
             poc_riferimento_trade = 0
-                        # ==========================================
-            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 CON ATR TRAILING E R:R ---
+                       # ==========================================
+            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 RISOLTA ---
             # ==========================================
             pocs_line = [np.nan] * len(df_bt)
             sl_line = [np.nan] * len(df_bt)
             tp_line = [np.nan] * len(df_bt)
 
-            # Moltiplicatore ATR per la protezione da caduta prezzo (es: 2.0 volte l'ATR dalla cima del movimento)
+            # Moltiplicatore ATR per la protezione da inversione brusca
             moltiplicatore_trailing_atr = 2.0 
             massimo_raggiunto_trade = 0
             minimo_raggiunto_trade = 999999
@@ -344,28 +344,34 @@ with tab2:
                         if breakout_rialzista:
                             posizione_tipo = "LONG"
                             prezzo_ingresso_1 = p_chiusura
-                            livello_sl = supporto_struttura - (0.2 * atr_corrente) 
-                            livello_tp = float(df_storico_finora["High"].max()) * 0.85
+                            livello_sl = supporto_struttura - (0.5 * atr_corrente) # Stop più largo sotto la struttura
                             
-                            # Mantenimento metriche per Trailing ATR
+                            # CORREZIONE TARGET: Massimo reale degli ultimi 60 giorni per cercare la liquidità precedente
+                            livello_tp = float(df_storico_finora["High"].tail(60).max())
+                            # Protezione se il massimo recente è troppo vicino (forza un R:R minimo di 1:2)
+                            if livello_tp <= prezzo_ingresso_1 + (1.5 * abs(prezzo_ingresso_1 - livello_sl)):
+                                livello_tp = prezzo_ingresso_1 + (2.5 * atr_corrente)
+                            
                             massimo_raggiunto_trade = p_massimo
                         else:
                             posizione_tipo = "SHORT"
                             prezzo_ingresso_1 = p_chiusura
-                            livello_sl = resistenza_struttura + (0.2 * atr_corrente)
-                            livello_tp = float(df_storico_finora["Low"].min()) * 1.15
+                            livello_sl = resistenza_struttura + (0.5 * atr_corrente)
                             
-                            # Mantenimento metriche per Trailing ATR
+                            livello_tp = float(df_storico_finora["Low"].tail(60).min())
+                            if livello_tp >= prezzo_ingresso_1 - (1.5 * abs(livello_sl - prezzo_ingresso_1)):
+                                livello_tp = prezzo_ingresso_1 - (2.5 * atr_corrente)
+                            
                             minimo_raggiunto_trade = p_minimo
                         
-                        # Calcolo del Rapporto Rischio:Rendimento (R:R) specifico per questo setup strutturale
+                        # CORREZIONE CALCOLO R:R: Rapporto pulito basato sui punti di lavoro effettivi
                         distanza_rischio_iniziale = abs(prezzo_ingresso_1 - livello_sl)
                         distanza_rendimento_iniziale = abs(livello_tp - prezzo_ingresso_1)
                         rr_trade = round(distanza_rendimento_iniziale / max(0.01, distanza_rischio_iniziale), 2)
                         
-                        # Gestione Money Management Primo Ingresso
+                        # Gestione Money Management Matematica ed Esatta (Rischio controllato sul capitale)
                         rischio_monetario_parziale = capitale * ((rischio_trade / 2) / 100)
-                        size_1 = rischio_monetario_parziale / distanza_rischio_iniziale if distanza_rischio_iniziale > 0 else 0
+                        size_1 = rischio_monetario_parziale / max(0.01, distanza_rischio_iniziale)
                         size_2, prezzo_ingresso_2 = 0, 0
 
                 # FASE B: GESTIONE POSIZIONE ATTIVA
@@ -373,27 +379,26 @@ with tab2:
                     sl_line[i] = livello_sl
                     tp_line[i] = livello_tp
 
-                    # Aggiornamento dei massimi/minimi raggiunti durante il trade per il Trailing ATR
+                    # Gestione Trailing Stop protettivo con l'ATR
                     if posizione_tipo == "LONG":
                         if p_massimo > massimo_raggiunto_trade:
                             massimo_raggiunto_trade = p_massimo
-                        # Protezione ATR: se il prezzo cade sotto il massimo meno N volte l'ATR, alziamo lo SL dinamico
                         sl_trailing_atr = massimo_raggiunto_trade - (moltiplicatore_trailing_atr * atr_corrente)
-                        if sl_trailing_atr > livello_sl:
+                        # Alza lo stop solo se il trailing supera lo stop precedente ed è sotto il prezzo corrente
+                        if sl_trailing_atr > livello_sl and sl_trailing_atr < p_chiusura:
                             livello_sl = sl_trailing_atr
                     else:
                         if p_minimo < minimo_raggiunto_trade:
                             minimo_raggiunto_trade = p_minimo
-                        # Protezione ATR per gli Short: se il prezzo rimbalza sopra il minimo più N volte l'ATR
                         sl_trailing_atr = minimo_raggiunto_trade + (moltiplicatore_trailing_atr * atr_corrente)
-                        if sl_trailing_atr < livello_sl:
+                        if sl_trailing_atr < livello_sl and sl_trailing_atr > p_chiusura:
                             livello_sl = sl_trailing_atr
 
-                    # Controllo delle uscite (TP o SL/Trailing ATR protettivo)
+                    # Verifica se i prezzi della candela hanno toccato i livelli intermedi
                     colpito_sl = (posizione_tipo == "LONG" and p_minimo <= livello_sl) or (posizione_tipo == "SHORT" and p_massimo >= livello_sl)
                     colpito_tp = (posizione_tipo == "LONG" and p_massimo >= livello_tp) or (posizione_tipo == "SHORT" and p_minimo <= livello_tp)
                     
-                    # Controllo del secondo ingresso (Retest sul POC)
+                    # Logica del secondo ingresso su retest del POC
                     if not ha_fatto_retest:
                         toccato_poc = (posizione_tipo == "LONG" and p_minimo <= poc_riferimento_trade) or (posizione_tipo == "SHORT" and p_massimo >= poc_riferimento_trade)
                         
@@ -402,31 +407,35 @@ with tab2:
                             prezzo_ingresso_2 = poc_riferimento_trade
                             rischio_monetario_parziale = capitale * ((rischio_trade / 2) / 100)
                             distanza_sl_2 = abs(prezzo_ingresso_2 - livello_sl)
-                            size_2 = rischio_monetario_parziale / distanza_sl_2 if distanza_sl_2 > 0 else 0
+                            size_2 = rischio_monetario_parziale / max(0.01, distanza_sl_2)
                         else:
                             meta_strada = prezzo_ingresso_1 + (livello_tp - prezzo_ingresso_1) * 0.5 if posizione_tipo == "LONG" else prezzo_ingresso_1 - (prezzo_ingresso_1 - livello_tp) * 0.5
                             if (posizione_tipo == "LONG" and p_chiusura >= meta_strada) or (posizione_tipo == "SHORT" and p_chiusura <= meta_strada):
-                                if livello_sl < prezzo_ingresso_1 and posizione_tipo == "LONG":
-                                    livello_sl = prezzo_ingresso_1 # Sposta a BE
-                                elif livello_sl > prezzo_ingresso_1 and posizione_tipo == "SHORT":
-                                    livello_sl = prezzo_ingresso_1
+                                # Spostamento a Break-Even protettivo
+                                livello_sl = prezzo_ingresso_1 
                     
-                    # Esecuzione della chiusura contabile del trade
+                    # Chiusura della posizione e calcolo matematico corretto dei profitti/perdite
                     if colpito_sl or colpito_tp:
                         p_uscita = livello_sl if colpito_sl else livello_tp
-                        pnl_1 = ((p_uscita - prezzo_ingresso_1) if posizione_tipo == "LONG" else (prezzo_ingresso_1 - p_uscita)) * size_1
-                        pnl_2 = ((p_uscita - prezzo_ingresso_2) if posizione_tipo == "LONG" else (prezzo_ingresso_2 - p_uscita)) * size_2 if ha_fatto_retest else 0
                         
-                        pnl_totale = (pnl_1 + pnl_2) - (comun_fee * (4 if ha_fatto_retest else 2))
+                        # Calcolo PnL lineare senza distorsioni vettoriali
+                        pnl_1 = (p_uscita - prezzo_ingresso_1) * size_1 if posizione_tipo == "LONG" else (prezzo_ingresso_1 - p_uscita) * size_1
+                        pnl_2 = 0
+                        if ha_fatto_retest and size_2 > 0:
+                            pnl_2 = (p_uscita - prezzo_ingresso_2) * size_2 if posizione_tipo == "LONG" else (prezzo_ingresso_2 - p_uscita) * size_2
+                        
+                        # Costo totale delle commissioni corretto (Flat commission)
+                        tasse_eseguito = comun_fee * (2 if not ha_fatto_retest else 4)
+                        pnl_totale = (pnl_1 + pnl_2) - tasse_eseguito
+                        
                         capitale += pnl_totale
                         
-                        # Determina se l'esito è un TP netto, uno stop classico o un'uscita in protezione ATR
                         if colpito_tp:
                             esito_label = "TP 🎯"
-                        elif p_uscita == prezzo_ingresso_1:
+                        elif abs(p_uscita - prezzo_ingresso_1) < 0.05:
                             esito_label = "BE 🛡️"
-                        elif (posizione_tipo == "LONG" and p_uscita > prezzo_ingresso_1) or (posizione_tipo == "SHORT" and p_uscita < prezzo_ingresso_1):
-                            esito_label = "Prot. ATR 🛑"
+                        elif pnl_totale > 0:
+                            esito_label = "Prot. ATR 👍"
                         else:
                             esito_label = "SL 🛑"
 
@@ -443,15 +452,13 @@ with tab2:
                         })
                         equity_curve.append(capitale)
                         date_curve.append(data_corrente)
-                        in_posizione, ha_fatto_retest = False, False
+                        
+                        # Reset degli stati per il trade successivo
+                        in_posizione = False
+                        ha_fatto_retest = False
                         size_1, size_2 = 0, 0
 
-            df_bt["POC_Dinamico"] = pocs_line
-            df_bt["SL_Dinamico"] = sl_line
-            df_bt["TP_Dinamico"] = tp_line
-
-
-                        # ==========================================
+            # ==========================================
             # --- RENDERING METRICHE E OUTPUT AVANZATO - PARTE 3 AGGIORNATA ---
             # ==========================================
             st.subheader("📊 Statistiche di Performance Istituzionale")
