@@ -252,10 +252,10 @@ with tab1:
                     else: st.warning(f"Dati storici insufficienti (<200 righe) per il calcolo strategico su {ticker}.")
 
 # ==========================================
-# --- TAB 2: BACKTESTING ---
+# --- TAB 2: BACKTESTING AVANZATO (PRICE ACTION & POC RETEST) - PARTE 1 ---
 # ==========================================
 with tab2:
-    st.subheader("⚙️ Motore di Simulazione Storica (Backtest)")
+    st.subheader("⚙️ Motore di Simulazione Storica Avanzato (Price Action & POC Retest)")
     b_col1, b_col2, b_col3 = st.columns(3)
     with b_col1:
         bt_ticker = st.text_input("Inserisci un singolo Ticker da testare:", value="AAPL")
@@ -263,83 +263,146 @@ with tab2:
     with b_col2:
         bt_periodo = st.selectbox("Orizzonte temporale dei dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"])
         mappa_periodi = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
-        rischio_trade = st.slider("Rischio percentuale per operazione (%):", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
+        rischio_trade = st.slider("Rischio % per operazione (diviso tra i due ingressi):", min_value=0.5, max_value=5.0, value=2.0, step=0.5)
     with b_col3:
         comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5)
 
-    if st.button("🚀 Esegui Backtest Strategia", type="primary"):
-        st.info(f"Elaborazione della simulazione algoritmica per {bt_ticker}...")
+    if st.button("🚀 Esegui Backtest Price Action", type="primary"):
+        st.info(f"Elaborazione della simulazione istituzionale per {bt_ticker}...")
         df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
         
         if df_bt is not None and len(df_bt) > 60:
-            # Pulizia colonne per evitare spazi o problemi di maiuscole/minuscole
             df_bt.columns = [str(c).strip() for c in df_bt.columns]
             
-            capitale = capitale_iniziale
-            in_posizione = False
-            prezzo_ingresso, livello_sl, livello_tp = 0, 0, 0
-            posizione_tipo = "LONG"
-            size_contratti = 0
+            # Calcolo ATR preliminare per la volatilità del breakout e per lo stop iniziale
+            tr = pd.concat([df_bt["High"] - df_bt["Close"].shift(1).abs(), (df_bt["High"] - df_bt["Close"].shift(1)).abs(), (df_bt["Low"] - df_bt["Close"].shift(1)).abs()], axis=1).max(axis=1)
+            df_bt["ATR"] = tr.rolling(window=14).mean()
             
-            # Corretto: Inizializzazione lineare delle curve per evitare errori su Plotly
+            capitale = capitale_iniziale
             equity_curve = [capitale_iniziale]
-            date_curve = [df_bt.index[50]] 
+            date_curve = [df_bt.index[50]] # Inizializzazione temporale allineata
             trade_history = []
-
+            
+            # Stato della posizione complessa
+            in_posizione = False
+            posizione_tipo = None  # "LONG" o "SHORT"
+            livello_sl = 0
+            livello_tp = 0
+            
+            # Monitoraggio dei due ingressi separati
+            ha_fatto_retest = False
+            prezzo_ingresso_1 = 0
+            size_1 = 0
+            prezzo_ingresso_2 = 0
+            size_2 = 0
+            
+            poc_riferimento_trade = 0
+            # ==========================================
+            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 ---
+            # ==========================================
             for i in range(50, len(df_bt)):
                 df_storico_finora = df_bt.iloc[:i]
                 riga_attuale = df_bt.iloc[i]
                 
-                # Conversione sicura in float indipendentemente dalla struttura dati di Pandas
-                prezzo_corrente = float(riga_attuale["Close"])
+                p_chiusura = float(riga_attuale["Close"])
+                p_massimo = float(riga_attuale["High"])
+                p_minimo = float(riga_attuale["Low"])
+                p_apertura = float(riga_attuale["Open"])
+                atr_corrente = float(df_bt["ATR"].iloc[i]) if not np.isnan(df_bt["ATR"].iloc[i]) else (p_massimo - p_minimo)
                 data_corrente = df_bt.index[i]
 
+                # FASE A: RICERCA SETUP (NESSUNA POSIZIONE APERTA)
                 if not in_posizione:
                     p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora)
                     if p_poc is None: 
                         continue
                     
-                    posizione_tipo = "LONG" if prezzo_corrente >= p_poc else "SHORT"
-                    prezzo_ingresso = prezzo_corrente
-                    livello_sl, livello_tp = (p_vl * 0.985, p_vh) if posizione_tipo == "LONG" else (p_vh * 1.015, p_vl)
-
-                    if livello_sl > 0 and abs(prezzo_ingresso - livello_sl) > 0:
-                        in_posizione = True
-                        size_contratti = (capitale * (rischio_trade / 100)) / abs(prezzo_ingresso - livello_sl)
-                else:
-                    high_g = float(riga_attuale["High"])
-                    low_g = float(riga_attuale["Low"])
-                    uscito, p_chiusura = False, 0
+                    # 1. Controllo accumulazione (Prezzo recente vicino al POC negli ultimi 5 giorni)
+                    prezzi_recenti = df_storico_finora["Close"].tail(5).values
+                    vicino_al_poc = any(abs(p - p_poc) / p_poc <= 0.02 for p in prezzi_recenti)
                     
-                    if posizione_tipo == "LONG":
-                        if low_g <= livello_sl: 
-                            uscito, p_chiusura = True, livello_sl
-                        elif high_g >= livello_tp: 
-                            uscito, p_chiusura = True, livello_tp
-                    elif posizione_tipo == "SHORT":
-                        if high_g >= livello_sl: 
-                            uscito, p_chiusura = True, livello_sl
-                        elif low_g <= livello_tp: 
-                            uscito, p_chiusura = True, livello_tp
+                    if vicino_al_poc:
+                        # 2. Definizione delle resistenze/supporti locali dell'area di accumulazione
+                        resistenza_locale = float(df_storico_finora["High"].tail(5).max())
+                        supporto_locale = float(df_storico_finora["Low"].tail(5).min())
+                        
+                        # 3. Controllo Breakout Importante (Candela direzionale estesa rispetto all'ATR)
+                        corpo_candela = abs(p_chiusura - p_apertura)
+                        breakout_rialzista = (p_chiusura > resistenza_locale) and (corpo_candela > 0.8 * atr_corrente)
+                        breakout_ribassista = (p_chiusura < supporto_locale) and (corpo_candela > 0.8 * atr_corrente)
+                        
+                        if breakout_rialzista or breakout_ribassista:
+                            in_posizione = True
+                            poc_riferimento_trade = p_poc
+                            ha_fatto_retest = False
+                            
+                            # Calcolo dei Target basati sulla Price Action macro precedente (40 giorni)
+                            if breakout_rialzista:
+                                posizione_tipo = "LONG"
+                                prezzo_ingresso_1 = p_chiusura
+                                livello_sl = supporto_locale - (0.5 * atr_corrente)
+                                livello_tp = float(df_storico_finora["High"].tail(40).max())
+                                if livello_tp <= prezzo_ingresso_1: 
+                                    livello_tp = prezzo_ingresso_1 + (2.5 * atr_corrente)
+                            else:
+                                posizione_tipo = "SHORT"
+                                prezzo_ingresso_1 = p_chiusura
+                                livello_sl = resistenza_locale + (0.5 * atr_corrente)
+                                livello_tp = float(df_storico_finora["Low"].tail(40).min())
+                                if livello_tp >= prezzo_ingresso_1: 
+                                    livello_tp = prezzo_ingresso_1 - (2.5 * atr_corrente)
+                            
+                            # Primo Ingresso (metà del rischio totale a budget)
+                            rischio_monetario_parziale = capitale * ((rischio_trade / 2) / 100)
+                            distanza_sl = abs(prezzo_ingresso_1 - livello_sl)
+                            size_1 = rischio_monetario_parziale / distanza_sl if distanza_sl > 0 else 0
+                            size_2, prezzo_ingresso_2 = 0, 0
 
-                    if uscito:
-                        pnl = ((p_chiusura - prezzo_ingresso) if posizione_tipo == "LONG" else (prezzo_ingresso - p_chiusura)) * size_contratti - (comun_fee * 2)
-                        capitale += pnl
+                # FASE B: GESTIONE POSIZIONE ATTIVA
+                else:
+                    colpito_sl = (posizione_tipo == "LONG" and p_minimo <= livello_sl) or (posizione_tipo == "SHORT" and p_massimo >= livello_sl)
+                    colpito_tp = (posizione_tipo == "LONG" and p_massimo >= livello_tp) or (posizione_tipo == "SHORT" and p_minimo <= livello_tp)
+                    
+                    if not ha_fatto_retest:
+                        toccato_poc = (posizione_tipo == "LONG" and p_minimo <= poc_riferimento_trade) or (posizione_tipo == "SHORT" and p_massimo >= poc_riferimento_trade)
+                        
+                        if toccato_poc and not colpito_sl:
+                            ha_fatto_retest = True
+                            prezzo_ingresso_2 = poc_riferimento_trade
+                            rischio_monetario_parziale = capitale * ((rischio_trade / 2) / 100)
+                            distanza_sl_2 = abs(prezzo_ingresso_2 - livello_sl)
+                            size_2 = rischio_monetario_parziale / distanza_sl_2 if distanza_sl_2 > 0 else 0
+                        else:
+                            meta_strada = prezzo_ingresso_1 + (livello_tp - prezzo_ingresso_1) * 0.5 if posizione_tipo == "LONG" else prezzo_ingresso_1 - (prezzo_ingresso_1 - livello_tp) * 0.5
+                            if (posizione_tipo == "LONG" and p_chiusura >= meta_strada) or (posizione_tipo == "SHORT" and p_chiusura <= meta_strada):
+                                livello_sl = prezzo_ingresso_1 # Sposta a BE
+                    
+                    if colpito_sl or colpito_tp:
+                        p_uscita = livello_sl if colpito_sl else livello_tp
+                        pnl_1 = ((p_uscita - prezzo_ingresso_1) if posizione_tipo == "LONG" else (prezzo_ingresso_1 - p_uscita)) * size_1
+                        pnl_2 = ((p_uscita - prezzo_ingresso_2) if posizione_tipo == "LONG" else (prezzo_ingresso_2 - p_uscita)) * size_2 if ha_fatto_retest else 0
+                        
+                        pnl_totale = (pnl_1 + pnl_2) - (comun_fee * (4 if ha_fatto_retest else 2))
+                        capitale += pnl_totale
                         
                         trade_history.append({
-                            "Data": data_corrente.strftime("%d/%m/%Y"), 
-                            "Tipo": posizione_tipo, 
-                            "Ingresso": round(prezzo_ingresso, 2), 
-                            "Uscita": round(p_chiusura, 2), 
-                            "PnL ($)": round(pnl, 2), 
+                            "Data": data_corrente.strftime("%d/%m/%Y"),
+                            "Tipo": posizione_tipo,
+                            "Ingresso 1": round(prezzo_ingresso_1, 2),
+                            "Retest In": round(prezzo_ingresso_2, 2) if ha_fatto_retest else "No Retest",
+                            "Uscita": round(p_uscita, 2),
+                            "Esito": "TP 🎯" if colpito_tp else "SL 🛑",
+                            "PnL ($)": round(pnl_totale, 2),
                             "Capitale": round(capitale, 2)
                         })
-                        
                         equity_curve.append(capitale)
                         date_curve.append(data_corrente)
-                        in_posizione = False
-
-            st.subheader("📊 Statistiche di Performance Log")
+                        in_posizione, ha_fatto_retest = False, False
+                        size_1, size_2 = 0, 0
+            # ==========================================
+            # --- RENDERING METRICHE E OUTPUT - PARTE 3 ---
+            # ==========================================
+            st.subheader("📊 Statistiche di Performance Istituzionale")
             if trade_history:
                 df_trades = pd.DataFrame(trade_history)
                 profitti = df_trades[df_trades["PnL ($)"] > 0]["PnL ($)"].sum()
@@ -347,7 +410,6 @@ with tab2:
                 win_rate = round((len(df_trades[df_trades["PnL ($)"] > 0]) / len(df_trades)) * 100, 2)
                 profit_factor = round(profitti / max(0.01, perdite), 2)
                 
-                # Calcolo del Max Drawdown corretto basato sui punti di chiusura delle operazioni
                 arr_equity = np.array(equity_curve)
                 peaks = np.maximum.accumulate(arr_equity)
                 drawdowns = (arr_equity - peaks) / peaks
@@ -359,10 +421,9 @@ with tab2:
                 m_col3.metric("Profit Factor", f"{profit_factor}")
                 m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
 
-                # Disegno della curva di equity privo di eccezioni dimensionali
                 fig_eq = grp.Figure()
-                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines', name='Equity', line=dict(color='#38bdf8', width=2)))
-                fig_eq.update_layout(title=f"📈 Andamento dell'Equity Line — {bt_ticker}", template="plotly_dark", height=400)
+                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines+markers', name='Equity Line', line=dict(color='#38bdf8', width=2)))
+                fig_eq.update_layout(title=f"📈 Equity Line - Strategia Breakout & Retest POC ({bt_ticker})", template="plotly_dark", height=400)
                 st.plotly_chart(fig_eq, use_container_width=True)
                 
                 st.dataframe(df_trades, use_container_width=True)
@@ -371,7 +432,7 @@ with tab2:
                 st.markdown(" ")
                 st.download_button(label="📥 Esporta Storico Operazioni (CSV)", data=csv_dati, file_name=f"backtest_{bt_ticker}_{bt_periodo.replace(' ', '_').lower()}.csv", mime="text/csv", key="btn_download_csv")
             else:
-                st.warning("Nessuna operazione eseguita nel periodo selezionato con i parametri attuali.")
+                st.warning("Nessun pattern di breakout/accumulazione convalidato nel periodo selezionato con i parametri attuali.")
         else:
             st.error("Dati storici insufficienti per elaborare il backtest su questo ticker.")
 
