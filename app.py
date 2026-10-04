@@ -297,7 +297,7 @@ with tab2:
             size_2 = 0
             
             poc_riferimento_trade = 0
-                        # ==========================================
+            # ==========================================
             # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 AGGIORNATA ---
             # ==========================================
             # Array per tracciare le linee continue sul grafico finale
@@ -462,19 +462,19 @@ with tab2:
                 st.markdown("##### 📝 Registro Storico Esecuzioni")
                 st.dataframe(df_trades, use_container_width=True)
 
-                # ----------------------------------------------------
-                # 📊 GRAFICO 2: VISUALIZZAZIONE DELLA STRATEGIA SUL PREZZO
+                                # ----------------------------------------------------
+                # 📊 GRAFICO 2 AGGIORNATO: VISUALIZZAZIONE COMPLETA CON POC E LIVELLI
                 # ----------------------------------------------------
                 st.markdown("---")
-                st.markdown("##### 🔍 Analisi Visiva della Strategia (Prezzo + Setup Istituzionali)")
+                st.markdown("##### 🔍 Analisi Visiva della Strategia (Prezzo + POC Dinamico + Livelli Tecnici)")
                 
                 fig_strat = make_subplots(
                     rows=1, cols=1,
                     shared_xaxes=True,
-                    subplot_titles=(f"Price Action di {bt_ticker} con Punti di Lavoro e Retest POC",)
+                    subplot_titles=(f"Price Action di {bt_ticker} con Tracciato POC e Canali Operativi",)
                 )
                 
-                # 1. Tracciamento candele Candlestick originali scaricate
+                # 1. Tracciamento candele Candlestick originali
                 fig_strat.add_trace(grp.Candlestick(
                     x=df_bt.index, 
                     open=df_bt["Open"], high=df_bt["High"], 
@@ -482,29 +482,53 @@ with tab2:
                     name="Prezzo Candele"
                 ), row=1, col=1)
                 
-                # 2. Ciclo di disegno per sovrapporre gli eventi reali del registro trade sul grafico delle candele
+                # 2. LINEA CONTINUA DEL POC DINAMICO (Calcolato ad ogni candela)
+                fig_strat.add_trace(grp.Scatter(
+                    x=df_bt.index, y=df_bt["POC_Dinamico"],
+                    mode="lines",
+                    name="POC Dinamico",
+                    line=dict(color="rgba(242, 142, 43, 0.8)", width=2), # Arancione istituzionale
+                    hovertemplate="Data: %{x}<br>POC: %{y:.2f}<extra></extra>"
+                ), row=1, col=1)
+
+                # 3. LINEE SPERIMENTALI DI STOP LOSS E TAKE PROFIT (Visibili solo durante i trade attivi)
+                fig_strat.add_trace(grp.Scatter(
+                    x=df_bt.index, y=df_bt["TP_Dinamico"],
+                    mode="lines",
+                    name="Take Profit Target",
+                    line=dict(color="#22c55e", width=1.5, dash="dash"), # Verde tratteggiato
+                    connectgaps=False # Evita di unire i punti tra trade diversi
+                ), row=1, col=1)
+
+                fig_strat.add_trace(grp.Scatter(
+                    x=df_bt.index, y=df_bt["SL_Dinamico"],
+                    mode="lines",
+                    name="Stop Loss / BE",
+                    line=dict(color="#ef4444", width=1.5, dash="dash"), # Rosso tratteggiato
+                    connectgaps=False
+                ), row=1, col=1)
+                
+                # 4. Sovrapposizione dei marker degli ordini eseguiti (Ingressi e Chiusure)
                 for _, trade in df_trades.iterrows():
                     try:
-                        # Conversione della data stringa del log in formato Timestamp per l'asse X di Plotly
                         data_evento = pd.to_datetime(trade["Data"], format="%d/%m/%Y")
                         p_uscita = float(trade["Uscita"])
                         p_ing1 = float(trade["Ingresso 1"])
                         tipo = trade["Tipo"]
                         esito = trade["Esito"]
                         
-                        # Disegno del marker di chiusura dell'operazione (TP o SL)
+                        # Chiusura trade (TP o SL)
                         colore_esito = "#22c55e" if "TP" in esito else "#ef4444"
                         fig_strat.add_trace(grp.Scatter(
                             x=[data_evento], y=[p_uscita],
                             mode="markers+text",
-                            marker=dict(symbol="x", size=11, color=colore_esito, line=dict(width=2)),
+                            marker=dict(symbol="x", size=12, color=colore_esito, line=dict(width=2)),
                             text=[f" {esito}"],
                             textposition="top center",
-                            name="Chiusura Posizione",
                             showlegend=False
                         ), row=1, col=1)
                         
-                        # Disegno del marker del Primo Ingresso (Breakout convalidato)
+                        # Ingresso 1 (Breakout)
                         fig_strat.add_trace(grp.Scatter(
                             x=[data_evento], y=[p_ing1],
                             mode="markers",
@@ -513,31 +537,32 @@ with tab2:
                             showlegend=False
                         ), row=1, col=1)
                         
-                        # Se è avvenuto il secondo ingresso sul retest, disegna il marker viola sul POC
+                        # Ingresso 2 (Retest POC)
                         if trade["Retest In"] != "No Retest":
                             p_ing2 = float(trade["Retest In"])
                             fig_strat.add_trace(grp.Scatter(
                                 x=[data_evento], y=[p_ing2],
                                 mode="markers",
-                                marker=dict(symbol="diamond", size=10, color="#a855f7"),
+                                marker=dict(symbol="diamond", size=11, color="#a855f7"),
                                 hovertemplate=f"Retest Inserito<br>Prezzo POC: {p_ing2}<extra></extra>",
                                 showlegend=False
                             ), row=1, col=1)
                     except Exception:
-                        pass # Protezione generica per eventuali discrepanze nei formati delle stringhe data
+                        pass
                 
-                # Ottimizzazione del layout grafico in modalità scura per non appesantire la dashboard
+                # Ottimizzazione estetica finale del layout
                 fig_strat.update_layout(
                     template="plotly_dark",
                     xaxis_rangeslider_visible=False,
-                    height=600,
-                    showlegend=False,
+                    height=650,
+                    showlegend=True, # Mostra la legenda per distinguere le linee
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                     margin=dict(l=40, r=40, t=40, b=40)
                 )
                 fig_strat.update_yaxes(title_text="Prezzo ($)")
-                st.plotly_chart(fig_strat, use_container_width=True, key="bt_strategy_chart")
+                st.plotly_chart(fig_strat, use_container_width=True, key="bt_strategy_chart_with_poc")
                 
-                # Pulsante di esportazione file
+                # Pulsante di esportazione CSV
                 csv_dati = df_trades.to_csv(index=False).encode('utf-8')
                 st.markdown(" ")
                 st.download_button(label="📥 Esporta Storico Operazioni (CSV)", data=csv_dati, file_name=f"backtest_{bt_ticker}_{bt_periodo.replace(' ', '_').lower()}.csv", mime="text/csv", key="btn_download_csv")
