@@ -306,21 +306,24 @@ with tab2:
             poc_riferimento_trade = 0
             
             # ==========================================
-            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 
+            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 CON CAMBIO MOMENTUM ---
             # ==========================================
             pocs_line = [np.nan] * len(df_bt)
             sl_line = [np.nan] * len(df_bt)
             tp_line = [np.nan] * len(df_bt)
-            
-            # Tracciamento continuo dell'ATR su tutto il grafico per misurare la volatilità di fondo
             atr_protezione_line = [np.nan] * len(df_bt)
 
+            # Calcolo di una media mobile per intercettare i cambi di momentum macro
+            df_bt["EMA_Momentum"] = df_bt["Close"].ewm(span=20, adjust=False).mean()
+
+            # Indice di inizio del calcolo del Volume Profile (punto di ancoraggio iniziale)
+            indice_ancoraggio_vp = 0
             ultimo_poc_valido = None
-            moltiplicatore_atr_sl = 2.0 # Distanza protettiva calcolata dall'ATR
+            moltiplicatore_atr_sl = 2.0 
 
             for i in range(30, len(df_bt)):
-                df_storico_progressivo = df_bt.iloc[0 : i]
                 riga_attuale = df_bt.iloc[i]
+                riga_precedente = df_bt.iloc[i-1]
                 
                 p_chiusura = float(riga_attuale["Close"])
                 p_massimo = float(riga_attuale["High"])
@@ -329,35 +332,46 @@ with tab2:
                 atr_corrente = float(df_bt["ATR"].iloc[i]) if not np.isnan(df_bt["ATR"].iloc[i]) else (p_massimo - p_minimo)
                 data_corrente = df_bt.index[i]
 
-                # 1. Calcolo e tracciamento continuo dell'ATR di protezione su tutto il grafico
+                # --- 🔍 RILEVATORE CAMBIO DI MOMENTUM MACRO ---
+                # Se il prezzo incrocia al rialzo o al ribasso la media di momentum, resettiamo l'ancoraggio volumetrico
+                cross_rialzista_mom = (riga_precedente["Close"] <= riga_precedente["EMA_Momentum"]) and (p_chiusura > riga_attuale["EMA_Momentum"])
+                cross_ribassista_mom = (riga_precedente["Close"] >= riga_precedente["EMA_Momentum"]) and (p_chiusura < riga_attuale["EMA_Momentum"])
+                
+                if (cross_rialzista_mom or cross_ribassista_mom) and not in_posizione:
+                    # Spostiamo il punto di inizio del volume profile al giorno del cambio di momentum
+                    indice_ancoraggio_vp = i - 5 # Teniamo 5 candele di margine per catturare la transizione
+
+                # Estrarre lo storico a partire dall'ultimo cambio di momentum rilevato
+                df_blocco_momentum = df_bt.iloc[max(0, indice_ancoraggio_vp) : i]
+                
+                # Tracciamento continuo dell'ATR di protezione
                 atr_protezione_line[i] = p_chiusura - (moltiplicatore_atr_sl * atr_corrente)
 
-                # Calcolo del Volume Profile sull'intero blocco storico progressivo
-                p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_progressivo, div=200)
-                if p_poc is not None:
-                    ultimo_poc_valido = p_poc
-                if ultimo_poc_valido is None:
-                    ultimo_poc_valido = float(df_storico_progressivo["Close"].mean())
+                # Calcolo del Volume Profile sul blocco di momentum attivo
+                if len(df_blocco_momentum) >= 10:
+                    p_poc, p_vh, p_vl, _, _ = calc_vp(df_blocco_momentum, div=200)
+                    if p_poc is not None:
+                        ultimo_poc_valido = p_poc
 
+                if ultimo_poc_valido is None:
+                    ultimo_poc_valido = float(df_blocco_momentum["Close"].mean()) if not df_blocco_momentum.empty else p_chiusura
+
+                # Il POC rimarrà perfettamente orizzontale durante tutto il trend e salterà solo ai cambi di momentum
                 pocs_line[i] = ultimo_poc_valido
 
-                # FASE A: RICERCA INGRESSO (PREZZO SOTTO LA RESISTENZA MACRO)
+                # FASE A: RICERCA INGRESSO (PRICE ACTION)
                 if not in_posizione:
-                    # Troviamo il massimo assoluto di tutto lo storico precedente (la linea bianca di resistenza macro)
-                    resistenza_macro = float(df_storico_progressivo["High"].max())
-                    supporto_macro = float(df_storico_progressivo["Low"].min())
+                    if len(df_blocco_momentum) < 5:
+                        continue
+                    resistenza_macro = float(df_blocco_momentum["High"].max())
+                    supporto_macro = float(df_blocco_momentum["Low"].min())
                     
-                    # Il Breakout avviene quando una candela rompe e chiude sopra il livello di resistenza macro
                     breakout_rialzista = (p_chiusura > resistenza_macro) and (p_chiusura > p_apertura)
-                    # Speculare per il ribasso su rottura del supporto macro
                     breakout_ribassista = (p_chiusura < supporto_macro) and (p_chiusura < p_apertura)
                     
                     if breakout_rialzista or breakout_ribassista:
-                        
                         if breakout_rialzista:
-                            # Lo Stop Loss iniziale si ancora in modo sicuro sotto il POC o sotto la linea di protezione ATR della candela di breakout
                             ipotetico_sl = resistenza_macro - (moltiplicatore_atr_sl * atr_corrente)
-                            # Il Target proietta verso una estensione macro della struttura precedente
                             ipotetico_tp = p_chiusura + (5.0 * atr_corrente) 
                             
                             distanza_r = abs(p_chiusura - ipotetico_sl)
@@ -397,7 +411,7 @@ with tab2:
                             size_1 = rischio_monetario_parziale / max(0.01, abs(prezzo_ingresso_1 - livello_sl))
                             size_2, prezzo_ingresso_2 = 0, 0
 
-                # FASE B: GESTIONE POSIZIONE ATTIVA CON RETEST DELLA STRUTTURA
+                # FASE B: GESTIONE POSIZIONE ATTIVA
                 else:
                     sl_line[i] = livello_sl
                     tp_line[i] = livello_tp
@@ -405,9 +419,7 @@ with tab2:
                     colpito_sl = (posizione_tipo == "LONG" and p_minimo <= livello_sl) or (posizione_tipo == "SHORT" and p_massimo >= livello_sl)
                     colpito_tp = (posizione_tipo == "LONG" and p_massimo >= livello_tp) or (posizione_tipo == "SHORT" and p_minimo <= livello_tp)
                     
-                    # Gestione del RETEST istituzionale sulla linea di breakout precedente (la vecchia resistenza)
                     if not ha_fatto_retest:
-                        # Il retest avviene se il minimo della candela torna a testare il livello di breakout della struttura
                         toccato_livello_breakout = (posizione_tipo == "LONG" and p_minimo <= livello_breakout_riferimento) or (posizione_tipo == "SHORT" and p_massimo >= livello_breakout_riferimento)
                         
                         if toccato_livello_breakout and not colpito_sl:
@@ -417,7 +429,6 @@ with tab2:
                             distanza_sl_2 = abs(prezzo_ingresso_2 - livello_sl)
                             size_2 = rischio_monetario_parziale / max(0.01, distanza_sl_2)
                         else:
-                            # Protezione a Break-Even se il prezzo corre via del 50% verso il TP senza fare il retest
                             meta_strada = prezzo_ingresso_1 + (livello_tp - prezzo_ingresso_1) * 0.5 if posizione_tipo == "LONG" else prezzo_ingresso_1 - (prezzo_ingresso_1 - livello_tp) * 0.5
                             if (posizione_tipo == "LONG" and p_chiusura >= meta_strada) or (posizione_tipo == "SHORT" and p_chiusura <= meta_strada):
                                 livello_sl = prezzo_ingresso_1 
