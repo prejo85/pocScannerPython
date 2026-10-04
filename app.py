@@ -305,18 +305,20 @@ with tab2:
             
             poc_riferimento_trade = 0
             
+                        # ==========================================
+            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 CON POC PERMANENTI ---
             # ==========================================
-            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 CON CAMBIO MOMENTUM ---
-            # ==========================================
-            pocs_line = [np.nan] * len(df_bt)
             sl_line = [np.nan] * len(df_bt)
             tp_line = [np.nan] * len(df_bt)
             atr_protezione_line = [np.nan] * len(df_bt)
 
-            # Calcolo di una media mobile per intercettare i cambi di momentum macro
+            # Inizializziamo la media per intercettare i cambi di momentum macro
             df_bt["EMA_Momentum"] = df_bt["Close"].ewm(span=20, adjust=False).mean()
 
-            # Indice di inizio del calcolo del Volume Profile (punto di ancoraggio iniziale)
+            # Lista per memorizzare i POC istituzionali unici rilevati (con data di inizio e livello)
+            # Ogni elemento sarà un dizionario: {"data_inizio": Timestamp, "livello": float}
+            pocs_istituzionali_storici = []
+
             indice_ancoraggio_vp = 0
             ultimo_poc_valido = None
             moltiplicatore_atr_sl = 2.0 
@@ -332,34 +334,38 @@ with tab2:
                 atr_corrente = float(df_bt["ATR"].iloc[i]) if not np.isnan(df_bt["ATR"].iloc[i]) else (p_massimo - p_minimo)
                 data_corrente = df_bt.index[i]
 
-                # --- 🔍 RILEVATORE CAMBIO DI MOMENTUM MACRO ---
-                # Se il prezzo incrocia al rialzo o al ribasso la media di momentum, resettiamo l'ancoraggio volumetrico
+                # RILEVATORE CAMBIO DI MOMENTUM MACRO
                 cross_rialzista_mom = (riga_precedente["Close"] <= riga_precedente["EMA_Momentum"]) and (p_chiusura > riga_attuale["EMA_Momentum"])
                 cross_ribassista_mom = (riga_precedente["Close"] >= riga_precedente["EMA_Momentum"]) and (p_chiusura < riga_attuale["EMA_Momentum"])
                 
+                # Se c'è un cambio di momentum, resettiamo l'ancoraggio e registriamo il nuovo livello stabile
                 if (cross_rialzista_mom or cross_ribassista_mom) and not in_posizione:
-                    # Spostiamo il punto di inizio del volume profile al giorno del cambio di momentum
-                    indice_ancoraggio_vp = i - 5 # Teniamo 5 candele di margine per catturare la transizione
+                    indice_ancoraggio_vp = i - 5
+                    
+                    # Calcoliamo immediatamente il profilo volumetrico sul blocco appena concluso per isolare il POC statico
+                    df_blocco_concluso = df_bt.iloc[max(0, indice_ancoraggio_vp) : i]
+                    if len(df_blocco_concluso) >= 10:
+                        p_poc_nuovo, _, _, _, _ = calc_vp(df_blocco_concluso, div=200)
+                        if p_poc_nuovo is not None and (not pocs_istituzionali_storici or abs(p_poc_nuovo - pocs_istituzionali_storici[-1]["livello"]) > 0.02 * p_poc_nuovo):
+                            pocs_istituzionali_storici.append({
+                                "data_inizio": data_corrente,
+                                "livello": p_poc_nuovo
+                            })
+                            ultimo_poc_valido = p_poc_nuovo
 
-                # Estrarre lo storico a partire dall'ultimo cambio di momentum rilevato
                 df_blocco_momentum = df_bt.iloc[max(0, indice_ancoraggio_vp) : i]
-                
-                # Tracciamento continuo dell'ATR di protezione
                 atr_protezione_line[i] = p_chiusura - (moltiplicatore_atr_sl * atr_corrente)
 
-                # Calcolo del Volume Profile sul blocco di momentum attivo
-                if len(df_blocco_momentum) >= 10:
-                    p_poc, p_vh, p_vl, _, _ = calc_vp(df_blocco_momentum, div=200)
-                    if p_poc is not None:
-                        ultimo_poc_valido = p_poc
+                # Gestione paracadute per la prima esecuzione se la lista è vuota
+                if not pocs_istituzionali_storici:
+                    p_poc_init, _, _, _, _ = calc_vp(df_blocco_momentum, div=200)
+                    if p_poc_init is not None:
+                        pocs_istituzionali_storici.append({"data_inizio": data_corrente, "livello": p_poc_init})
+                        ultimo_poc_valido = p_poc_init
+                    else:
+                        ultimo_poc_valido = p_chiusura
 
-                if ultimo_poc_valido is None:
-                    ultimo_poc_valido = float(df_blocco_momentum["Close"].mean()) if not df_blocco_momentum.empty else p_chiusura
-
-                # Il POC rimarrà perfettamente orizzontale durante tutto il trend e salterà solo ai cambi di momentum
-                pocs_line[i] = ultimo_poc_valido
-
-                # FASE A: RICERCA INGRESSO (PRICE ACTION)
+                # FASE A: RICERCA INGRESSO STRUTTURALE
                 if not in_posizione:
                     if len(df_blocco_momentum) < 5:
                         continue
@@ -468,16 +474,14 @@ with tab2:
                         ha_fatto_retest = False
                         size_1, size_2 = 0, 0
 
-            df_bt["POC_Dinamico"] = pocs_line
             df_bt["SL_Dinamico"] = sl_line
             df_bt["TP_Dinamico"] = tp_line
             df_bt["ATR_Protezione_Continuo"] = atr_protezione_line
 
             # ==========================================
-            # --- RENDERING METRICHE E OUTPUT AVANZATO COMPLETO - PARTE 3 ---
+            # --- RENDERING METRICHE E OUTPUT CON RETTE POC INFINITE - PARTE 3 ---
             # ==========================================
             st.subheader("📊 Statistiche di Performance Istituzionale")
-            
             if trade_history:
                 df_trades = pd.DataFrame(trade_history)
                 profitti = df_trades[df_trades["PnL ($)"] > 0]["PnL ($)"].sum()
@@ -490,75 +494,44 @@ with tab2:
                 drawdowns = (arr_equity - peaks) / peaks
                 max_dd = round(abs(drawdowns.min()) * 100, 2) if len(drawdowns) > 0 else 0.0
                 
-                # 1. VISUALIZZAZIONE DELLE METRICHE CHIAVE IN RIGHE
                 m_col1, m_col2, m_col3, m_col4 = st.columns(4)
                 m_col1.metric("Ritorno Totale", f"{round(((capitale - capitale_iniziale) / capitale_iniziale) * 100, 2)} %")
                 m_col2.metric("Percentuale Win Rate", f"{win_rate} %")
                 m_col3.metric("Profit Factor", f"{profit_factor}")
                 m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
 
-                # 2. GRAFICO 1: CURVA DI CRESCITA DEL CAPITALE (EQUITY LINE)
                 fig_eq = grp.Figure()
-                fig_eq.add_trace(grp.Scatter(
-                    x=date_curve, y=equity_curve, 
-                    mode='lines+markers', name='Equity Line', 
-                    line=dict(color='#38bdf8', width=2),
-                    hovertemplate="Data: %{x}<br>Capitale: $%{y:,.2f}<extra></extra>"
-                ))
-                fig_eq.update_layout(
-                    title=f"📈 Curva di Crescita del Capitale (Equity Line)", 
-                    template="plotly_dark", 
-                    height=320,
-                    margin=dict(l=40, r=40, t=50, b=40)
-                )
+                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines+markers', name='Equity Line', line=dict(color='#38bdf8', width=2)))
+                fig_eq.update_layout(title=f"📈 Curva di Crescita del Capitale (Equity Line)", template="plotly_dark", height=320)
                 st.plotly_chart(fig_eq, use_container_width=True, key="bt_equity_chart")
                 
-                # 3. TABELLA REGISTRO OPERAZIONI
                 st.markdown("##### 📝 Registro Storico Esecuzioni Istituzionali")
                 st.dataframe(df_trades, use_container_width=True)
 
-                # 4. GRAFICO 2: ANALISI VISIVA DELLA STRATEGIA (PREZZO + POC + ATR)
                 st.markdown("---")
-                st.markdown("##### 🔍 Analisi Visiva della Strategia (Prezzo + POC Istituzionale + ATR Continuo)")
+                st.markdown("##### 🔍 Analisi Visiva della Strategia (Prezzo + POC Permanenti Infiniti)")
                 
                 fig_strat = make_subplots(rows=1, cols=1, shared_xaxes=True)
+                fig_strat.add_trace(grp.Candlestick(x=df_bt.index, open=df_bt["Open"], high=df_bt["High"], low=df_bt["Low"], close=df_bt["Close"], name="Prezzo"), row=1, col=1)
                 
-                # Candele del grafico dei prezzi
-                fig_strat.add_trace(grp.Candlestick(
-                    x=df_bt.index, open=df_bt["Open"], high=df_bt["High"], low=df_bt["Low"], close=df_bt["Close"], 
-                    name="Prezzo"
-                ), row=1, col=1)
+                # Tracciamento di ogni POC registrato come retta orizzontale permanente fino alla fine dell'asse X
+                fine_grafico_data = df_bt.index[-1]
+                for idx, poc_info in enumerate(pocs_istituzionali_storici):
+                    fig_strat.add_trace(grp.Scatter(
+                        x=[poc_info["data_inizio"], fine_grafico_data], 
+                        y=[poc_info["livello"], poc_info["livello"]],
+                        mode="lines+text",
+                        name=f"POC Macro {chr(65+idx)}",
+                        text=[f"POC {chr(65+idx)} ", ""],
+                        textposition="top right",
+                        line=dict(color="rgba(242, 142, 43, 0.75)", width=2),
+                        connectgaps=True
+                    ), row=1, col=1)
                 
-                # Tracciato stabile del POC Dinamico
-                fig_strat.add_trace(grp.Scatter(
-                    x=df_bt.index, y=df_bt["POC_Dinamico"], 
-                    mode="lines", name="POC Dinamico (Volume)", 
-                    line=dict(color="rgba(242, 142, 43, 0.8)", width=2.5)
-                ), row=1, col=1)
+                fig_strat.add_trace(grp.Scatter(x=df_bt.index, y=df_bt["ATR_Protezione_Continuo"], mode="lines", name="Filtro Volatilità (ATR)", line=dict(color="rgba(168, 85, 247, 0.35)", width=1.5, dash="dash")), row=1, col=1)
+                fig_strat.add_trace(grp.Scatter(x=df_bt.index, y=df_bt["TP_Dinamico"], mode="lines", name="Price Action TP Target", line=dict(color="#22c55e", width=1.5, dash="dash"), connectgaps=False), row=1, col=1)
+                fig_strat.add_trace(grp.Scatter(x=df_bt.index, y=df_bt["SL_Dinamico"], mode="lines", name="Stop Loss / Break-Even", line=dict(color="#ef4444", width=1.5, dash="dash"), connectgaps=False), row=1, col=1)
                 
-                # Linea ATR continua su tutto il grafico per studiare i canali di volatilità
-                fig_strat.add_trace(grp.Scatter(
-                    x=df_bt.index, y=df_bt["ATR_Protezione_Continuo"], 
-                    mode="lines", name="Filtro Volatilità (ATR)", 
-                    line=dict(color="rgba(168, 85, 247, 0.4)", width=1.5, dash="dash")
-                ), row=1, col=1)
-
-                # Canali di Take Profit e Stop Loss agganciati solo alla durata dei trade attivi
-                fig_strat.add_trace(grp.Scatter(
-                    x=df_bt.index, y=df_bt["TP_Dinamico"], 
-                    mode="lines", name="Price Action TP Target", 
-                    line=dict(color="#22c55e", width=1.5, dash="dash"), 
-                    connectgaps=False
-                ), row=1, col=1)
-                
-                fig_strat.add_trace(grp.Scatter(
-                    x=df_bt.index, y=df_bt["SL_Dinamico"], 
-                    mode="lines", name="Stop Loss / Break-Even", 
-                    line=dict(color="#ef4444", width=1.5, dash="dash"), 
-                    connectgaps=False
-                ), row=1, col=1)
-                
-                # Disegno dei marker operativi storici (Ingressi breakout/retest e chiusure)
                 for _, trade in df_trades.iterrows():
                     try:
                         data_evento = pd.to_datetime(trade["Data"], format="%d/%m/%Y")
@@ -578,17 +551,15 @@ with tab2:
                         pass
                 
                 fig_strat.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=650, showlegend=True, margin=dict(l=40, r=40, t=30, b=40))
-                st.plotly_chart(fig_strat, use_container_width=True, key="bt_strategy_chart_intu_final")
+                st.plotly_chart(fig_strat, use_container_width=True, key="bt_strategy_chart_final")
                 
-                # 5. PULSANTE DI ESPORTAZIONE FILE CSV
                 csv_dati = df_trades.to_csv(index=False).encode('utf-8')
                 st.markdown(" ")
                 st.download_button(label="📥 Esporta Storico Operazioni (CSV)", data=csv_dati, file_name=f"backtest_{bt_ticker}_{bt_periodo.replace(' ', '_').lower()}.csv", mime="text/csv", key="btn_download_csv")
             else:
-                st.warning("Nessun trade convalidato: i setup rilevati avevano un R:R inferiore alla soglia minima impostata o la struttura non è stata rotta.")
+                st.warning("Nessun trade convalidato: i setup rilevati avevano un R:R inferiore alla soglia minima impostata o la struttura macro non è stata rotta.")
         else:
             st.error("Dati storici insufficienti sul timeframe selezionato.")
-
 
 # ==========================================
 # --- TAB 3: LIVE ALERTS STRATEGICI ---
