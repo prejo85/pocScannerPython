@@ -399,8 +399,8 @@ with tab2:
                         date_curve.append(data_corrente)
                         in_posizione, ha_fatto_retest = False, False
                         size_1, size_2 = 0, 0
-            # ==========================================
-            # --- RENDERING METRICHE E OUTPUT - PARTE 3 ---
+                        # ==========================================
+            # --- RENDERING METRICHE E OUTPUT AVANZATO - PARTE 3 ---
             # ==========================================
             st.subheader("📊 Statistiche di Performance Istituzionale")
             if trade_history:
@@ -421,13 +421,104 @@ with tab2:
                 m_col3.metric("Profit Factor", f"{profit_factor}")
                 m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
 
+                # ----------------------------------------------------
+                # 📈 GRAFICO 1: ANDAMENTO DELL'EQUITY LINE
+                # ----------------------------------------------------
                 fig_eq = grp.Figure()
-                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines+markers', name='Equity Line', line=dict(color='#38bdf8', width=2)))
-                fig_eq.update_layout(title=f"📈 Equity Line - Strategia Breakout & Retest POC ({bt_ticker})", template="plotly_dark", height=400)
-                st.plotly_chart(fig_eq, use_container_width=True)
+                fig_eq.add_trace(grp.Scatter(
+                    x=date_curve, y=equity_curve, 
+                    mode='lines+markers', name='Equity Line', 
+                    line=dict(color='#38bdf8', width=2),
+                    hovertemplate="Data: %{x}<br>Capitale: $%{y:,.2f}<extra></extra>"
+                ))
+                fig_eq.update_layout(
+                    title=f"📈 Curva di Crescita del Capitale (Equity Line)", 
+                    template="plotly_dark", 
+                    height=350,
+                    margin=dict(l=40, r=40, t=50, b=40)
+                )
+                st.plotly_chart(fig_eq, use_container_width=True, key="bt_equity_chart")
                 
+                # Tabella dei log operativi stampata a schermo
+                st.markdown("##### 📝 Registro Storico Esecuzioni")
                 st.dataframe(df_trades, use_container_width=True)
+
+                # ----------------------------------------------------
+                # 📊 GRAFICO 2: VISUALIZZAZIONE DELLA STRATEGIA SUL PREZZO
+                # ----------------------------------------------------
+                st.markdown("---")
+                st.markdown("##### 🔍 Analisi Visiva della Strategia (Prezzo + Setup Istituzionali)")
                 
+                fig_strat = make_subplots(
+                    rows=1, cols=1,
+                    shared_xaxes=True,
+                    subplot_titles=(f"Price Action di {bt_ticker} con Punti di Lavoro e Retest POC",)
+                )
+                
+                # 1. Tracciamento candele Candlestick originali scaricate
+                fig_strat.add_trace(grp.Candlestick(
+                    x=df_bt.index, 
+                    open=df_bt["Open"], high=df_bt["High"], 
+                    low=df_bt["Low"], close=df_bt["Close"], 
+                    name="Prezzo Candele"
+                ), row=1, col=1)
+                
+                # 2. Ciclo di disegno per sovrapporre gli eventi reali del registro trade sul grafico delle candele
+                for _, trade in df_trades.iterrows():
+                    try:
+                        # Conversione della data stringa del log in formato Timestamp per l'asse X di Plotly
+                        data_evento = pd.to_datetime(trade["Data"], format="%d/%m/%Y")
+                        p_uscita = float(trade["Uscita"])
+                        p_ing1 = float(trade["Ingresso 1"])
+                        tipo = trade["Tipo"]
+                        esito = trade["Esito"]
+                        
+                        # Disegno del marker di chiusura dell'operazione (TP o SL)
+                        colore_esito = "#22c55e" if "TP" in esito else "#ef4444"
+                        fig_strat.add_trace(grp.Scatter(
+                            x=[data_evento], y=[p_uscita],
+                            mode="markers+text",
+                            marker=dict(symbol="x", size=11, color=colore_esito, line=dict(width=2)),
+                            text=[f" {esito}"],
+                            textposition="top center",
+                            name="Chiusura Posizione",
+                            showlegend=False
+                        ), row=1, col=1)
+                        
+                        # Disegno del marker del Primo Ingresso (Breakout convalidato)
+                        fig_strat.add_trace(grp.Scatter(
+                            x=[data_evento], y=[p_ing1],
+                            mode="markers",
+                            marker=dict(symbol="triangle-up" if tipo == "LONG" else "triangle-down", size=12, color="#38bdf8"),
+                            hovertemplate=f"Ingresso 1 {tipo}<br>Prezzo: {p_ing1}<extra></extra>",
+                            showlegend=False
+                        ), row=1, col=1)
+                        
+                        # Se è avvenuto il secondo ingresso sul retest, disegna il marker viola sul POC
+                        if trade["Retest In"] != "No Retest":
+                            p_ing2 = float(trade["Retest In"])
+                            fig_strat.add_trace(grp.Scatter(
+                                x=[data_evento], y=[p_ing2],
+                                mode="markers",
+                                marker=dict(symbol="diamond", size=10, color="#a855f7"),
+                                hovertemplate=f"Retest Inserito<br>Prezzo POC: {p_ing2}<extra></extra>",
+                                showlegend=False
+                            ), row=1, col=1)
+                    except Exception:
+                        pass # Protezione generica per eventuali discrepanze nei formati delle stringhe data
+                
+                # Ottimizzazione del layout grafico in modalità scura per non appesantire la dashboard
+                fig_strat.update_layout(
+                    template="plotly_dark",
+                    xaxis_rangeslider_visible=False,
+                    height=600,
+                    showlegend=False,
+                    margin=dict(l=40, r=40, t=40, b=40)
+                )
+                fig_strat.update_yaxes(title_text="Prezzo ($)")
+                st.plotly_chart(fig_strat, use_container_width=True, key="bt_strategy_chart")
+                
+                # Pulsante di esportazione file
                 csv_dati = df_trades.to_csv(index=False).encode('utf-8')
                 st.markdown(" ")
                 st.download_button(label="📥 Esporta Storico Operazioni (CSV)", data=csv_dati, file_name=f"backtest_{bt_ticker}_{bt_periodo.replace(' ', '_').lower()}.csv", mime="text/csv", key="btn_download_csv")
@@ -435,7 +526,6 @@ with tab2:
                 st.warning("Nessun pattern di breakout/accumulazione convalidato nel periodo selezionato con i parametri attuali.")
         else:
             st.error("Dati storici insufficienti per elaborare il backtest su questo ticker.")
-
 
 # ==========================================
 # --- TAB 3: LIVE ALERTS STRATEGICI ---
