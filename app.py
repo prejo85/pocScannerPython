@@ -252,44 +252,51 @@ with tab1:
                     else: st.warning(f"Dati storici insufficienti (<200 righe) per il calcolo strategico su {ticker}.")
 
 # ==========================================
-# --- TAB 2: BACKTESTING AVANZATO (PRICE ACTION & POC RETEST) - PARTE 1 ---
+# --- TAB 2: BACKTESTING AVANZATO ISTITUZIONALE - PARTE 1 ---
 # ==========================================
 with tab2:
-    st.subheader("⚙️ Motore di Simulazione Storica Avanzato (Price Action & POC Retest)")
+    st.subheader("⚙️ Motore di Simulazione Storica Avanzato (Filtro R:R & Timeframe Adattivo)")
     b_col1, b_col2, b_col3 = st.columns(3)
     with b_col1:
-        bt_ticker = st.text_input("Inserisci un singolo Ticker da testare:", value="AAPL")
+        bt_ticker = st.text_input("Inserisci un singolo Ticker da testare:", value="CRSR")
         capitale_iniziale = st.number_input("Capitale iniziale ($):", min_value=100, value=10000, step=500)
+        
+        # Inserimento variabile del Timeframe per decidere su quale operare
+        tf_bt_label = st.selectbox("Seleziona Timeframe simulazione:", ["Giornaliero (Daily)", "Settimanale (Weekly)", "Mensile (Monthly)"], key="bt_tf_select")
+        tf_bt_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk", "Mensile (Monthly)": "1mo"}[tf_bt_label]
+        
     with b_col2:
-        bt_periodo = st.selectbox("Orizzonte temporale dei dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"])
+        bt_periodo = st.selectbox("Orizzonte temporale dei dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], index=2)
         mappa_periodi = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
         rischio_trade = st.slider("Rischio % per operazione (diviso tra i due ingressi):", min_value=0.5, max_value=5.0, value=2.0, step=0.5)
+        
     with b_col3:
         comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5)
-
-    if st.button("🚀 Esegui Backtest Price Action", type="primary"):
-        st.info(f"Elaborazione della simulazione istituzionale per {bt_ticker}...")
-        df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
         
-        if df_bt is not None and len(df_bt) > 60:
+        # Filtro per il R:R minimo accettabile nel backtest
+        rr_minimo_filtro = st.slider("Filtro Rapporto R:R Minimo per validare il trade (1:X):", min_value=1.0, max_value=5.0, value=2.0, step=0.5)
+
+    if st.button("🚀 Esegui Backtest Strutturale", type="primary"):
+        st.info(f"Elaborazione della simulazione istituzionale su base {tf_bt_label} per {bt_ticker}...")
+        df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval=tf_bt_attivo, auto_adjust=False, multi_level_index=False, progress=False)
+        
+        if df_bt is not None and len(df_bt) > 40:
             df_bt.columns = [str(c).strip() for c in df_bt.columns]
             
-            # Calcolo ATR preliminare per la volatilità del breakout e per lo stop iniziale
-            tr = pd.concat([df_bt["High"] - df_bt["Close"].shift(1).abs(), (df_bt["High"] - df_bt["Close"].shift(1)).abs(), (df_bt["Low"] - df_bt["Close"].shift(1)).abs()], axis=1).max(axis=1)
+            # Calcolo ATR adattato al timeframe selezionato
+            tr = pd.concat([df_bt["High"] - df_bt["Low"], (df_bt["High"] - df_bt["Close"].shift(1)).abs(), (df_bt["Low"] - df_bt["Close"].shift(1)).abs()], axis=1).max(axis=1)
             df_bt["ATR"] = tr.rolling(window=14).mean()
             
             capitale = capitale_iniziale
             equity_curve = [capitale_iniziale]
-            date_curve = [df_bt.index[50]] # Inizializzazione temporale allineata
+            date_curve = [df_bt.index[0]]
             trade_history = []
             
-            # Stato della posizione complessa
             in_posizione = False
-            posizione_tipo = None  # "LONG" o "SHORT"
+            posizione_tipo = None  
             livello_sl = 0
             livello_tp = 0
             
-            # Monitoraggio dei due ingressi separati
             ha_fatto_retest = False
             prezzo_ingresso_1 = 0
             size_1 = 0
@@ -297,19 +304,18 @@ with tab2:
             size_2 = 0
             
             poc_riferimento_trade = 0
-                       # ==========================================
-            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 RISOLTA ---
+            # ==========================================
+            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 ---
             # ==========================================
             pocs_line = [np.nan] * len(df_bt)
             sl_line = [np.nan] * len(df_bt)
             tp_line = [np.nan] * len(df_bt)
 
-            # Moltiplicatore ATR per la protezione da inversione brusca
             moltiplicatore_trailing_atr = 2.0 
             massimo_raggiunto_trade = 0
             minimo_raggiunto_trade = 999999
 
-            for i in range(50, len(df_bt)):
+            for i in range(30, len(df_bt)):
                 df_storico_finora = df_bt.iloc[:i]
                 riga_attuale = df_bt.iloc[i]
                 
@@ -320,12 +326,12 @@ with tab2:
                 atr_corrente = float(df_bt["ATR"].iloc[i]) if not np.isnan(df_bt["ATR"].iloc[i]) else (p_massimo - p_minimo)
                 data_corrente = df_bt.index[i]
 
-                # Calcolo del POC dinamico corrente
+                # Calcolo del POC dinamico basato sui dati storici progressivi
                 p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora)
                 if p_poc is not None:
                     pocs_line[i] = p_poc
 
-                # FASE A: RICERCA SETUP (NESSUNA POSIZIONE APERTA)
+                # FASE A: APERTURA POSIZIONE CON FILTRO R:R STRUTTURALE
                 if not in_posizione:
                     if p_poc is None: 
                         continue
@@ -337,54 +343,62 @@ with tab2:
                     breakout_ribassista = (p_chiusura < supporto_struttura) and (p_chiusura < p_apertura)
                     
                     if breakout_rialzista or breakout_ribassista:
-                        in_posizione = True
-                        poc_riferimento_trade = p_poc
-                        ha_fatto_retest = False
                         
                         if breakout_rialzista:
-                            posizione_tipo = "LONG"
-                            prezzo_ingresso_1 = p_chiusura
-                            livello_sl = supporto_struttura - (0.5 * atr_corrente) # Stop più largo sotto la struttura
+                            ipotetico_sl = supporto_struttura - (0.3 * atr_corrente)
+                            # Cerca l'efficienza/massimo macro reale estendendo lo sguardo a 90 candele indietro
+                            ipotetico_tp = float(df_storico_finora["High"].tail(min(len(df_storico_finora), 90)).max())
                             
-                            # CORREZIONE TARGET: Massimo reale degli ultimi 60 giorni per cercare la liquidità precedente
-                            livello_tp = float(df_storico_finora["High"].tail(60).max())
-                            # Protezione se il massimo recente è troppo vicino (forza un R:R minimo di 1:2)
-                            if livello_tp <= prezzo_ingresso_1 + (1.5 * abs(prezzo_ingresso_1 - livello_sl)):
-                                livello_tp = prezzo_ingresso_1 + (2.5 * atr_corrente)
+                            distanza_r = abs(p_chiusura - ipotetico_sl)
+                            distanza_t = abs(ipotetico_tp - p_chiusura)
+                            rr_ipotetico = distanza_t / max(0.01, distancia_r)
                             
-                            massimo_raggiunto_trade = p_massimo
-                        else:
-                            posizione_tipo = "SHORT"
-                            prezzo_ingresso_1 = p_chiusura
-                            livello_sl = resistenza_struttura + (0.5 * atr_corrente)
-                            
-                            livello_tp = float(df_storico_finora["Low"].tail(60).min())
-                            if livello_tp >= prezzo_ingresso_1 - (1.5 * abs(livello_sl - prezzo_ingresso_1)):
-                                livello_tp = prezzo_ingresso_1 - (2.5 * atr_corrente)
-                            
-                            minimo_raggiunto_trade = p_minimo
+                            # APPLICAZIONE DEL FILTRO: Se il R:R strutturale è inferiore alle attese, scarta l'operazione
+                            if rr_ipotetico >= rr_minimo_filtro:
+                                in_posizione = True
+                                posizione_tipo = "LONG"
+                                prezzo_ingresso_1 = p_chiusura
+                                livello_sl = ipotetico_sl
+                                livello_tp = ipotetico_tp
+                                poc_riferimento_trade = p_poc
+                                ha_fatto_retest = False
+                                massimo_raggiunto_trade = p_massimo
+                                rr_trade = round(rr_ipotetico, 2)
                         
-                        # CORREZIONE CALCOLO R:R: Rapporto pulito basato sui punti di lavoro effettivi
-                        distanza_rischio_iniziale = abs(prezzo_ingresso_1 - livello_sl)
-                        distanza_rendimento_iniziale = abs(livello_tp - prezzo_ingresso_1)
-                        rr_trade = round(distanza_rendimento_iniziale / max(0.01, distanza_rischio_iniziale), 2)
+                        elif breakout_ribassista:
+                            ipotetico_sl = resistenza_struttura + (0.3 * atr_corrente)
+                            ipotetico_tp = float(df_storico_finora["Low"].tail(min(len(df_storico_finora), 90)).min())
+                            
+                            distanza_r = abs(ipotetico_sl - p_chiusura)
+                            distanza_t = abs(p_chiusura - ipotetico_tp)
+                            rr_ipotetico = distanza_t / max(0.01, distancia_r)
+                            
+                            if rr_ipotetico >= rr_minimo_filtro:
+                                in_posizione = True
+                                posizione_tipo = "SHORT"
+                                prezzo_ingresso_1 = p_chiusura
+                                livello_sl = ipotetico_sl
+                                livello_tp = ipotetico_tp
+                                poc_riferimento_trade = p_poc
+                                ha_fatto_retest = False
+                                minimo_raggiunto_trade = p_minimo
+                                rr_trade = round(rr_ipotetico, 2)
                         
-                        # Gestione Money Management Matematica ed Esatta (Rischio controllato sul capitale)
-                        rischio_monetario_parziale = capitale * ((rischio_trade / 2) / 100)
-                        size_1 = rischio_monetario_parziale / max(0.01, distanza_rischio_iniziale)
-                        size_2, prezzo_ingresso_2 = 0, 0
+                        if in_posizione:
+                            # Money Management robusto contro l'impatto dei costi fissi
+                            rischio_monetario_parziale = capitale * ((rischio_trade / 2) / 100)
+                            size_1 = rischio_monetario_parziale / max(0.01, abs(prezzo_ingresso_1 - livello_sl))
+                            size_2, prezzo_ingresso_2 = 0, 0
 
-                # FASE B: GESTIONE POSIZIONE ATTIVA
+                # FASE B: GESTIONE POSIZIONE ATTIVA CON TRAILING STOP ATR
                 else:
                     sl_line[i] = livello_sl
                     tp_line[i] = livello_tp
 
-                    # Gestione Trailing Stop protettivo con l'ATR
                     if posizione_tipo == "LONG":
                         if p_massimo > massimo_raggiunto_trade:
                             massimo_raggiunto_trade = p_massimo
                         sl_trailing_atr = massimo_raggiunto_trade - (moltiplicatore_trailing_atr * atr_corrente)
-                        # Alza lo stop solo se il trailing supera lo stop precedente ed è sotto il prezzo corrente
                         if sl_trailing_atr > livello_sl and sl_trailing_atr < p_chiusura:
                             livello_sl = sl_trailing_atr
                     else:
@@ -394,11 +408,9 @@ with tab2:
                         if sl_trailing_atr < livello_sl and sl_trailing_atr > p_chiusura:
                             livello_sl = sl_trailing_atr
 
-                    # Verifica se i prezzi della candela hanno toccato i livelli intermedi
                     colpito_sl = (posizione_tipo == "LONG" and p_minimo <= livello_sl) or (posizione_tipo == "SHORT" and p_massimo >= livello_sl)
                     colpito_tp = (posizione_tipo == "LONG" and p_massimo >= livello_tp) or (posizione_tipo == "SHORT" and p_minimo <= livello_tp)
                     
-                    # Logica del secondo ingresso su retest del POC
                     if not ha_fatto_retest:
                         toccato_poc = (posizione_tipo == "LONG" and p_minimo <= poc_riferimento_trade) or (posizione_tipo == "SHORT" and p_massimo >= poc_riferimento_trade)
                         
@@ -411,23 +423,16 @@ with tab2:
                         else:
                             meta_strada = prezzo_ingresso_1 + (livello_tp - prezzo_ingresso_1) * 0.5 if posizione_tipo == "LONG" else prezzo_ingresso_1 - (prezzo_ingresso_1 - livello_tp) * 0.5
                             if (posizione_tipo == "LONG" and p_chiusura >= meta_strada) or (posizione_tipo == "SHORT" and p_chiusura <= meta_strada):
-                                # Spostamento a Break-Even protettivo
                                 livello_sl = prezzo_ingresso_1 
                     
-                    # Chiusura della posizione e calcolo matematico corretto dei profitti/perdite
                     if colpito_sl or colpito_tp:
                         p_uscita = livello_sl if colpito_sl else livello_tp
                         
-                        # Calcolo PnL lineare senza distorsioni vettoriali
                         pnl_1 = (p_uscita - prezzo_ingresso_1) * size_1 if posizione_tipo == "LONG" else (prezzo_ingresso_1 - p_uscita) * size_1
-                        pnl_2 = 0
-                        if ha_fatto_retest and size_2 > 0:
-                            pnl_2 = (p_uscita - prezzo_ingresso_2) * size_2 if posizione_tipo == "LONG" else (prezzo_ingresso_2 - p_uscita) * size_2
+                        pnl_2 = (p_uscita - prezzo_ingresso_2) * size_2 if posizione_tipo == "LONG" and ha_fatto_retest else ((prezzo_ingresso_2 - p_uscita) * size_2 if ha_fatto_retest else 0)
                         
-                        # Costo totale delle commissioni corretto (Flat commission)
                         tasse_eseguito = comun_fee * (2 if not ha_fatto_retest else 4)
                         pnl_totale = (pnl_1 + pnl_2) - tasse_eseguito
-                        
                         capitale += pnl_totale
                         
                         if colpito_tp:
@@ -453,13 +458,15 @@ with tab2:
                         equity_curve.append(capitale)
                         date_curve.append(data_corrente)
                         
-                        # Reset degli stati per il trade successivo
                         in_posizione = False
                         ha_fatto_retest = False
                         size_1, size_2 = 0, 0
 
+            df_bt["POC_Dinamico"] = pocs_line
+            df_bt["SL_Dinamico"] = sl_line
+            df_bt["TP_Dinamico"] = tp_line
             # ==========================================
-            # --- RENDERING METRICHE E OUTPUT AVANZATO - PARTE 3 AGGIORNATA ---
+            # --- RENDERING METRICHE E OUTPUT AVANZATO - PARTE 3 ---
             # ==========================================
             st.subheader("📊 Statistiche di Performance Istituzionale")
             if trade_history:
@@ -480,45 +487,25 @@ with tab2:
                 m_col3.metric("Profit Factor", f"{profit_factor}")
                 m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
 
-                # Grafico della curva di crescita del capitale
+                # Grafico 1: Equity Curve
                 fig_eq = grp.Figure()
-                fig_eq.add_trace(grp.Scatter(
-                    x=date_curve, y=equity_curve, 
-                    mode='lines+markers', name='Equity Line', 
-                    line=dict(color='#38bdf8', width=2),
-                    hovertemplate="Data: %{x}<br>Capitale: $%{y:,.2f}<extra></extra>"
-                ))
+                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines+markers', name='Equity Line', line=dict(color='#38bdf8', width=2)))
                 fig_eq.update_layout(title=f"📈 Curva di Crescita del Capitale (Equity Line)", template="plotly_dark", height=320)
                 st.plotly_chart(fig_eq, use_container_width=True, key="bt_equity_chart")
                 
-                # Tabella log delle operazioni (Include ora la colonna R:R Iniziale del setup)
-                st.markdown("##### 📝 Registro Storico Esecuzioni Istituzionali")
+                # Tabella Log Operazioni Filtrate
+                st.markdown("##### 📝 Registro Storico Esecuzioni Filtrate (R:R Convalidati)")
                 st.dataframe(df_trades, use_container_width=True)
 
-                # Grafico visivo della Price Action sul Ticker selezionato
+                # Grafico 2: Candele + Tracciato POC e Canali
                 st.markdown("---")
                 st.markdown("##### 🔍 Analisi Visiva della Strategia (Prezzo + POC + Trailing SL)")
                 
                 fig_strat = make_subplots(rows=1, cols=1, shared_xaxes=True)
-                fig_strat.add_trace(grp.Candlestick(
-                    x=df_bt.index, open=df_bt["Open"], high=df_bt["High"], low=df_bt["Low"], close=df_bt["Close"], 
-                    name="Prezzo"
-                ), row=1, col=1)
-                
-                fig_strat.add_trace(grp.Scatter(
-                    x=df_bt.index, y=df_bt["POC_Dinamico"], mode="lines", name="POC Dinamico",
-                    line=dict(color="rgba(242, 142, 43, 0.8)", width=2)
-                ), row=1, col=1)
-
-                fig_strat.add_trace(grp.Scatter(
-                    x=df_bt.index, y=df_bt["TP_Dinamico"], mode="lines", name="Price Action TP",
-                    line=dict(color="#22c55e", width=1.5, dash="dash"), connectgaps=False
-                ), row=1, col=1)
-
-                fig_strat.add_trace(grp.Scatter(
-                    x=df_bt.index, y=df_bt["SL_Dinamico"], mode="lines", name="Trailing SL (Protezione ATR)",
-                    line=dict(color="#ef4444", width=1.5, dash="dash"), connectgaps=False
-                ), row=1, col=1)
+                fig_strat.add_trace(grp.Candlestick(x=df_bt.index, open=df_bt["Open"], high=df_bt["High"], low=df_bt["Low"], close=df_bt["Close"], name="Prezzo"), row=1, col=1)
+                fig_strat.add_trace(grp.Scatter(x=df_bt.index, y=df_bt["POC_Dinamico"], mode="lines", name="POC Dinamico", line=dict(color="rgba(242, 142, 43, 0.8)", width=2)), row=1, col=1)
+                fig_strat.add_trace(grp.Scatter(x=df_bt.index, y=df_bt["TP_Dinamico"], mode="lines", name="Price Action TP", line=dict(color="#22c55e", width=1.5, dash="dash"), connectgaps=False), row=1, col=1)
+                fig_strat.add_trace(grp.Scatter(x=df_bt.index, y=df_bt["SL_Dinamico"], mode="lines", name="Trailing SL (Protezione ATR)", line=dict(color="#ef4444", width=1.5, dash="dash"), connectgaps=False), row=1, col=1)
                 
                 for _, trade in df_trades.iterrows():
                     try:
@@ -529,38 +516,26 @@ with tab2:
                         esito = trade["Esito"]
                         
                         colore_esito = "#22c55e" if "TP" in esito else ("#64748b" if "BE" in esito else "#ef4444")
-                        fig_strat.add_trace(grp.Scatter(
-                            x=[data_evento], y=[p_uscita], mode="markers+text",
-                            marker=dict(symbol="x", size=12, color=colore_esito, line=dict(width=2)),
-                            text=[f" {esito}"], textposition="top center", showlegend=False
-                        ), row=1, col=1)
-                        
-                        fig_strat.add_trace(grp.Scatter(
-                            x=[data_evento], y=[p_ing1], mode="markers",
-                            marker=dict(symbol="triangle-up" if tipo == "LONG" else "triangle-down", size=12, color="#38bdf8"),
-                            showlegend=False
-                        ), row=1, col=1)
+                        fig_strat.add_trace(grp.Scatter(x=[data_evento], y=[p_uscita], mode="markers+text", marker=dict(symbol="x", size=12, color=colore_esito, line=dict(width=2)), text=[f" {esito}"], textposition="top center", showlegend=False), row=1, col=1)
+                        fig_strat.add_trace(grp.Scatter(x=[data_evento], y=[p_ing1], mode="markers", marker=dict(symbol="triangle-up" if tipo == "LONG" else "triangle-down", size=12, color="#38bdf8"), showlegend=False), row=1, col=1)
                         
                         if trade["Retest In"] != "No Retest":
                             p_ing2 = float(trade["Retest In"])
-                            fig_strat.add_trace(grp.Scatter(
-                                x=[data_evento], y=[p_ing2], mode="markers",
-                                marker=dict(symbol="diamond", size=11, color="#a855f7"),
-                                showlegend=False
-                            ), row=1, col=1)
+                            fig_strat.add_trace(grp.Scatter(x=[data_evento], y=[p_ing2], mode="markers", marker=dict(symbol="diamond", size=11, color="#a855f7"), showlegend=False), row=1, col=1)
                     except Exception:
                         pass
                 
                 fig_strat.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=600, showlegend=True, margin=dict(l=40, r=40, t=30, b=40))
-                st.plotly_chart(fig_strat, use_container_width=True, key="bt_strategy_chart_with_atr_prot")
+                st.plotly_chart(fig_strat, use_container_width=True, key="bt_strategy_chart_final")
                 
                 csv_dati = df_trades.to_csv(index=False).encode('utf-8')
                 st.markdown(" ")
                 st.download_button(label="📥 Esporta Storico Operazioni (CSV)", data=csv_dati, file_name=f"backtest_{bt_ticker}_{bt_periodo.replace(' ', '_').lower()}.csv", mime="text/csv", key="btn_download_csv")
             else:
-                st.warning("Nessun pattern di breakout/accumulazione convalidato nel periodo selezionato con i parametri attuali.")
+                st.warning("Nessun trade convalidato: i setup rilevati avevano un R:R inferiore alla soglia minima impostata.")
         else:
-            st.error("Dati storici insufficienti per elaborare il backtest su questo ticker.")
+            st.error("Dati storici insufficienti sul timeframe selezionato.")
+
 
 # ==========================================
 # --- TAB 3: LIVE ALERTS STRATEGICI ---
