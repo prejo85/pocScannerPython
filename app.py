@@ -658,7 +658,7 @@ with tab3:
                             elif "-USD" in str(ticker) or p_selezionato_alert == "Crypto": borsa_codice = "BINANCE"
                             else: borsa_codice = "NASDAQ" if p_selezionato_alert == "NASDAQ 100" else "NYSE"
                             
-                            url_stringa_pura = f"https://tradingview.com{ticker_pulito}-{borsa_codice}"
+                            url_stringa_pura = f"https://tradingview.com/chart/sqBvK6ky/?symbol={ticker_pulito}"
                             dec = 4 if p_selezionato_alert == 'Crypto' else 2
                             
                             messaggio_alert = (
