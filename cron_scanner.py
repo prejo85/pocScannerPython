@@ -266,7 +266,7 @@ if __name__ == "__main__":
                                 elif "-USD" in str(ticker): borsa_code = "BINANCE"
                                 else: borsa_code = "NASDAQ" if nome_paniere == "NASDAQ 100" else "NYSE"
                                 
-                                url_stringa_pura = f"https://tradingview.com{ticker_pulito}-{borsa_code}"
+                                url_stringa_pura = f"https://tradingview.com/chart/sqBvK6ky/?symbol={ticker_pulito}"
                                 dec = 4 if "Crypto" in nome_paniere else 2
                                 
                                 messaggio_alert = (
