@@ -389,7 +389,7 @@ with tab2:
                             tp_istituzionale = livello_chiave_breakout - (abs(sl_strutturale - livello_chiave_breakout) * 1.4)
                             poc_rilevato = p_poc
                             data_breakout = data_corrente
-                                       else:
+                    else:
                         # Monitoraggio del "RETEST" sulla struttura
                         retest_valido = False
                         if tipo_breakout == "LONG" and p_minimo <= livello_chiave_breakout:
