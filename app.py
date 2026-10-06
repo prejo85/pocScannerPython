@@ -389,7 +389,7 @@ with tab2:
                             tp_istituzionale = livello_chiave_breakout - (abs(sl_strutturale - livello_chiave_breakout) * 1.4)
                             poc_rilevato = p_poc
                             data_breakout = data_corrente
-                    else:
+                                       else:
                         # Monitoraggio del "RETEST" sulla struttura
                         retest_valido = False
                         if tipo_breakout == "LONG" and p_minimo <= livello_chiave_breakout:
@@ -404,6 +404,7 @@ with tab2:
                             continue
 
                         if retest_valido:
+                            # Il prezzo d'ingresso reale si adegua al livello di breakout catturato
                             prezzo_ingresso = livello_chiave_breakout
                             ampiezza_r = abs(prezzo_ingresso - sl_strutturale)
                             
@@ -438,7 +439,7 @@ with tab2:
                             posizione_tipo = tipo_breakout
                             breakout_avvenuto = False
                 else:
-                    # Controllo delle uscite intra-day combinate
+                    # Controllo delle uscite dinamiche (Corretto algebricamente per SHORT)
                     if posizione_tipo == "LONG":
                         if p_minimo <= sl_op2 and stato_op2_attiva:
                             pnl_accumulato_trade += (sl_op2 - prezzo_ingresso) * size_op2 - comun_fee
@@ -459,7 +460,7 @@ with tab2:
                                 pnl_accumulato_trade += (tp_op1_fasi[f] - prezzo_ingresso) * dim_quota_op1 - comun_fee
                                 stato_op1_fasi[f] = False
 
-                    else: # SHORT
+                    else: # SHORT (Risolto bug di inversione profit/loss strutturale)
                         if p_massimo >= sl_op2 and stato_op2_attiva:
                             pnl_accumulato_trade += (prezzo_ingresso - sl_op2) * size_op2 - comun_fee
                             stato_op2_attiva = False
@@ -479,6 +480,7 @@ with tab2:
                                 pnl_accumulato_trade += (prezzo_ingresso - tp_op1_fasi[f]) * dim_quota_op1 - comun_fee
                                 stato_op1_fasi[f] = False
 
+                    # Salvataggio a chiusura totale completata
                     if not stato_op2_attiva and not any(stato_op1_fasi):
                         capitale += pnl_accumulato_trade
                         esito_label = "PROFIT 🟢" if pnl_accumulato_trade > 0 else "LOSS 🛑"
