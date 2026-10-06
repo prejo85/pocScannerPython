@@ -202,7 +202,7 @@ def esegui_scansione(poc_scelti):
                                 segnali_trovati += 1
                                 ticker_pulito = str(ticker).replace(".MI", "").replace("-USD", "")
                                 borsa_code = "MILAN" if ".MI" in str(ticker) else ("BINANCE" if "-USD" in str(ticker) else ("NASDAQ" if nome_paniere == "NASDAQ 100" else "NYSE"))
-                                url_stringa_pura = f"https://tradingview.com{ticker_pulito}-{borsa_code}"
+                                url_stringa_pura = f"https://tradingview.com/chart/sqBvK6ky/?symbol={ticker_pulito}"
                                 dec = 4 if "Crypto" in nome_paniere else 2
                                 
                                 alert_msg = (
