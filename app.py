@@ -276,244 +276,192 @@ with tab1:
                     else: st.warning(f"Dati storici insufficienti (<200 righe) per il calcolo strategico su {ticker}.")
 
 # ==========================================
-# --- TAB 2: BACKTESTING AVANZATO ISTITUZIONALE - PARTE 1 ---
+# --- TAB 2: BACKTESTING QUANTITATIVO ---
 # ==========================================
 with tab2:
-    st.subheader("⚙️ Motore di Simulazione Storica Avanzato (Filtro R:R & Timeframe Adattivo)")
+    st.subheader("⚙️ Motore di Simulazione Storica (Backtest Quantitativo)")
+    
     b_col1, b_col2, b_col3 = st.columns(3)
     with b_col1:
-        bt_ticker = st.text_input("Inserisci un singolo Ticker da testare:", value="CRSR")
-        capitale_iniziale = st.number_input("Capitale iniziale ($):", min_value=100, value=10000, step=500)
-        
-        # Inserimento variabile del Timeframe per decidere su quale operare
-        tf_bt_label = st.selectbox("Seleziona Timeframe simulazione:", ["Giornaliero (Daily)", "Settimanale (Weekly)", "Mensile (Monthly)"], key="bt_tf_select")
-        tf_bt_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk", "Mensile (Monthly)": "1mo"}[tf_bt_label]
-        
+        bt_ticker = st.text_input("Inserisci un singolo Ticker da testare:", value="AAPL", key="bt_tick_input")
+        capitale_iniziale = st.number_input("Capitale iniziale ($):", min_value=100, value=10000, step=500, key="bt_cap_input")
     with b_col2:
-        bt_periodo = st.selectbox("Orizzonte temporale dei dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], index=2)
+        bt_periodo = st.selectbox("Orizzonte temporale dei dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], key="bt_per_select")
         mappa_periodi = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
-        rischio_trade = st.slider("Rischio % per operazione (diviso tra i due ingressi):", min_value=0.5, max_value=5.0, value=2.0, step=0.5)
-        
+        rischio_trade = st.slider("Rischio percentuale totale per operazione (1R %):", min_value=0.5, max_value=5.0, value=1.0, step=0.5, key="bt_risk_slid")
     with b_col3:
-        comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5)
+        comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5, key="bt_fee_input")
+        # Selezione dello scenario derivato dall'analisi dell'immagine
+        scenario_rr = st.selectbox(
+            "Seleziona Scenario Combinazione (Gestione Posizione):",
+            [
+                "1. Stop Uguale (Peso 50/50) -> R/R Totale: 0.70",
+                "2. Stop 1/3 più corto (Peso 50/50) -> R/R Totale: 0.81",
+                "3. Target Fisso 1:1.4 (Peso 50/50) -> RR2 Richiesto: 1.867",
+                "4. Target Fisso 1:1.4 (Peso 60/40) -> RR2 Richiesto: 2.10"
+            ],
+            key="bt_scen_select"
+        )
+    if st.button("🚀 Esegui Backtest Strategia", type="primary", key="bt_run_btn"):
+        st.info(f"Elaborazione della simulazione algoritmica combinata per {bt_ticker}...")
+        df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
         
-        # Filtro per il R:R minimo accettabile nel backtest
-        rr_minimo_filtro = st.slider("Filtro Rapporto R:R Minimo per validare il trade (1:X):", min_value=1.0, max_value=5.0, value=2.0, step=0.5)
-
-    if st.button("🚀 Esegui Backtest Strutturale", type="primary"):
-        st.info(f"Elaborazione della simulazione istituzionale su base {tf_bt_label} per {bt_ticker}...")
-        df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval=tf_bt_attivo, auto_adjust=False, multi_level_index=False, progress=False)
-        
-        if df_bt is not None and len(df_bt) > 40:
+        if df_bt is not None and len(df_bt) > 60:
             df_bt.columns = [str(c).strip() for c in df_bt.columns]
             
-            # Calcolo ATR adattato al timeframe selezionato
-            tr = pd.concat([df_bt["High"] - df_bt["Low"], (df_bt["High"] - df_bt["Close"].shift(1)).abs(), (df_bt["Low"] - df_bt["Close"].shift(1)).abs()], axis=1).max(axis=1)
+            # Calcolo dell'ATR per il dimensionamento dinamico
+            high_s = df_bt["High"].astype(float)
+            low_s = df_bt["Low"].astype(float)
+            close_s = df_bt["Close"].astype(float)
+            tr = pd.concat([high_s - low_s, (high_s - close_s.shift(1)).abs(), (low_s - close_s.shift(1)).abs()], axis=1).max(axis=1)
             df_bt["ATR"] = tr.rolling(window=14).mean()
-            
+
+            # Variabili di stato del portafoglio
             capitale = capitale_iniziale
-            equity_curve = [capitale_iniziale]
-            date_curve = [df_bt.index[0]]
-            trade_history = []
-            
             in_posizione = False
-            posizione_tipo = None  
-            livello_sl = 0
-            livello_tp = 0
-            
-            ha_fatto_retest = False
-            prezzo_ingresso_1 = 0
-            size_1 = 0
-            prezzo_ingresso_2 = 0
-            size_2 = 0
-            
-            poc_riferimento_trade = 0
-            
-            # ==========================================
-            # --- LOOP STORICO DI SIMULAZIONE - PARTE 2 RISOLTA DEFINITIVAMENTE ---
-            # ==========================================
-            sl_line = [np.nan] * len(df_bt)
-            tp_line = [np.nan] * len(df_bt)
-            atr_protezione_line = [np.nan] * len(df_bt)
+            equity_curve = [capitale_iniziale]
+            date_curve = [df_bt.index]
+            trade_history = []
 
-            # Calcolo della media per il momentum macro
-            df_bt["EMA_Momentum"] = df_bt["Close"].ewm(span=20, adjust=False).mean()
+            # Configurazione parametri dell'immagine
+            if "1." in scenario_rr:
+                w1, w2 = 0.50, 0.50
+                rr_op1_parziali = [0.462, 0.933, 1.40] # 33%, 66%, 100% del target
+                rr_op2 = 0.462
+                modificatore_stop_op2 = 1.0
+            elif "2." in scenario_rr:
+                w1, w2 = 0.50, 0.50
+                rr_op1_parziali = [0.462, 0.933, 1.40]
+                rr_op2 = 0.693
+                modificatore_stop_op2 = 2/3 # Stop ridotto a 2/3 rispetto a Op1
+            elif "3." in scenario_rr:
+                w1, w2 = 0.50, 0.50
+                rr_op1_parziali = [0.462, 0.933, 1.40]
+                rr_op2 = 1.867
+                modificatore_stop_op2 = 1.0
+            else: # Scenario 4
+                w1, w2 = 0.60, 0.40
+                rr_op1_parziali = [0.462, 0.933, 1.40]
+                rr_op2 = 2.10
+                modificatore_stop_op2 = 1.0
 
-            # Struttura dati per archiviare TUTTI i livelli di POC statici indipendenti
-            pocs_istituzionali_storici = []
-            
-            indice_ancoraggio_vp = 0
-            ultimo_poc_valido = None
-            moltiplicatore_atr_sl = 2.0 
-
-            for i in range(30, len(df_bt)):
+            # Loop storico di simulazione
+            for i in range(50, len(df_bt)):
+                df_storico_finora = df_bt.iloc[:i]
                 riga_attuale = df_bt.iloc[i]
-                riga_precedente = df_bt.iloc[i-1]
-                
-                p_chiusura = float(riga_attuale["Close"])
-                p_massimo = float(riga_attuale["High"])
-                p_minimo = float(riga_attuale["Low"])
-                p_apertura = float(riga_attuale["Open"])
-                atr_corrente = float(df_bt["ATR"].iloc[i]) if not np.isnan(df_bt["ATR"].iloc[i]) else (p_massimo - p_minimo)
+                prezzo_corrente = float(riga_attuale["Close"])
+                atr_corrente = float(riga_attuale["ATR"])
                 data_corrente = df_bt.index[i]
 
-                # RILEVATORE DI MOMENTUM INDIPENDENTE (SBLOCCATO)
-                cross_rialzista_mom = (riga_precedente["Close"] <= riga_precedente["EMA_Momentum"]) and (p_chiusura > riga_attuale["EMA_Momentum"])
-                cross_ribassista_mom = (riga_precedente["Close"] >= riga_precedente["EMA_Momentum"]) and (p_chiusura < riga_attuale["EMA_Momentum"])
-                
-                # Se c'è un cambio di momentum o se la lista è vuota all'inizio, calcoliamo e salviamo il livello statico
-                if cross_rialzista_mom or cross_ribassista_mom or len(pocs_istituzionali_storici) == 0:
-                    if len(pocs_istituzionali_storici) > 0:
-                        indice_ancoraggio_vp = i - 5
-                    
-                    df_blocco_concluso = df_bt.iloc[max(0, indice_ancoraggio_vp) : i]
-                    if len(df_blocco_concluso) >= 5:
-                        p_poc_nuovo, _, _, _, _ = calc_vp(df_blocco_concluso, div=200)
-                        
-                        # Evitiamo duplicati identici (tolleranza del 2%)
-                        if p_poc_nuovo is not None and (not pocs_istituzionali_storici or abs(p_poc_nuovo - pocs_istituzionali_storici[-1]["livello"]) > 0.02 * p_poc_nuovo):
-                            pocs_istituzionali_storici.append({
-                                "data_inizio": data_corrente,
-                                "livello": p_poc_nuovo
-                            })
-                            ultimo_poc_valido = p_poc_nuovo
+                if np.isnan(atr_corrente) or atr_corrente <= 0:
+                    continue
 
-                df_blocco_momentum = df_bt.iloc[max(0, indice_ancoraggio_vp) : i]
-                atr_protezione_line[i] = p_chiusura - (moltiplicatore_atr_sl * atr_corrente)
-
-                if ultimo_poc_valido is None:
-                    ultimo_poc_valido = p_chiusura
-
-                # FASE A: RICERCA INGRESSO SULLA STRUTTURA MACRO RECENTE
                 if not in_posizione:
-                    if len(df_blocco_momentum) < 5:
+                    # Regola di ingresso sul segnale POC
+                    p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora)
+                    if p_poc is None: 
                         continue
-                    resistenza_macro = float(df_blocco_momentum["High"].max())
-                    supporto_macro = float(df_blocco_momentum["Low"].min())
                     
-                    breakout_rialzista = (p_chiusura > resistenza_macro) and (p_chiusura > p_apertura)
-                    breakout_ribassista = (p_chiusura < supporto_macro) and (p_chiusura < p_apertura)
+                    posizione_tipo = "LONG" if prezzo_corrente >= p_poc else "SHORT"
+                    prezzo_ingresso = prezzo_corrente
+                    ampiezza_r = 1.5 * atr_corrente
                     
-                    if breakout_rialzista or breakout_ribassista:
-                        if breakout_rialzista:
-                            ipotetico_sl = resistenza_macro - (moltiplicatore_atr_sl * atr_corrente)
-                            ipotetico_tp = p_chiusura + (5.0 * atr_corrente) 
-                            
-                            distanza_r = abs(p_chiusura - ipotetico_sl)
-                            distanza_t = abs(ipotetico_tp - p_chiusura)
-                            rr_ipotetico = distanza_t / max(0.01, distanza_r)
-                            
-                            if rr_ipotetico >= rr_minimo_filtro:
-                                in_posizione = True
-                                posizione_tipo = "LONG"
-                                prezzo_ingresso_1 = p_chiusura
-                                livello_sl = ipotetico_sl
-                                livello_tp = ipotetico_tp
-                                livello_breakout_riferimento = resistenza_macro
-                                ha_fatto_retest = False
-                                rr_trade = round(rr_ipotetico, 2)
-                                poc_riferimento_trade = ultimo_poc_valido
-                        
-                        elif breakout_ribassista:
-                            ipotetico_sl = supporto_macro + (moltiplicatore_atr_sl * atr_corrente)
-                            ipotetico_tp = p_chiusura - (5.0 * atr_corrente)
-                            
-                            distanza_r = abs(ipotetico_sl - p_chiusura)
-                            distanza_t = abs(p_chiusura - ipotetico_tp)
-                            rr_ipotetico = distanza_t / max(0.01, distanza_r)
-                            
-                            if rr_ipotetico >= rr_minimo_filtro:
-                                in_posizione = True
-                                posizione_tipo = "SHORT"
-                                prezzo_ingresso_1 = p_chiusura
-                                livello_sl = ipotetico_sl
-                                livello_tp = ipotetico_tp
-                                livello_breakout_riferimento = supporto_macro
-                                ha_fatto_retest = False
-                                rr_trade = round(rr_ipotetico, 2)
-                                poc_riferimento_trade = ultimo_poc_valido
-                        
-                        if in_posizione:
-                            rischio_monetario_parziale = capitale * ((rischio_trade / 2) / 100)
-                            size_1 = rischio_monetario_parziale / max(0.01, abs(prezzo_ingresso_1 - livello_sl))
-                            size_2, prezzo_ingresso_2 = 0, 0
+                    # Generazione livelli per le due operazioni (Op1 e Op2)
+                    if posizione_tipo == "LONG":
+                        sl_base = prezzo_ingresso - ampiezza_r
+                        sl_op1 = sl_base
+                        sl_op2 = prezzo_ingresso - (ampiezza_r * modificatore_stop_op2)
+                        tp_op1_fasi = [prezzo_ingresso + (ampiezza_r * r) for r in rr_op1_parziali]
+                        tp_op2 = prezzo_ingresso + (ampiezza_r * rr_op2)
+                    else: # SHORT
+                        sl_base = prezzo_ingresso + ampiezza_r
+                        sl_op1 = sl_base
+                        sl_op2 = prezzo_ingresso + (ampiezza_r * modificatore_stop_op2)
+                        tp_op1_fasi = [prezzo_ingresso - (ampiezza_r * r) for r in rr_op1_parziali]
+                        tp_op2 = prezzo_ingresso - (ampiezza_r * rr_op2)
 
-                # FASE B: GESTIONE POSIZIONE ATTIVA
+                    # Money Management basato sui pesi (Rischio Totale = 1R)
+                    rischio_monetario_totale = capitale * (rischio_trade / 100)
+                    size_op1 = (rischio_monetario_totale * w1) / ampiezza_r
+                    size_op2 = (rischio_monetario_totale * w2) / (ampiezza_r * modificatore_stop_op2)
+                    
+                    stato_op1_fasi = [True, True, True] 
+                    dim_quota_op1 = size_op1 / 3.0
+                    stato_op2_attiva = True
+                    pnl_accumulato_trade = 0.0
+                    in_posizione = True
                 else:
-                    sl_line[i] = livello_sl
-                    tp_line[i] = livello_tp
-
-                    colpito_sl = (posizione_tipo == "LONG" and p_minimo <= livello_sl) or (posizione_tipo == "SHORT" and p_massimo >= livello_sl)
-                    colpito_tp = (posizione_tipo == "LONG" and p_massimo >= livello_tp) or (posizione_tipo == "SHORT" and p_minimo <= livello_tp)
+                    high_g = float(riga_attuale["High"])
+                    low_g = float(riga_attuale["Low"])
                     
-                    if not ha_fatto_retest:
-                        toccato_livello_breakout = (posizione_tipo == "LONG" and p_minimo <= livello_breakout_riferimento) or (posizione_tipo == "SHORT" and p_massimo >= livello_breakout_riferimento)
-                        
-                        if toccato_livello_breakout and not colpito_sl:
-                            ha_fatto_retest = True
-                            prezzo_ingresso_2 = livello_breakout_riferimento
-                            rischio_monetario_parziale = capitale * ((rischio_trade / 2) / 100)
-                            distanza_sl_2 = abs(prezzo_ingresso_2 - livello_sl)
-                            size_2 = rischio_monetario_parziale / max(0.01, distanza_sl_2)
-                        else:
-                            meta_strada = prezzo_ingresso_1 + (livello_tp - prezzo_ingresso_1) * 0.5 if posizione_tipo == "LONG" else prezzo_ingresso_1 - (prezzo_ingresso_1 - livello_tp) * 0.5
-                            if (posizione_tipo == "LONG" and p_chiusura >= meta_strada) or (posizione_tipo == "SHORT" and p_chiusura <= meta_strada):
-                                livello_sl = prezzo_ingresso_1 
-                    
-                    if colpito_sl or colpito_tp:
-                        p_uscita = livello_sl if colpito_sl else livello_tp
-                        
-                        pnl_1 = (p_uscita - prezzo_ingresso_1) * size_1 if posizione_tipo == "LONG" else (prezzo_ingresso_1 - p_uscita) * size_1
-                        pnl_2 = (p_uscita - prezzo_ingresso_2) * size_2 if posizione_tipo == "LONG" and ha_fatto_retest else ((prezzo_ingresso_2 - p_uscita) * size_2 if ha_fatto_retest else 0)
-                        
-                        tasse_eseguito = comun_fee * (2 if not ha_fatto_retest else 4)
-                        pnl_totale = (pnl_1 + pnl_2) - tasse_eseguito
-                        capitale += pnl_totale
-                        
-                        if colpito_tp:
-                            esito_label = "TP 🎯"
-                        elif abs(p_uscita - prezzo_ingresso_1) < 0.02 * prezzo_ingresso_1:
-                            esito_label = "BE 🛡️"
-                        else:
-                            esito_label = "SL 🛑"
+                    # Controllo delle uscite dinamiche intra-day approssimate
+                    if posizione_tipo == "LONG":
+                        if low_g <= sl_op2 and stato_op2_attiva:
+                            pnl_accumulato_trade += (sl_op2 - prezzo_ingresso) * size_op2 - comun_fee
+                            stato_op2_attiva = False
+                        if low_g <= sl_op1:
+                            if stato_op2_attiva:
+                                pnl_accumulato_trade += (sl_op1 - prezzo_ingresso) * size_op2 - comun_fee
+                                stato_op2_attiva = False
+                            for f in range(3):
+                                if stato_op1_fasi[f]:
+                                    pnl_accumulato_trade += (sl_op1 - prezzo_ingresso) * dim_quota_op1 - comun_fee
+                                    stato_op1_fasi[f] = False
+                        if stato_op2_attiva and high_g >= tp_op2:
+                            pnl_accumulato_trade += (tp_op2 - prezzo_ingresso) * size_op2 - comun_fee
+                            stato_op2_attiva = False
+                        for f in range(3):
+                            if stato_op1_fasi[f] and high_g >= tp_op1_fasi[f]:
+                                pnl_accumulato_trade += (tp_op1_fasi[f] - prezzo_ingresso) * dim_quota_op1 - comun_fee
+                                stato_op1_fasi[f] = False
 
+                    else: # SHORT
+                        if high_g >= sl_op2 and stato_op2_attiva:
+                            pnl_accumulato_trade += (prezzo_ingresso - sl_op2) * size_op2 - comun_fee
+                            stato_op2_attiva = False
+                        if high_g >= sl_op1:
+                            if stato_op2_attiva:
+                                pnl_accumulato_trade += (prezzo_ingresso - sl_op1) * size_op2 - comun_fee
+                                stato_op2_attiva = False
+                            for f in range(3):
+                                if stato_op1_fasi[f]:
+                                    pnl_accumulato_trade += (prezzo_ingresso - sl_op1) * dim_quota_op1 - comun_fee
+                                    stato_op1_fasi[f] = False
+                        if stato_op2_attiva and low_g <= tp_op2:
+                            pnl_accumulato_trade += (prezzo_ingresso - tp_op2) * size_op2 - comun_fee
+                            stato_op2_attiva = False
+                        for f in range(3):
+                            if stato_op1_fasi[f] and low_g <= tp_op1_fasi[f]:
+                                pnl_accumulato_trade += (prezzo_ingresso - tp_op1_fasi[f]) * dim_quota_op1 - comun_fee
+                                stato_op1_fasi[f] = False
+
+                    # Se entrambe le operazioni sono chiuse, salva il trade
+                    if not stato_op2_attiva and not any(stato_op1_fasi):
+                        capitale += pnl_accumulato_trade
                         trade_history.append({
                             "Data": data_corrente.strftime("%d/%m/%Y"),
                             "Tipo": posizione_tipo,
-                            "Ingresso 1": round(prezzo_ingresso_1, 2),
-                            "Retest In": round(prezzo_ingresso_2, 2) if ha_fatto_retest else "No Retest",
-                            "Uscita": round(p_uscita, 2),
-                            "R:R Iniziale": f"1:{rr_trade}",
-                            "Esito": esito_label,
-                            "PnL ($)": round(pnl_totale, 2),
-                            "Capitale": round(capitale, 2)
+                            "Ingresso": round(prezzo_ingresso, 2),
+                            "PnL Netto ($)": round(pnl_accumulato_trade, 2),
+                            "Capitale": round(capitale, 2),
+                            "Configurazione": scenario_rr.split("->")[0].strip()
                         })
                         equity_curve.append(capitale)
                         date_curve.append(data_corrente)
-                        
-                        in_posizione, ha_fatto_retest = False, False
-                        ha_fatto_retest = False
-                        size_1, size_2 = 0, 0
+                        in_posizione = False
 
-            df_bt["SL_Dinamico"] = sl_line
-            df_bt["TP_Dinamico"] = tp_line
-            df_bt["ATR_Protezione_Continuo"] = atr_protezione_line
-
-# ==========================================
-            # --- RENDERING METRICHE E OUTPUT CON RETTE POC INFINITE - PARTE 3 ---
-            # ==========================================
-            st.subheader("📊 Statistiche di Performance Istituzionale")
+            # Mostra i risultati quantitativi sulla dashboard
+            st.subheader("📊 Statistiche di Performance Quantitativa")
             if trade_history:
                 df_trades = pd.DataFrame(trade_history)
-                profitti = df_trades[df_trades["PnL ($)"] > 0]["PnL ($)"].sum()
-                perdite = abs(df_trades[df_trades["PnL ($)"] < 0]["PnL ($)"].sum())
-                win_rate = round((len(df_trades[df_trades["PnL ($)"] > 0]) / len(df_trades)) * 100, 2)
+                profitti = df_trades[df_trades["PnL Netto ($)"] > 0]["PnL Netto ($)"].sum()
+                perdite = abs(df_trades[df_trades["PnL Netto ($)"] < 0]["PnL Netto ($)"].sum())
+                win_rate = round((len(df_trades[df_trades["PnL Netto ($)"] > 0]) / len(df_trades)) * 100, 2)
                 profit_factor = round(profitti / max(0.01, perdite), 2)
                 
                 arr_equity = np.array(equity_curve)
-                peaks = np.maximum.accumulate(arr_equity)
-                drawdowns = (arr_equity - peaks) / peaks
-                max_dd = round(abs(drawdowns.min()) * 100, 2) if len(drawdowns) > 0 else 0.0
+                max_peaks = np.maximum.accumulate(arr_equity)
+                max_dd = round(abs(((arr_equity - max_peaks) / max_peaks).min()) * 100, 2)
                 
                 m_col1, m_col2, m_col3, m_col4 = st.columns(4)
                 m_col1.metric("Ritorno Totale", f"{round(((capitale - capitale_iniziale) / capitale_iniziale) * 100, 2)} %")
@@ -522,67 +470,18 @@ with tab2:
                 m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
 
                 fig_eq = grp.Figure()
-                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines+markers', name='Equity Line', line=dict(color='#38bdf8', width=2)))
-                fig_eq.update_layout(title=f"📈 Curva di Crescita del Capitale (Equity Line)", template="plotly_dark", height=320)
-                st.plotly_chart(fig_eq, use_container_width=True, key="bt_equity_chart")
+                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines', name='Equity', line=dict(color='#818cf8', width=2.5)))
+                fig_eq.update_layout(title=f"📈 Equity Line Matrice Ingressi — {bt_ticker}", template="plotly_dark", height=450)
+                st.plotly_chart(fig_eq, use_container_width=True)
                 
-                st.markdown("##### 📝 Registro Storico Esecuzioni Istituzionali")
                 st.dataframe(df_trades, use_container_width=True)
-
-                st.markdown("---")
-                st.markdown("##### 🔍 Analisi Visiva della Strategia (Prezzo + POC Permanenti Infiniti)")
-                
-                fig_strat = make_subplots(rows=1, cols=1, shared_xaxes=True)
-                fig_strat.add_trace(grp.Candlestick(x=df_bt.index, open=df_bt["Open"], high=df_bt["High"], low=df_bt["Low"], close=df_bt["Close"], name="Prezzo"), row=1, col=1)
-                
-                # TRACCIAMENTO SBLOCCATO: Disegna ogni singola retta orizzontale archiviata
-                fine_grafico_data = df_bt.index[-1]
-                for idx, poc_info in enumerate(pocs_istituzionali_storici):
-                    lettera_poc = chr(65 + (idx % 26))
-                    fig_strat.add_trace(grp.Scatter(
-                        x=[poc_info["data_inizio"], fine_grafico_data], 
-                        y=[poc_info["livello"], poc_info["livello"]],
-                        mode="lines+text",
-                        name=f"POC Macro {lettera_poc}",
-                        text=[f"POC {lettera_poc} ", ""],
-                        textposition="top right",
-                        line=dict(color="rgba(242, 142, 43, 0.8)", width=2),
-                        connectgaps=True
-                    ), row=1, col=1)
-                
-                fig_strat.add_trace(grp.Scatter(x=df_bt.index, y=df_bt["ATR_Protezione_Continuo"], mode="lines", name="Filtro Volatilità (ATR)", line=dict(color="rgba(168, 85, 247, 0.35)", width=1.5, dash="dash")), row=1, col=1)
-                fig_strat.add_trace(grp.Scatter(x=df_bt.index, y=df_bt["TP_Dinamico"], mode="lines", name="Price Action TP Target", line=dict(color="#22c55e", width=1.5, dash="dash"), connectgaps=False), row=1, col=1)
-                fig_strat.add_trace(grp.Scatter(x=df_bt.index, y=df_bt["SL_Dinamico"], mode="lines", name="Stop Loss / Break-Even", line=dict(color="#ef4444", width=1.5, dash="dash"), connectgaps=False), row=1, col=1)
-                
-                for _, trade in df_trades.iterrows():
-                    try:
-                        data_evento = pd.to_datetime(trade["Data"], format="%d/%m/%Y")
-                        p_uscita = float(trade["Uscita"])
-                        p_ing1 = float(trade["Ingresso 1"])
-                        tipo = trade["Tipo"]
-                        esito = trade["Esito"]
-                        
-                        colore_esito = "#22c55e" if "TP" in esito else ("#64748b" if "BE" in esito else "#ef4444")
-                        fig_strat.add_trace(grp.Scatter(x=[data_evento], y=[p_uscita], mode="markers+text", marker=dict(symbol="x", size=12, color=colore_esito, line=dict(width=2)), text=[f" {esito}"], textposition="top center", showlegend=False), row=1, col=1)
-                        fig_strat.add_trace(grp.Scatter(x=[data_evento], y=[p_ing1], mode="markers", marker=dict(symbol="triangle-up" if tipo == "LONG" else "triangle-down", size=12, color="#38bdf8"), showlegend=False), row=1, col=1)
-                        
-                        if trade["Retest In"] != "No Retest":
-                            p_ing2 = float(trade["Retest In"])
-                            fig_strat.add_trace(grp.Scatter(x=[data_evento], y=[p_ing2], mode="markers", marker=dict(symbol="diamond", size=11, color="#a855f7"), showlegend=False), row=1, col=1)
-                    except Exception:
-                        pass
-                
-                fig_strat.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=650, showlegend=True, margin=dict(l=40, r=40, t=30, b=40))
-                st.plotly_chart(fig_strat, use_container_width=True, key="bt_strategy_chart_final")
                 
                 csv_dati = df_trades.to_csv(index=False).encode('utf-8')
-                st.markdown(" ")
-                st.download_button(label="📥 Esporta Storico Operazioni (CSV)", data=csv_dati, file_name=f"backtest_{bt_ticker}_{bt_periodo.replace(' ', '_').lower()}.csv", mime="text/csv", key="btn_download_csv")
+                st.download_button(label="📥 Esporta Storico Operazioni (CSV)", data=csv_dati, file_name=f"quant_backtest_{bt_ticker}.csv", mime="text/csv", key="btn_download_csv_quant")
             else:
-                st.warning("Nessun trade convalidato: i setup rilevati avevano un R:R inferiore alla soglia minima impostata o la struttura macro non è stata rotta.")
+                st.warning("Nessun segnale operativo validato nel lasso temporale selezionato.")
         else:
-            st.error("Dati storici insufficienti sul timeframe selezionato.")
-            
+            st.error("Dati storici insufficienti restituiti da Yahoo Finance per questo ticker.")
 
 # ==========================================
 # --- TAB 3: LIVE ALERTS STRATEGICI ---
