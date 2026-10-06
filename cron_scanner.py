@@ -1,18 +1,21 @@
-import pandas as pd
-import numpy as np
-import yfinance as yf
-import requests
 import json
 import os
+import sys
+import time
+import requests
+import numpy as np
+import pandas as pd
+import yfinance as yf
 
-# CREDENZIALI E CONFIGURAZIONI NATIVE
+# ==============================================================================
+# CONFIGURAZIONI E DATABASE PANIERI
+# ==============================================================================
 T_ID = "2072895073"
 TESTA_INTERNET = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Content-Type": "application/json",
 }
 
-# DATABASE INTERNO DEI PANIERI AZIONARI
 SP500_FULL = (
     "MMM,AOS,ABT,ABBV,ACN,ADBE,AMD,AES,AFL,A,APD,ABNB,AKAM,ALB,ARE,ALGN,ALLE,LNT,ALL,GOOGL,GOOG,MO,AMZN,AMCR,AEE,"
     "AEP,AXP,AIG,AMT,AWK,AMP,AME,AMGN,APH,ADI,AON,APA,APO,AAPL,AMAT,APP,APTV,ACGL,ADM,ARES,ANET,AJG,AIZ,T,ATO,ADSK,"
@@ -68,50 +71,7 @@ def ottieni_paniere(nome_paniere):
     elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
     elif nome_paniere == "Crypto (TOTAL 1-2-3)": return CRYPTO_FULL
     return "AAPL,MSFT"
-
-import datetime  # Assicurati che sia importato in cima al file, serve per gestire le date
-
-def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio, ticker_segnalato=None, profilo_segnalato=None):
-    # File locale che fungerà da memoria dello scanner
-    FILE_REGISTRO = "registro_segnali.json"
-    
-    # Se il segnale è operativo (ha ticker e profilo), verifichiamo la memoria storica
-    if ticker_segnalato and profilo_segnalato:
-        registro = {}
-        # 1. Carichiamo il registro esistente se presente
-        if os.path.exists(FILE_REGISTRO):
-            try:
-                with open(FILE_REGISTRO, "r") as f:
-                    registro = json.load(f)
-            except Exception:
-                registro = {}
-                
-        chiave_univoca = f"{ticker_segnalato}_{profilo_segnalato}".upper()
-        ora_attuale = datetime.datetime.now()
-        
-        # 2. Controlliamo se la chiave esiste già nel registro
-        if chiave_univoca in registro:
-            try:
-                ultima_notifica = datetime.datetime.strptime(registro[chiave_univoca], "%Y-%m-%d %H:%M:%S")
-                # Calcoliamo quanti giorni sono passati dall'ultimo alert
-                giorni_passati = (ora_attuale - ultima_notifica).days
-                
-                # Se sono passati meno di 7 giorni, blocchiamo il duplicato
-                if giorni_passati < 7:
-                    print(f"   [ANTI-SPAM] Segnale per {ticker_segnalato} ({profilo_segnalato}) bloccato. Notificato {giorni_passati} giorni fa (limite 7).")
-                    return False
-            except Exception:
-                pass # Se la data nel file è corrotta, procediamo comunque all'invio
-
-        # 3. Se il controllo è passato, aggiorniamo la data nel registro per questo asset
-        registro[chiave_univoca] = ora_attuale.strftime("%Y-%m-%d %H:%M:%S")
-        try:
-            with open(FILE_REGISTRO, "w") as f:
-                json.dump(registro, f, indent=4)
-        except Exception as e:
-            print(f"Errore nel salvataggio del registro JSON: {e}")
-
-    # 4. Procediamo con il reale invio del messaggio su Telegram
+def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     payload = {"chat_id": int(chat_id), "text": str(testo_messaggio), "parse_mode": "HTML", "disable_web_page_preview": False}
     try:
         part1, part2 = "https://" + "api.", "telegram.org/bot"
@@ -122,11 +82,8 @@ def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio, ticker_segnalat
     except Exception:
         return False
 
-
-# MOTORE VETTORIALE DINAMICO (A 200 BINS)
 def calc_vp(df, div=200):
     if df.empty: return None, None, None, [], []
-    
     col_volume = next((c for c in df.columns if c.lower() == 'volume'), 'Volume')
     col_low = next((c for c in df.columns if c.lower() == 'low'), 'Low')
     col_high = next((c for c in df.columns if c.lower() == 'high'), 'High')
@@ -158,40 +115,25 @@ def calc_vp(df, div=200):
         else: idx_a += 1; v_current += v_p
         
     return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
-
-# ==============================================================================
-# PARTE 2 BACKGROUND: CORREZIONE INDICI E COLONNE PER PARITÀ SEGNALI CON STREAMLIT
-# ==============================================================================
-
-if __name__ == "__main__":
-    print("Avvio scansione POC con Strategia Bilanciata (Filtri Dinamici)...")
+def esegui_scansione(poc_scelti):
+    print(f"\n[+] AVVIO SCANSIONE GITHUB - Profili richiesti: {poc_scelti}")
+    invia_messaggio_telegram_sbloccato(T_ID, f"🚀 <b>POC PRO Scanner (GitHub):</b> Avvio ciclo globale per profili: {', '.join(poc_scelti)}...")
     
-    invia_messaggio_telegram_sbloccato(T_ID, "🚀 <b>POC PRO Scanner:</b> Avvio ciclo globale con strategia bilanciata...")
-    
-    soglia_distanza = 2.0                  # Tolleranza al 2% identica a Streamlit
-    poc_scelti = ["Generale", "ATH", "Recente (90D)"]
+    soglia_distanza = 2.0                  
     panieri_da_scansionare = ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto (TOTAL 1-2-3)"]
     segnali_trovati = 0
 
     for nome_paniere in panieri_da_scansionare:
-        print(f"\n--- INIZIO SCANSIONE PANIERE: {nome_paniere} ---")
         lista_ticker_alert = ottieni_paniere(nome_paniere).split(",")
-        totale_titoli = len(lista_ticker_alert)
-
-        for idx, ticker in enumerate(lista_ticker_alert):
+        for ticker in lista_ticker_alert:
             ticker = ticker.strip()
             if not ticker: continue
         
-            print(f"[{idx+1}/{totale_titoli}] Analisi quantitativa su {ticker}...")
             try:
-                # CORREZIONE: Inserito multi_level_index=False per evitare il bug dei dati vuoti
                 df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False, timeout=8)
-                
                 if df_live is not None and len(df_live) > 200:
-                    # CORREZIONE: Forziamo la pulizia dei nomi delle colonne eliminando spazi e formattazioni anomale
                     df_live.columns = [str(c).strip() for c in df_live.columns]
                     
-                    # Estraiamo le serie in modo sicuro usando i nomi standard puliti
                     close_series = df_live["Close"].astype(float)
                     high_series = df_live["High"].astype(float)
                     low_series = df_live["Low"].astype(float)
@@ -200,8 +142,6 @@ if __name__ == "__main__":
                     
                     p_attuale = float(close_series.iloc[-1])
                     d_ath = high_series.idxmax()
-                    
-                    # 1. CALCOLO INDICATORI DI BASE
                     ema200 = close_series.ewm(span=200, adjust=False).mean().iloc[-1]
                     
                     delta = close_series.diff()
@@ -210,12 +150,9 @@ if __name__ == "__main__":
                     rsi_series = 100 - (100 / (1 + (gain / np.where(loss == 0, 0.00001, loss))))
                     rsi_attuale = rsi_series.iloc[-1]
                     
-                    tr = pd.concat([high_series - low_series, 
-                                    (high_series - close_series.shift(1)).abs(), 
-                                    (low_series - close_series.shift(1)).abs()], axis=1).max(axis=1)
+                    tr = pd.concat([high_series - low_series, (high_series - close_series.shift(1)).abs(), (low_series - close_series.shift(1)).abs()], axis=1).max(axis=1)
                     atr_attuale = tr.rolling(window=14).mean().iloc[-1]
                     
-                    # Creazione dei segmenti puliti ri-assegnando le colonne corrette
                     df_generale = pd.DataFrame({"Open": open_series, "High": high_series, "Low": low_series, "Close": close_series, "Volume": volume_series}, index=df_live.index)
                     df_ath_data = df_generale.loc[d_ath:].copy()
                     df_recente = df_generale.tail(90).copy()
@@ -227,49 +164,31 @@ if __name__ == "__main__":
                     
                     for nome_profilo, df_singolo_profilo in controlli_da_effettuare:
                         if df_singolo_profilo.empty: continue
-                        
                         p_poc, p_vh, p_vl, prz_v, vl_v = calc_vp(df_singolo_profilo)
                         if p_poc is None or atr_attuale is None or np.isnan(atr_attuale): continue
                         
                         distanza_percentuale = ((p_attuale - p_poc) / p_poc) * 100
-                        
                         if abs(distanza_percentuale) <= soglia_distanza:
-                            is_rsi_ok_long = rsi_attuale < 75
-                            is_rsi_ok_short = rsi_attuale > 25
-                            
-                            if nome_profilo == "RECENTE (90D)":
-                                passa_filtro_trend_long = p_attuale > ema200
-                                passa_filtro_trend_short = p_attuale < ema200
-                            else:
-                                passa_filtro_trend_long = True
-                                passa_filtro_trend_short = True
+                            is_rsi_ok_long, is_rsi_ok_short = rsi_attuale < 75, rsi_attuale > 25
+                            passa_filtro_trend_long = nome_profilo != "RECENTE (90D)" or p_attuale > ema200
+                            passa_filtro_trend_short = nome_profilo != "RECENTE (90D)" or p_attuale < ema200
                             
                             setup_valido = False
-                            
                             if p_attuale >= p_poc and passa_filtro_trend_long and is_rsi_ok_long:
-                                direzione = "LONG 🟢"
-                                stop_1 = p_attuale - (1.5 * atr_attuale)
-                                take_p = p_attuale + (3.0 * atr_attuale)
+                                direzione, stop_1, take_p = "LONG 🟢", p_attuale - (1.5 * atr_attuale), p_attuale + (3.0 * atr_attuale)
                                 setup_valido = True
-                                
                             elif p_attuale < p_poc and passa_filtro_trend_short and is_rsi_ok_short:
-                                direzione = "SHORT 🔴"
-                                stop_1 = p_attuale + (1.5 * atr_attuale)
-                                take_p = p_attuale - (3.0 * atr_attuale)
+                                direzione, stop_1, take_p = "SHORT 🔴", p_attuale + (1.5 * atr_attuale), p_attuale - (3.0 * atr_attuale)
                                 setup_valido = True
                             
                             if setup_valido:
                                 segnali_trovati += 1
                                 ticker_pulito = str(ticker).replace(".MI", "").replace("-USD", "")
-                                
-                                if ".MI" in str(ticker): borsa_code = "MILAN"
-                                elif "-USD" in str(ticker): borsa_code = "BINANCE"
-                                else: borsa_code = "NASDAQ" if nome_paniere == "NASDAQ 100" else "NYSE"
-                                
-                                url_stringa_pura = f"https://tradingview.com/chart/sqBvK6ky/?symbol={ticker_pulito}"
+                                borsa_code = "MILAN" if ".MI" in str(ticker) else ("BINANCE" if "-USD" in str(ticker) else ("NASDAQ" if nome_paniere == "NASDAQ 100" else "NYSE"))
+                                url_stringa_pura = f"https://tradingview.com{ticker_pulito}-{borsa_code}"
                                 dec = 4 if "Crypto" in nome_paniere else 2
                                 
-                                messaggio_alert = (
+                                alert_msg = (
                                     f"🚨 <b>STRATEGIA QUANT BILANCIATA</b>\n\n"
                                     f"📈 <b>Ticker:</b> #{ticker_pulito} ({nome_paniere})\n"
                                     f"📊 <b>Profilo Volume:</b> {nome_profilo}\n"
@@ -285,12 +204,27 @@ if __name__ == "__main__":
                                     f"|— <i>ATR Volatilità:</i> {round(atr_attuale, dec)}\n\n"
                                     f"🔗 <a href='{url_stringa_pura}'>APRI GRAFICO SU TRADINGVIEW</a>"
                                 )
-                                invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
-                                print(f"--> [SEGNALE INVIATO] {ticker} ({nome_profilo})")
-                                
+                                invia_messaggio_telegram_sbloccato(T_ID, alert_msg)
             except Exception as single_err:
-                print(f"Errore nell'analisi di {ticker}: {single_err}")
+                print(f"Errore su {ticker}: {single_err}")
                         
-    print(f"\nScansione completata. Trovati {segnali_trovati} segnali totali.")
-    messaggio_fine = f"🏁 <b>POC PRO Scanner:</b> Ciclo terminato.\n📊 Inviati <b>{segnali_trovati}</b> segnali bilanciati."
-    invia_messaggio_telegram_sbloccato(T_ID, messaggio_fine)
+    print(f"\nScansione completata. Inviati {segnali_trovati} segnali.")
+    invia_messaggio_telegram_sbloccato(T_ID, f"🏁 <b>POC PRO Scanner:</b> Ciclo terminato.\n📊 Inviati <b>{segnali_trovati}</b> segnali per {poc_scelti}.")
+# ==============================================================================
+# ENTRYPOINT DI ESECUZIONE PER GITHUB ACTIONS
+# ==============================================================================
+if __name__ == "__main__":
+    # Verifica se GitHub ha passato l'argomento corretto via riga di comando
+    if len(sys.argv) > 1:
+        argomento = str(sys.argv[1]).strip().lower()
+        if argomento == "generale":
+            esegui_scansione(poc_scelti=["Generale"])
+        elif argomento == "ath":
+            esegui_scansione(poc_scelti=["ATH"])
+        else:
+            print(f"Parametro '{sys.argv[1]}' non riconosciuto. Eseguo default (Generale).")
+            esegui_scansione(poc_scelti=["Generale"])
+    else:
+        # Esecuzione di salvataggio predefinita se avviato manualmente senza argomenti
+        print("Nessun argomento rilevato. Avvio scansione Generale di default...")
+        esegui_scansione(poc_scelti=["Generale"])
