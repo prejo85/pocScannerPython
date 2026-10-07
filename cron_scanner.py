@@ -249,23 +249,26 @@ if __name__ == "__main__":
                                 
                                 url_stringa_pura = f"https://it.tradingview.com/symbols/{borsa_code}-{ticker_pulito}/"
                                 dec = 4 if nome_paniere == "Crypto" else (4 if str(ticker).endswith("=F") else 2)
-                                
-                                messaggio_alert = (
-                                    f"🚨 <b>STRATEGIA QUANT BILANCIATA</b>\n\n"
-                                    f"📈 <b>Ticker:</b> #{ticker_pulito} ({nome_paniere})\n"
-                                    f"📊 <b>Profilo Volume:</b> {nome_profilo}\n"
-                                    f"⚡ <b>Setup Operativo:</b> {direzione}\n\n"
-                                    f"💵 <b>Prezzo Attuale:</b> {round(p_attuale, dec)} USD\n"
-                                    f"🎯 <b>Entry (Prezzo):</b> {round(p_attuale, dec)}\n"
-                                    f"🔴 <b>Stop Loss (1.5 ATR):</b> {round(stop_1, dec)}\n"
-                                    f"💰 <b>Take Profit (3.0 ATR):</b> {round(take_p, dec)}\n\n"
-                                    f"🔍 <b>Metriche di Controllo:</b>\n"
-                                    f"|— <i>Rapporto R/R:</i> 1:2.0 (Fisso)\n"
-                                    f"|— <i>RSI (14):</i> {round(rsi_attuale, 1)}\n"
-                                    f"|— <i>Filtro EMA200:</i> {'SOPRA' if p_attuale > ema200 else 'SOTTO'}\n"
-                                    f"|— <i>ATR Volatilità:</i> {round(atr_attuale, dec)}\n\n"
-                                    f"🔗 <a href='{url_stringa_pura}'>APRI GRAFICO SU TRADINGVIEW</a>"
-                                )
+
+                                messaggio_alert = f"""🚨 <b>STRATEGIA QUANT BILANCIATA</b>
+
+                                    📈 <b>Ticker:</b> #{ticker_pulito} ({nome_paniere})
+                                    📊 <b>Profilo Volume:</b> {nome_profilo}
+                                    ⚡ <b>Setup Operativo:</b> {direzione}
+
+                                    💵 <b>Prezzo Attuale:</b> {round(p_attuale, dec)}
+                                    🎯 <b>Entry (Prezzo):</b> {round(p_attuale, dec)}
+                                    🔴 <b>Stop Loss (1.5 ATR):</b> {round(stop_1, dec)}
+                                    💰 <b>Take Profit (3.0 ATR):</b> {round(take_p, dec)}
+
+                                    🔍 <b>Metriche di Controllo:</b>
+                                    |— <i>Rapporto R/R:</i> 1:2.0 (Fisso)
+                                    |— <i>RSI (14):</i> {round(rsi_attuale, 1)}
+                                    |— <i>Filtro EMA200:</i> {'SOPRA' if p_attuale > ema200 else 'SOTTO'}
+                                    |— <i>ATR Volatilità:</i> {round(atr_attuale, dec)}
+
+                                    🔗 <a href='{url_stringa_pura}'>APRI GRAFICO SU TRADINGVIEW</a>"""
+
                                 invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
                                 print(f"--> [SEGNALE INVIATO] {ticker} ({nome_profilo})")
                                 
