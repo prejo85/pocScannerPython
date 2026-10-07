@@ -279,19 +279,26 @@ with tab1:
 # --- TAB 2: GESTIONE INPUT E SCENARI 1R ---
 # ==========================================
 with tab2:    
-    st.subheader("📐 Motore Quant Swing Trading: Algoritmo 3-Setup POC")
+
+    st.subheader("📐 Motore Quant Swing Trading: Algoritmo 3-Setup POC, Retest & Trendline")
     st.markdown("---")
     
     b_col1, b_col2, b_col3 = st.columns(3)
     with b_col1:
         bt_ticker = st.text_input("Inserisci Ticker da analizzare (es. CRSR, AAPL, BTC-USD):", value="CRSR", key="quant_tick_in")
         capitale_iniziale = st.number_input("Capitale iniziale ($):", min_value=100, value=10000, step=500, key="quant_cap_in")
-        tf_bt_label = st.selectbox("Seleziona Timeframe (Swing Trading):", ["Giornaliero (Daily)", "Settimanale (Weekly)", "Mensile (Monthly)"], key="quant_tf_in")
+        # Filtro selettore Timeframe per lo Swing Trading richiesto
+        tf_bt_label = st.selectbox(
+            "Seleziona Timeframe per lo Swing (Minimo Daily):", 
+            ["Giornaliero (Daily)", "Settimanale (Weekly)", "Mensile (Monthly)"], 
+            index=1, 
+            key="quant_tf_in"
+        )
         tf_bt_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk", "Mensile (Monthly)": "1mo"}[tf_bt_label]
     with b_col2:
         bt_periodo = st.selectbox("Orizzonte temporale dei dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], index=2, key="quant_per_in")
         mappa_periodi = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
-        rischio_trade = st.slider("Rischio percentuale massimo tollerato (Fisso 1R):", min_value=0.5, max_value=2.0, value=1.0, step=0.5, key="quant_risk_in")
+        rischio_trade = st.slider("Rischio percentuale massimo tollerato per operazione (Fisso 1%):", min_value=0.5, max_value=2.0, value=1.0, step=0.5, key="quant_risk_in")
     with b_col3:
         comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5, key="quant_fee_in")
         scenario_rr = st.selectbox(
@@ -305,13 +312,13 @@ with tab2:
             key="quant_mm_in"
         )
     if st.button("🚀 Avvia Backtest Multi-Setup", type="primary", key="quant_run_btn"):
-        st.info(f"Scarico dati storici ed elaborazione dei livelli di volume per {bt_ticker}...")
+        st.info(f"Scarico dati storici su base {tf_bt_label} ed elaborazione dei livelli per {bt_ticker}...")
         df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval=tf_bt_attivo, auto_adjust=False, multi_level_index=False, progress=False)
         
         if df_bt is not None and len(df_bt) > 40:
             df_bt.columns = [str(c).strip() for c in df_bt.columns]
             
-            # Media mobile veloce a 20 periodi per calcolare i cambi di momentum macro
+            # Calcolo del Momentum Macro via EMA a 20 periodi per identificare i cambi di struttura
             df_bt["EMA_Momentum"] = df_bt["Close"].astype(float).ewm(span=20, adjust=False).mean()
             
             capitale = capitale_iniziale
@@ -319,13 +326,14 @@ with tab2:
             date_curve = [df_bt.index[0]]
             trade_history = []
             segmenti_grafici = []
+            linee_trend_compressione = []
+            pocs_istituzionali_storici = []
             
             in_posizione = False
-            pocs_istituzionali_storici = []
             indice_ancoraggio_vp = 0
             ultimo_poc_valido = None
 
-            # Assegnazione proporzioni esatte del rischio matematico 1R (Foto)
+            # Assegnazione proporzioni esatte del rischio monetario 1R (Foto)
             if "1." in scenario_rr:
                 w1, w2, rr_op1_parziali, rr_op2, modificatore_stop_op2 = 0.50, 0.50, [0.462, 0.933, 1.40], 0.462, 1.0
             elif "2." in scenario_rr:
@@ -335,7 +343,7 @@ with tab2:
             else:
                 w1, w2, rr_op1_parziali, rr_op2, modificatore_stop_op2 = 0.60, 0.40, [0.462, 0.933, 1.40], 2.10, 1.0
 
-            # Calcolo preventivo di tutti i POC permanenti generati ad ogni incrocio del momentum
+            # Estrazione e stoccaggio di tutti i POC orizzontali permanenti generati nello storico
             for idx in range(20, len(df_bt)):
                 r_prec = df_bt.iloc[idx-1]
                 r_att = df_bt.iloc[idx]
@@ -347,10 +355,10 @@ with tab2:
                     if len(df_blocco) >= 5:
                         p_poc_nuovo, _, _, _, _ = calc_vp(df_blocco, div=150)
                         if p_poc_nuovo is not None:
-                            pocs_istituzionali_storici.append({"livello": p_poc_nuovo, "data_generazione": df_bt.index[idx]})
+                            pocs_istituzionali_storici.append({"livello": p_poc_nuovo, "data_inizio": df_bt.index[idx]})
                             ultimo_poc_valido = p_poc_nuovo
                             indice_ancoraggio_vp = idx
-            # Loop per il backtesting dei 3 moduli operativi richiesti
+            # Loop per il backtesting e l'individuazione geometrica dei setup richiesti
             for i in range(25, len(df_bt)):
                 if ultimo_poc_valido is None:
                     continue
@@ -362,75 +370,50 @@ with tab2:
                 data_corrente = df_bt.index[i]
 
                 if not in_posizione:
-                    # Estrazione delle ultime 8 candele per valutare i livelli di Supporto e Resistenza vicino al POC
                     finestra_intorno = df_bt.iloc[max(0, i-8):i]
-                    resistenza_intorno = float(finestra_pattern["High"].max()) if 'finestra_pattern' in locals() else float(finestra_intorno["High"].max())
-                    supporto_intorno = float(finestra_pattern["Low"].min()) if 'finestra_pattern' in locals() else float(finestra_intorno["Low"].min())
+                    resistenza_intorno = float(finestra_intorno["High"].max())
+                    supporto_intorno = float(finestra_intorno["Low"].min())
                     
-                    # ---------------------------------------------------------
-                    # SETUP 1: PRIMO TOCCO DI UN POC PERMANENTE (PUNTO 2)
-                    # ---------------------------------------------------------
+                    # --- SETUP 1: PRIMO TOCCO DEL POC ---
                     tocco_da_sopra = (p_apertura > ultimo_poc_valido) and (p_minimo <= ultimo_poc_valido)
                     tocco_da_sotto = (p_apertura < ultimo_poc_valido) and (p_massimo >= ultimo_poc_valido)
                     
-                    if tocco_da_sopra or tocco_da_sotto:
+                    # --- SETUP 2: BREAKOUT DI SUPPORTO/RESISTENZA A CANDELA PIENA ---
+                    breakout_long_struttura = (p_chiusura > resistenza_intorno) and (p_chiusura > p_apertura) and (p_minimo <= ultimo_poc_valido <= p_massimo)
+                    breakout_short_struttura = (p_chiusura < supporto_intorno) and (p_chiusura < p_apertura) and (p_minimo <= ultimo_poc_valido <= p_massimo)
+
+                    # --- SETUP 3: COMPRESSIONE CON TRENDLINE RIBASSISTA E SUPPORTO TENUTO ---
+                    m_5 = df_bt.iloc[max(0, i-5):i]["High"].values
+                    massimi_decrescenti = len(m_5) >= 3 and all(m_5[k] >= m_5[k+1] for k in range(len(m_5)-1))
+                    supporto_tenuto = p_minimo >= supporto_intorno * 0.985
+                    rottura_alta_trend = (p_chiusura > m_5[-1]) and (p_chiusura > p_apertura)
+                    
+                    setup_compressione_attivo = massimi_decrescenti and supporto_tenuto and rottura_alta_trend
+
+                    if tocco_da_sopra or tocco_da_sotto or breakout_long_struttura or breakout_short_struttura or setup_compressione_attivo:
                         in_posizione = True
-                        posizione_tipo = "LONG" if tocco_da_sopra else "SHORT"
-                        prezzo_ingresso = ultimo_poc_valido
-                        nome_setup = "Primo Tocco POC"
+                        posizione_tipo = "LONG" if (tocco_da_sopra or breakout_long_struttura or setup_compressione_attivo) else "SHORT"
+                        prezzo_ingresso = ultimo_poc_valido if (tocco_da_sopra or tocco_da_sotto) else p_chiusura
+                        
+                        if tocco_da_sopra or tocco_da_sotto:
+                            nome_setup = "1. Primo Tocco POC"
+                        elif breakout_long_struttura or breakout_short_struttura:
+                            nome_setup = "2. Breakout Struttura"
+                        else:
+                            nome_setup = "3. Breakout Trendline Compressione"
+                            # Salvataggio geometrico della retta di compressione per il grafico
+                            linee_trend_compressione.append({
+                                "x": [df_bt.index[i-5], data_corrente],
+                                "y": [m_5[0], m_5[-1]]
+                            })
                         
                         ampiezza_r = abs(prezzo_ingresso - supporto_intorno) if posizione_tipo == "LONG" else abs(resistenza_intorno - prezzo_ingresso)
                         sl_op1 = supporto_intorno if posizione_tipo == "LONG" else resistenza_intorno
-                        ha_incrementato_retest = False
                         
-                    # ---------------------------------------------------------
-                    # SETUP 2: BREAKOUT DI RESISTENZA/SUPPORTO CON CANDELA PIENA (PUNTI 3 E 4)
-                    # ---------------------------------------------------------
-                    elif (p_minimo <= ultimo_poc_valido <= p_massimo) or (supporto_intorno <= p_chiusura <= resistenza_intorno):
-                        breakout_long_struttura = (p_chiusura > resistenza_intorno) and (p_chiusura > p_apertura)
-                        breakout_short_struttura = (p_chiusura < supporto_intorno) and (p_chiusura < p_apertura)
-                        
-                        if breakout_long_struttura:
-                            in_posizione = True
-                            posizione_tipo = "LONG"
-                            prezzo_ingresso = p_chiusura
-                            sl_op1 = supporto_intorno
-                            ampiezza_r = abs(prezzo_ingresso - sl_op1)
-                            nome_setup = "Breakout Resistenza POC"
-                            ha_incrementato_retest = False
-                        elif breakout_short_struttura:
-                            in_posizione = True
-                            posizione_tipo = "SHORT"
-                            prezzo_ingresso = p_chiusura
-                            sl_op1 = resistenza_intorno
-                            ampiezza_r = abs(sl_op1 - prezzo_ingresso)
-                            nome_setup = "Breakout Supporto POC"
-                            ha_incrementato_retest = False
-
-                    # ---------------------------------------------------------
-                    # SETUP 3: COMPRESSIONE CON MASSIMI DECRESCENTI (TRENDLINE RIBASSISTA - PUNTO 5)
-                    # ---------------------------------------------------------
-                    elif (supporto_intorno <= p_minimo <= ultimo_poc_valido):
-                        # Analisi dei massimi decrescenti (Trendline Ribassista) nelle ultime 5 candele
-                        m_5 = df_bt.iloc[i-5:i]["High"].values
-                        compresso_massimi_decrescenti = (m_5[0] > m_5[1] > m_5[2]) or (m_5[1] > m_5[2] > m_5[3])
-                        tenuta_supporto_statico = p_minimo >= supporto_intorno * 0.99
-                        
-                        if compresso_massimi_decrescenti and tenuta_supporto_statico and (p_chiusura > p_apertura):
-                            # Rottura della linea di compressione alta
-                            in_posizione = True
-                            posizione_tipo = "LONG"
-                            prezzo_ingresso = p_chiusura
-                            sl_op1 = supporto_intorno
-                            ampiezza_r = abs(prezzo_ingresso - sl_op1)
-                            nome_setup = "Rottura Trendline Compressione"
-                            ha_incrementato_retest = False
-
-                    # Configurazione Monetaria Rigida all'innesco valido del trade (Protezione 1R)
-                    if in_posizione:
                         if ampiezza_r <= 0:
                             in_posizione = False
                             continue
+                            
                         data_inizio_trade = data_corrente
                         poc_centrale_trade = ultimo_poc_valido
                         
@@ -451,15 +434,15 @@ with tab2:
                         dim_quota_op1 = size_op1 / 3.0
                         stato_op2_attiva = True
                         pnl_accumulato_trade = 0.0
+                        ha_incrementato_retest = False
                 else:
-                    # Se in posizione, monitora l'evoluzione e le uscite
-                    # MODULO INCREMENTO: Se fa Retest del POC incrementa la posizione caricando +20% contratti a protezione
-                    if not ha_incrementato_retest and (nome_setup in ["Breakout Resistenza POC", "Breakout Supporto POC"]):
+                    # Gestione della posizione attiva e incremento controllato sul Retest
+                    if not ha_incrementato_retest and (nome_setup == "2. Breakout Struttura"):
                         if (posizione_tipo == "LONG" and p_minimo <= poc_centrale_trade) or (posizione_tipo == "SHORT" and p_massimo >= poc_centrale_trade):
-                            size_op2 *= 1.20  # Incremento strutturale controllato della tranche aggressiva
+                            size_op2 *= 1.20  # Incremento controllato del +20% sulla tranche Op2 come richiesto
                             ha_incrementato_retest = True
 
-                    if i_tipo_long := (posizione_tipo == "LONG"):
+                    if posizione_tipo == "LONG":
                         if p_minimo <= sl_op2 and stato_op2_attiva:
                             pnl_accumulato_trade += (sl_op2 - prezzo_ingresso) * size_op2 - comun_fee
                             stato_op2_attiva = False
@@ -498,20 +481,20 @@ with tab2:
                                 pnl_accumulato_trade += (prezzo_ingresso - tp_op1_fasi[f]) * dim_quota_op1 - comun_fee
                                 stato_op1_fasi[f] = False
 
-                    # Consolidamento a chiusura totale delle Tranche
+                    # Chiusura e consolidamento a registro storico
                     if not stato_op2_attiva and not any(stato_op1_fasi):
                         capitale += pnl_accumulato_trade
                         esito_lbl = "PROFIT 🟢" if pnl_accumulato_trade > 0 else "LOSS 🛑"
                         
                         trade_history.append({
                             "Data": data_corrente.strftime("%d/%m/%Y"),
-                            "Setup Utilizzato": nome_setup,
+                            "Setup": nome_setup,
                             "Tipo": posizione_tipo,
                             "Ingresso": round(prezzo_ingresso, 2),
                             "Esito": esito_lbl,
-                            "Incrementato Retest": "Sì (+20%)" if ha_incrementato_retest else "No",
+                            "Retest Inc": "Sì (+20%)" if ha_incrementato_retest else "No",
                             "PnL Netto ($)": round(pnl_accumulato_trade, 2),
-                            "Capitale Liquido ($)": round(capitale, 2)
+                            "Capitale ($)": round(capitale, 2)
                         })
                         
                         segmenti_grafici.append({
@@ -524,8 +507,10 @@ with tab2:
                         equity_curve.append(capitale)
                         date_curve.append(data_corrente)
                         in_posizione = False
-            # Calcolo metriche di riepilogo
-            st.subheader("📊 Analisi delle Performance dei 3 Setup Quant")
+
+            df_bt["POC_Segnale"] = [np.nan] * len(df_bt)
+            # Elaborazione e Rendering grafico ad alta definizione visiva
+            st.subheader(f"📊 Risultati Finanziari Strategia Swing — {tf_bt_label}")
             if trade_history:
                 df_trades = pd.DataFrame(trade_history)
                 profitti = df_trades[df_trades["PnL Netto ($)"] > 0]["PnL Netto ($)"].sum()
@@ -535,34 +520,63 @@ with tab2:
                 
                 arr_eq = np.array(equity_curve)
                 peaks = np.maximum.accumulate(arr_eq)
-                max_dd = round(abs(((arr_eq - peaks) / peaks).min()) * 100, 2) if len(peaks) > 0 else 0.0
+                max_dd = round(abs(((arr_eq - peaks) / peaks).min()) * 100, 2)
                 
                 m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-                m_col1.metric("Capitale Finale", f"$ {round(capitale,2)}")
+                m_col1.metric("Capitale Sbloccato", f"$ {round(capitale, 2)}")
                 m_col2.metric("Win Rate Globale", f"{win_rate} %")
                 m_col3.metric("Profit Factor", f"{profit_factor}")
                 m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
 
-                st.plotly_chart(grp.Figure().add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines+markers', name='Equity Line', line=dict(color='#818cf8', width=2.5))).update_layout(title="📈 Evoluzione del Capitale Intero (Matrice 1R)", template="plotly_dark", height=280), use_container_width=True)
+                st.plotly_chart(grp.Figure().add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines+markers', name='Equity Curve', line=dict(color='#38bdf8', width=2.5))).update_layout(title="📈 Curva Finanziaria di Sviluppo del Capitale (1R Fisso)", template="plotly_dark", height=280), use_container_width=True)
                 st.dataframe(df_trades, use_container_width=True)
 
-                # Renderizzazione Visiva dei Canali sui Grafici
-                st.markdown("##### 🔍 Verifica dei Pattern Grafici Rilevati dal Motore")
+                # --- COSTRUZIONE DEL GRAFICO TECNICO DELLE CANDELE E RETTE PERMANENTI ---
+                st.markdown("##### 🔍 Mappa Visiva delle Candele: Verifica delle Trendline di Compressione e dei POC Storici")
                 fig_strat = grp.Figure()
-                fig_strat.add_trace(grp.Candlestick(x=df_bt.index, open=df_bt["Open"], high=df_bt["High"], low=df_bt["Low"], close=df_bt["Close"], name="Prezzo"))
+                fig_strat.add_trace(grp.Candlestick(x=df_bt.index, open=df_bt["Open"], high=df_bt["High"], low=df_bt["Low"], close=df_bt["Close"], name="Candele Prezzo"))
                 
+                # 1. Tracciamento continuo e sbloccato di tutte le linee POC orizzontali generate nel tempo
+                fine_grafico_x = df_bt.index[-1]
+                for p_info in pocs_istituzionali_storici:
+                    fig_strat.add_trace(grp.Scatter(x=[p_info["data_inizio"], fine_grafico_x], y=[p_info["livello"], p_info["livello"]], mode="lines", line=dict(color="rgba(239, 68, 68, 0.45)", width=1.5, dash="solid"), showlegend=False))
+                
+                # 2. Tracciamento geometrico inclinato delle Trendline di Compressione (Setup 3)
+                for t_line in linee_trend_compressione:
+                    fig_strat.add_trace(grp.Scatter(x=t_line["x"], y=t_line["y"], mode="lines", line=dict(color="#f59e0b", width=2, dash="dash"), name="Trendline Ribassista Compressione", showlegend=False))
+
+                # 3. Tracciamento dei canali e dei livelli di target/stop solo durante i trade attivi
                 for idx, seg in enumerate(segmenti_grafici):
                     s_leg = True if idx == 0 else False
-                    fig_strat.add_trace(grp.Scatter(x=seg["x"], y=seg["poc"], mode="lines", name="🔴 POC di Riferimento", line=dict(color="#ef4444", width=2), showlegend=s_leg))
-                    fig_strat.add_trace(grp.Scatter(x=seg["x"], y=seg["sl_op1"], mode="lines", name="🔵 SL Strutturale (Op1)", line=dict(color="#3b82f6", width=1.5, dash="dash"), showlegend=s_leg))
+                    fig_strat.add_trace(grp.Scatter(x=seg["x"], y=seg["poc"], mode="lines", name="🔴 POC Centrale", line=dict(color="#ef4444", width=2), showlegend=s_leg))
+                    fig_strat.add_trace(grp.Scatter(x=seg["x"], y=seg["sl_op1"], mode="lines", name="🔵 SL Op1 (Struttura)", line=dict(color="#3b82f6", width=1.5, dash="dash"), showlegend=s_leg))
                     fig_strat.add_trace(grp.Scatter(x=seg["x"], y=seg["sl_op2"], mode="lines", name="🟠 SL Op2 (Stretto)", line=dict(color="#f97316", width=1.5, dash="dot"), showlegend=s_leg))
-                    fig_strat.add_trace(grp.Scatter(x=seg["x"], y=seg["tp_op2"], mode="lines", name="🟢 Target Matrice (Op2)", line=dict(color="#22c55e", width=1.5, dash="dash"), showlegend=s_leg))
+                    fig_strat.add_trace(grp.Scatter(x=seg["x"], y=seg["tp_op2"], mode="lines", name="🟢 Target Op2", line=dict(color="#22c55e", width=1.5, dash="dash"), showlegend=s_leg))
 
-                st.plotly_chart(fig_strat.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=550), use_container_width=True, key="bt_final_multi")
+                # 4. Aggregazione dei Marker Visivi di Esecuzione degli Ordini
+                ingressi_x, ingressi_y, uscite_x, uscite_y, uscite_color, uscite_text = [], [], [], [], [], []
+                for _, trade in df_trades.iterrows():
+                    data_ev = pd.to_datetime(trade["Data"], format="%d/%m/%Y")
+                    ingressi_x.append(data_ev)
+                    ingressi_y.append(trade["Ingresso"])
+                    uscite_x.append(data_ev)
+                    uscite_y.append(trade["Ingresso"])
+                    uscite_color.append("#22c55e" if "PROFIT" in trade["Esito"] else "#ef4444")
+                    uscite_text.append(f"{trade['Setup']} ({trade['Retest Inc']})")
+
+                if ingressi_x:
+                    fig_strat.add_trace(grp.Scatter(x=ingressi_x, y=ingressi_y, mode="markers", marker=dict(symbol="circle", size=11, color="#a855f7"), name="🔮 Trigger Segnale"))
+                    fig_strat.add_trace(grp.Scatter(x=uscite_x, y=uscite_y, mode="markers+text", marker=dict(symbol="x", size=10, color=uscite_color), text=uscite_text, textposition="top center", name="🎯 Chiusura Trade"))
+
+                fig_strat.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=580, showlegend=True, margin=dict(l=10, r=10, t=30, b=10))
+                st.plotly_chart(fig_strat, use_container_width=True, key="bt_final_multi")
+                
+                csv_dati = df_trades.to_csv(index=False).encode('utf-8')
+                st.download_button(label="📥 Esporta Storico Operazioni (CSV)", data=csv_dati, file_name=f"quant_swing_backtest_{bt_ticker}.csv", mime="text/csv", key="btn_download_quant_csv")
             else:
-                st.warning("Nessun setup ha completato la configurazione tecnica 'Innesco + Retest' nel periodo storico scelto.")
+                st.warning("Nessun setup ha completato la configurazione tecnica 'Ruttura + Retest' sui POC storici.")
         else:
-            st.error("Dati storici insufficienti caricati per il Ticker specificato.")
+            st.error("Dati insufficienti caricati per il Ticker specificato.")
 
 # ==========================================
 # --- TAB 3: LIVE ALERTS STRATEGICI ---
