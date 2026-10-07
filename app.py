@@ -278,6 +278,7 @@ with tab1:
 # ==========================================
 # --- TAB 2: GESTIONE INPUT E SCENARI 1R ---
 # ==========================================
+with tab2:    
     st.subheader("📐 Matrice Quant: Breakout Struttura, Retest e Asimmetria del Rischio (1R)")
     
     b_col1, b_col2, b_col3 = st.columns(3)
