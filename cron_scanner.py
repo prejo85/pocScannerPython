@@ -12,8 +12,7 @@ TESTA_INTERNET = {
     "Content-Type": "application/json",
 }
 
-# --- 1. SEZIONE DATABASE PANIERI AGGIORNATO 2026 ---
-
+# DATABASE INTERNO DEI PANIERI AZIONARI
 SP500_FULL = (
     "MMM,AOS,ABT,ABBV,ACN,ADBE,AMD,AES,AFL,A,APD,ABNB,AKAM,ALB,ARE,ALGN,ALLE,LNT,ALL,GOOGL,GOOG,MO,AMZN,AMCR,AEE,"
     "AEP,AXP,AIG,AMT,AWK,AMP,AME,AMGN,APH,ADI,AON,APA,APO,AAPL,AMAT,APP,APTV,ACGL,ADM,ARES,ANET,AJG,AIZ,T,ATO,ADSK,"
@@ -42,12 +41,8 @@ NASDAQ_FULL = (
     "CHKP,CTAS,CSCO,CTSH,CMCSA,CPRT,COST,CRWD,DLTR,DXCM,EBAY,EA,EXPE,FAST,META,FI,FOXA,FOX,GILD,GOOGL,GOOG,"
     "IDXX,ILMN,INCY,INTC,INTU,ISRG,JBHT,JD,KDP,KLAC,KHC,LRCX,LULU,MELI,MAR,MTCH,MCHP,MU,MSFT,MRNA,MNST,"
     "NTES,NFLX,NVDA,NXPI,ORLY,OKTA,ODFL,PCAR,PAYX,PYPL,PEP,PDD,REGN,ROST,SIRI,SWKS,SBUX,SNPS,TMUS,TSLA,"
-    "TXN,TCOM,VRSN,VRTX,WBA,WDAY,XEL,ZM"
-)
-
-USA_MID_SMALL = (
-    "MSTR,GME,PLTR,COIN,HOOD,NET,RBLX,SOFI,AFRM,PATH,AMC,RIVN,LCID,DKNG,PENN,RIOT,MARA,CLSK,"
-    "U,SNOW,AI,PLUG,FCEL,BLNK,NIO,XPEV,LI,BABA,PDD,JD,FUTU,LUNR,SPCE,IONQ,ASTS,GTLB,TOST"
+    "TXN,TCOM,VRSN,VRTX,WBA,WDAY,XEL,ZM"v"MSTR,GME,PLTR,COIN,HOOD,NET,RBLX,SOFI,AFRM,PATH,AMC,RIVN,LCID,DKNG,"
+    "PENN,RIOT,MARA,CLSK,U,SNOW,AI,PLUG,FCEL,BLNK,NIO,XPEV,LI,BABA,PDD,JD,FUTU,LUNR,SPCE,IONQ,ASTS,GTLB,TOST"
 )
 
 FTSEMIB_FULL = (
@@ -89,14 +84,54 @@ CRYPTO_FULL = f"{TOTAL1_LEADERS},{TOTAL2_MAJORS},{TOTAL3_ALTS}"
 def ottieni_paniere(nome_paniere):
     if nome_paniere == "S&P 500": return SP500_FULL
     elif nome_paniere == "NASDAQ 100": return NASDAQ_FULL
-    elif nome_paniere == "USA Mid/Small Cap": return USA_MID_SMALL
     elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
     elif nome_paniere == "ETF Globali": return ETF_FULL
     elif nome_paniere == "Futures di Mercato": return FUTURES_FULL
     elif nome_paniere == "Crypto": return CRYPTO_FULL
-    return "AAPL,MSFT"
+    return "Inserisci il ticker"
+import datetime  # Assicurati che sia importato in cima al file, serve per gestire le date
 
-def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
+def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio, ticker_segnalato=None, profilo_segnalato=None):
+    # File locale che fungerà da memoria dello scanner
+    FILE_REGISTRO = "registro_segnali.json"
+    
+    # Se il segnale è operativo (ha ticker e profilo), verifichiamo la memoria storica
+    if ticker_segnalato and profilo_segnalato:
+        registro = {}
+        # 1. Carichiamo il registro esistente se presente
+        if os.path.exists(FILE_REGISTRO):
+            try:
+                with open(FILE_REGISTRO, "r") as f:
+                    registro = json.load(f)
+            except Exception:
+                registro = {}
+                
+        chiave_univoca = f"{ticker_segnalato}_{profilo_segnalato}".upper()
+        ora_attuale = datetime.datetime.now()
+        
+        # 2. Controlliamo se la chiave esiste già nel registro
+        if chiave_univoca in registro:
+            try:
+                ultima_notifica = datetime.datetime.strptime(registro[chiave_univoca], "%Y-%m-%d %H:%M:%S")
+                # Calcoliamo quanti giorni sono passati dall'ultimo alert
+                giorni_passati = (ora_attuale - ultima_notifica).days
+                
+                # Se sono passati meno di 7 giorni, blocchiamo il duplicato
+                if giorni_passati < 7:
+                    print(f"   [ANTI-SPAM] Segnale per {ticker_segnalato} ({profilo_segnalato}) bloccato. Notificato {giorni_passati} giorni fa (limite 7).")
+                    return False
+            except Exception:
+                pass # Se la data nel file è corrotta, procediamo comunque all'invio
+
+        # 3. Se il controllo è passato, aggiorniamo la data nel registro per questo asset
+        registro[chiave_univoca] = ora_attuale.strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            with open(FILE_REGISTRO, "w") as f:
+                json.dump(registro, f, indent=4)
+        except Exception as e:
+            print(f"Errore nel salvataggio del registro JSON: {e}")
+
+    # 4. Procediamo con il reale invio del messaggio su Telegram
     payload = {"chat_id": int(chat_id), "text": str(testo_messaggio), "parse_mode": "HTML", "disable_web_page_preview": False}
     try:
         part1, part2 = "https://" + "api.", "telegram.org/bot"
@@ -107,7 +142,8 @@ def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     except Exception:
         return False
 
-# --- 2. MOTORE VETTORIALE VOLUME PROFILE ---
+
+# MOTORE VETTORIALE DINAMICO (A 200 BINS)
 def calc_vp(df, div=200):
     if df.empty: return None, None, None, [], []
     
@@ -143,14 +179,18 @@ def calc_vp(df, div=200):
         
     return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
 
-# --- 3. ESECUZIONE SCANNER MULTI-ASSET ---
+# ==============================================================================
+# PARTE 2 BACKGROUND: CORREZIONE INDICI E COLONNE PER PARITÀ SEGNALI CON STREAMLIT
+# ==============================================================================
+
 if __name__ == "__main__":
-    print("Avvio scansione POC Estesa (Azioni USA/ITA, Crypto, ETF, Futures)...")
-    invia_messaggio_telegram_sbloccato(T_ID, "🚀 <b>POC PRO Scanner:</b> Avvio ciclo globale esteso (Azioni, Crypto, ETF, Futures)...")
+    print("Avvio scansione POC con Strategia Bilanciata (Filtri Dinamici)...")
     
-    soglia_distanza = 2.0  # Tolleranza 2%
+    invia_messaggio_telegram_sbloccato(T_ID, "🚀 <b>POC PRO Scanner:</b> Avvio ciclo globale con strategia bilanciata...")
+    
+    soglia_distanza = 2.0                  # Tolleranza al 2% identica a Streamlit
     poc_scelti = ["Generale", "ATH", "Recente (90D)"]
-    panieri_da_scansionare = ["S&P 500", "NASDAQ 100", "USA Mid/Small Cap", "FTSE MIB (FIB)", "ETF Globali", "Futures di Mercato", "Crypto"]
+    panieri_da_scansionare = ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto (TOTAL 1-2-3)"]
     segnali_trovati = 0
 
     for nome_paniere in panieri_da_scansionare:
@@ -164,11 +204,14 @@ if __name__ == "__main__":
         
             print(f"[{idx+1}/{totale_titoli}] Analisi quantitativa su {ticker}...")
             try:
+                # CORREZIONE: Inserito multi_level_index=False per evitare il bug dei dati vuoti
                 df_live = yf.download(tickers=ticker, period="max", interval="1d", auto_adjust=False, multi_level_index=False, progress=False, timeout=8)
                 
                 if df_live is not None and len(df_live) > 200:
+                    # CORREZIONE: Forziamo la pulizia dei nomi delle colonne eliminando spazi e formattazioni anomale
                     df_live.columns = [str(c).strip() for c in df_live.columns]
                     
+                    # Estraiamo le serie in modo sicuro usando i nomi standard puliti
                     close_series = df_live["Close"].astype(float)
                     high_series = df_live["High"].astype(float)
                     low_series = df_live["Low"].astype(float)
@@ -178,7 +221,7 @@ if __name__ == "__main__":
                     p_attuale = float(close_series.iloc[-1])
                     d_ath = high_series.idxmax()
                     
-                    # Indicatori tecnici basilari
+                    # 1. CALCOLO INDICATORI DI BASE
                     ema200 = close_series.ewm(span=200, adjust=False).mean().iloc[-1]
                     
                     delta = close_series.diff()
@@ -192,6 +235,7 @@ if __name__ == "__main__":
                                     (low_series - close_series.shift(1)).abs()], axis=1).max(axis=1)
                     atr_attuale = tr.rolling(window=14).mean().iloc[-1]
                     
+                    # Creazione dei segmenti puliti ri-assegnando le colonne corrette
                     df_generale = pd.DataFrame({"Open": open_series, "High": high_series, "Low": low_series, "Close": close_series, "Volume": volume_series}, index=df_live.index)
                     df_ath_data = df_generale.loc[d_ath:].copy()
                     df_recente = df_generale.tail(90).copy()
@@ -217,7 +261,8 @@ if __name__ == "__main__":
                                 passa_filtro_trend_long = p_attuale > ema200
                                 passa_filtro_trend_short = p_attuale < ema200
                             else:
-                                passa_filtro_trend_long, passa_trend_short = True, True
+                                passa_filtro_trend_long = True
+                                passa_filtro_trend_short = True
                             
                             setup_valido = False
                             
@@ -235,40 +280,31 @@ if __name__ == "__main__":
                             
                             if setup_valido:
                                 segnali_trovati += 1
-                                # Formattazione pulita per i ticker del report e di TradingView
-                                ticker_pulito = str(ticker).replace(".MI", "").replace("-USD", "").replace("=F", "")
+                                ticker_pulito = str(ticker).replace(".MI", "").replace("-USD", "")
                                 
-                                if ".MI" in str(ticker): 
-                                    borsa_code = "MILAN"
-                                elif "-USD" in str(ticker) or nome_paniere == "Crypto": 
-                                    borsa_code = "BINANCE"
-                                elif str(ticker).endswith("=F") or nome_paniere == "Futures di Mercato":
-                                    borsa_code = "CME"
-                                else: 
-                                    borsa_code = "NASDAQ" if nome_paniere == "NASDAQ 100" else "NYSE"
+                                if ".MI" in str(ticker): borsa_code = "MILAN"
+                                elif "-USD" in str(ticker): borsa_code = "BINANCE"
+                                else: borsa_code = "NASDAQ" if nome_paniere == "NASDAQ 100" else "NYSE"
                                 
-                                url_stringa_pura = f"https://it.tradingview.com/symbols/{borsa_code}-{ticker_pulito}/"
-                                dec = 4 if nome_paniere == "Crypto" else (4 if str(ticker).endswith("=F") else 2)
-
-                                messaggio_alert = f"""🚨 <b>STRATEGIA QUANT BILANCIATA</b>
-
-                                    📈 <b>Ticker:</b> #{ticker_pulito} ({nome_paniere})
-                                    📊 <b>Profilo Volume:</b> {nome_profilo}
-                                    ⚡ <b>Setup Operativo:</b> {direzione}
-
-                                    💵 <b>Prezzo Attuale:</b> {round(p_attuale, dec)}
-                                    🎯 <b>Entry (Prezzo):</b> {round(p_attuale, dec)}
-                                    🔴 <b>Stop Loss (1.5 ATR):</b> {round(stop_1, dec)}
-                                    💰 <b>Take Profit (3.0 ATR):</b> {round(take_p, dec)}
-
-                                    🔍 <b>Metriche di Controllo:</b>
-                                    |— <i>Rapporto R/R:</i> 1:2.0 (Fisso)
-                                    |— <i>RSI (14):</i> {round(rsi_attuale, 1)}
-                                    |— <i>Filtro EMA200:</i> {'SOPRA' if p_attuale > ema200 else 'SOTTO'}
-                                    |— <i>ATR Volatilità:</i> {round(atr_attuale, dec)}
-
-                                    🔗 <a href='{url_stringa_pura}'>APRI GRAFICO SU TRADINGVIEW</a>"""
-
+                                url_stringa_pura = f"https://tradingview.com/chart/sqBvK6ky/?symbol={ticker_pulito}"
+                                dec = 4 if "Crypto" in nome_paniere else 2
+                                
+                                messaggio_alert = (
+                                    f"🚨 <b>STRATEGIA QUANT BILANCIATA</b>\n\n"
+                                    f"📈 <b>Ticker:</b> #{ticker_pulito} ({nome_paniere})\n"
+                                    f"📊 <b>Profilo Volume:</b> {nome_profilo}\n"
+                                    f"⚡ <b>Setup Operativo:</b> {direzione}\n\n"
+                                    f"💵 <b>Prezzo Attuale:</b> {round(p_attuale, dec)} USD\n"
+                                    f"🎯 <b>Entry (Prezzo):</b> {round(p_attuale, dec)}\n"
+                                    f"🔴 <b>Stop Loss (1.5 ATR):</b> {round(stop_1, dec)}\n"
+                                    f"💰 <b>Take Profit (3.0 ATR):</b> {round(take_p, dec)}\n\n"
+                                    f"🔍 <b>Metriche di Controllo:</b>\n"
+                                    f"|— <i>Rapporto R/R:</i> 1:2.0 (Fisso)\n"
+                                    f"|— <i>RSI (14):</i> {round(rsi_attuale, 1)}\n"
+                                    f"|— <i>Filtro EMA200:</i> {'SOPRA' if p_attuale > ema200 else 'SOTTO'}\n"
+                                    f"|— <i>ATR Volatilità:</i> {round(atr_attuale, dec)}\n\n"
+                                    f"🔗 <a href='{url_stringa_pura}'>APRI GRAFICO SU TRADINGVIEW</a>"
+                                )
                                 invia_messaggio_telegram_sbloccato(T_ID, messaggio_alert)
                                 print(f"--> [SEGNALE INVIATO] {ticker} ({nome_profilo})")
                                 
