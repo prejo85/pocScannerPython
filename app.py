@@ -278,7 +278,6 @@ with tab1:
 # ==========================================
 # --- TAB 2: GESTIONE INPUT E SCENARI 1R ---
 # ==========================================
-with tab2:
     st.subheader("📐 Matrice Quant: Breakout Struttura, Retest e Asimmetria del Rischio (1R)")
     
     b_col1, b_col2, b_col3 = st.columns(3)
@@ -321,21 +320,20 @@ with tab2:
             tipo_breakout = None
             livello_chiave_breakout = 0.0
             sl_strutturale = 0.0
-            tp_istituzionale = 0.0
             poc_rilevato = 0.0
             data_breakout = None
 
-            # Assegnazione proporzioni del rischio (Matrice 1R)
+            # Assegnazione proporzioni esatte del rischio matematico 1R
             if "1." in scenario_rr:
                 w1, w2 = 0.50, 0.50
-                rr_op1_parziali = [0.462, 0.933, 1.40]
+                rr_op1_parziali = [0.462, 0.933, 1.40]  # Divisione in 3 sotto-tranche di target
                 rr_op2 = 0.462
                 modificatore_stop_op2 = 1.0
             elif "2." in scenario_rr:
                 w1, w2 = 0.50, 0.50
                 rr_op1_parziali = [0.462, 0.933, 1.40]
                 rr_op2 = 0.693
-                modificatore_stop_op2 = 2/3
+                modificatore_stop_op2 = 2/3  # Riduzione dello stop di 1/3 rispetto ad Op1
             elif "3." in scenario_rr:
                 w1, w2 = 0.50, 0.50
                 rr_op1_parziali = [0.462, 0.933, 1.40]
@@ -346,7 +344,7 @@ with tab2:
                 rr_op1_parziali = [0.462, 0.933, 1.40]
                 rr_op2 = 2.10
                 modificatore_stop_op2 = 1.0
-            # Loop Storico di scansione e calcolo delle candele
+            # Loop di scansione storica delle candele scaricate
             for i in range(30, len(df_bt)):
                 df_storico_finora = df_bt.iloc[:i]
                 riga_attuale = df_bt.iloc[i]
@@ -369,7 +367,7 @@ with tab2:
                         if not (supporto_struttura <= p_poc <= resistenza_struttura):
                             continue
                         
-                        # Verifica "RUTTURA" a candela piena
+                        # Fase di Validazione "RUTTURA" con candela piena
                         breakout_long = (p_chiusura > resistenza_struttura) and (p_chiusura > p_apertura)
                         breakout_short = (p_chiusura < supporto_struttura) and (p_chiusura < p_apertura)
                         
@@ -378,7 +376,6 @@ with tab2:
                             tipo_breakout = "LONG"
                             livello_chiave_breakout = resistenza_struttura
                             sl_strutturale = supporto_struttura
-                            tp_istituzionale = livello_chiave_breakout + (abs(livello_chiave_breakout - sl_strutturale) * 1.4)
                             poc_rilevato = p_poc
                             data_breakout = data_corrente
                         elif breakout_short:
@@ -386,11 +383,10 @@ with tab2:
                             tipo_breakout = "SHORT"
                             livello_chiave_breakout = supporto_struttura
                             sl_strutturale = resistenza_struttura
-                            tp_istituzionale = livello_chiave_breakout - (abs(sl_strutturale - livello_chiave_breakout) * 1.4)
                             poc_rilevato = p_poc
                             data_breakout = data_corrente
                     else:
-                        # Monitoraggio del "RETEST" sulla struttura
+                        # Fase di Validazione "RETEST" sulla struttura violata
                         retest_valido = False
                         if tipo_breakout == "LONG" and p_minimo <= livello_chiave_breakout:
                             if p_minimo > sl_strutturale:
@@ -404,10 +400,8 @@ with tab2:
                             continue
 
                         if retest_valido:
-                            # Il prezzo d'ingresso reale si adegua al livello di breakout catturato
                             prezzo_ingresso = livello_chiave_breakout
                             ampiezza_r = abs(prezzo_ingresso - sl_strutturale)
-                            
                             if ampiezza_r <= 0:
                                 breakout_avvenuto = False
                                 continue
@@ -425,7 +419,7 @@ with tab2:
                                 tp_op1_fasi = [prezzo_ingresso - (ampiezza_r * r) for r in rr_op1_parziali]
                                 tp_op2 = prezzo_ingresso - (ampiezza_r * rr_op2)
 
-                            # Gestione Rischio Rigida: Allocazione monetaria 1R (1% del capitale)
+                            # Allocazione monetaria ad 1R reale (1% del capitale liquido corrente)
                             rischio_monetario_totale = capitale * (rischio_trade / 100)
                             size_op1 = (rischio_monetario_totale * w1) / ampiezza_r
                             size_op2 = (rischio_monetario_totale * w2) / (ampiezza_r * modificatore_stop_op2)
@@ -439,7 +433,7 @@ with tab2:
                             posizione_tipo = tipo_breakout
                             breakout_avvenuto = False
                 else:
-                    # Controllo delle uscite dinamiche (Corretto algebricamente per SHORT)
+                    # Monitoraggio evoluzione posizioni a mercato (Correzione segni SHORT)
                     if posizione_tipo == "LONG":
                         if p_minimo <= sl_op2 and stato_op2_attiva:
                             pnl_accumulato_trade += (sl_op2 - prezzo_ingresso) * size_op2 - comun_fee
@@ -460,7 +454,7 @@ with tab2:
                                 pnl_accumulato_trade += (tp_op1_fasi[f] - prezzo_ingresso) * dim_quota_op1 - comun_fee
                                 stato_op1_fasi[f] = False
 
-                    else: # SHORT (Risolto bug di inversione profit/loss strutturale)
+                    else: # SHORT 
                         if p_massimo >= sl_op2 and stato_op2_attiva:
                             pnl_accumulato_trade += (prezzo_ingresso - sl_op2) * size_op2 - comun_fee
                             stato_op2_attiva = False
@@ -480,7 +474,7 @@ with tab2:
                                 pnl_accumulato_trade += (prezzo_ingresso - tp_op1_fasi[f]) * dim_quota_op1 - comun_fee
                                 stato_op1_fasi[f] = False
 
-                    # Salvataggio a chiusura totale completata
+                    # Consolidamento e chiusura della struttura del trade corrente
                     if not stato_op2_attiva and not any(stato_op1_fasi):
                         capitale += pnl_accumulato_trade
                         esito_label = "PROFIT 🟢" if pnl_accumulato_trade > 0 else "LOSS 🛑"
@@ -529,7 +523,7 @@ with tab2:
                 m_col4.metric("Massimo Drawdown", f"-{max_dd} %")
 
                 fig_eq = grp.Figure()
-                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines+markers', name='Equity', line=dict(color='#38bdf8', width=2)))
+                fig_eq.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode='lines+markers', name='Equity Line', line=dict(color='#38bdf8', width=2)))
                 fig_eq.update_layout(title="📈 Curva di Crescita del Capitale (Equity Line)", template="plotly_dark", height=280)
                 st.plotly_chart(fig_eq, use_container_width=True, key="bt_quant_equity")
                 
