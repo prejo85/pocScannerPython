@@ -257,8 +257,7 @@ if __name__ == "__main__":
                                     f"⚡ <b>Setup Operativo:</b> {direzione}\n\n"
                                     f"💵 <b>Prezzo Attuale:</b> {round(p_attuale, dec)}\n"
                                     f"🎯 <b>Entry (Prezzo):</b> {round(p_attuale, dec)}\n"
-                                    f"🔴 <b>Stop Loss (1.5 ATR):</b> {round(stop_1, dec)}
-"
+                                    f"🔴 <b>Stop Loss (1.5 ATR):</b> {round(stop_1, dec)}"
                                     f"💰 <b>Take Profit (3.0 ATR):</b> {round(take_p, dec)}\n\n"
                                     f"🔍 <b>Metriche di Controllo:</b>\n"
                                     f"|— <i>Rapporto R/R:</i> 1:2.0 (Fisso)\n"
