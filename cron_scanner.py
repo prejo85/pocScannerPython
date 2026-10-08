@@ -49,6 +49,20 @@ FTSEMIB_FULL = (
     "HER.MI,INW.MI,ISP.MI,LDO.MI,MB.MI,MONC.MI,NEXI.MI,PIRC.MI,PRY.MI,PST.MI,RACE.MI,REC.MI,SGO.MI,SRG.MI,"
     "STLAM.MI,STMMI.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,YSVP.MI"
 )
+# NUOVI PANIERI STRATEGICI (AZIONI MINORI E INDICI AGGIUNTIVI)
+MIDCAP_US = (
+    "ONDS,RGTI,AGIO,AIRS,ALG,HUBS,CLX,IREN,RIVN,MARA,JAN,LIFE,MXL,IESC,HALO,TXRH,DKS,WFR,DT,"
+    "SMR,XPO,GFL,FLEX,JBL,AA,MTDR,CHX,OVV,STNG,WBS,DINO,AMR,SF,LANC,PNR,XOM,AAL,X"
+)
+
+CRYPTO_STOCKS = "COIN,MARA,IREN,CLSK,WULF,MSTR,HUT,CORZ,RIOT,CIFR,BTBT,BOOM"
+
+EUROSTOXX_FULL = (
+    "ADS.DE,ALV.DE,BAS.DE,BAYN.DE,BMW.DE,DB1.DE,DBK.DE,DPW.DE,DTE.DE,EOAN.DE,IFX.DE,MBG.DE,MUV2.DE,RWE.DE,SAP.DE,SIE.DE,"
+    "AI.PA,AIR.PA,ALO.PA,CS.PA,BNP.PA,CA.PA,DG.PA,EL.PA,ERF.PA,OR.PA,MC.PA,ML.PA,ORAN.PA,RI.PA,RMS.PA,SAN.PA,SGO.PA,"
+    "SU.PA,TTE.PA,VIE.PA,VIV.PA,ASML.AS,ADYEN.AS,INGA.AS,KPN.AS,PRX.AS,BBVA.MC,SAN.MC,ITX.MC,REP.MC,ENI.MI,ISP.MI,UCG.MI"
+)
+
 
 TOTAL1_LEADERS = "BTC-USD,ETH-USD"
 TOTAL2_MAJORS = "SOL-USD,BNB-USD,XRP-USD,ADA-USD,TRX-USD,DOT-USD,LINK-USD,AVAX-USD,TON-USD,SHIB-USD"
@@ -67,7 +81,12 @@ def ottieni_paniere(nome_paniere):
     elif nome_paniere == "NASDAQ 100": return NASDAQ_FULL
     elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
     elif nome_paniere == "Crypto (TOTAL 1-2-3)": return CRYPTO_FULL
+    # --- NUOVI INGRESSI ---
+    elif nome_paniere == "US Mid-Caps": return MIDCAP_US
+    elif nome_paniere == "Crypto & AI Stocks": return CRYPTO_STOCKS
+    elif nome_paniere == "Euro Stoxx 50": return EUROSTOXX_FULL
     return "AAPL,MSFT"
+
 
 import datetime  # Assicurati che sia importato in cima al file, serve per gestire le date
 
@@ -191,7 +210,17 @@ if __name__ == "__main__":
     invia_messaggio_telegram_sbloccato(T_ID, "🚀 <b>POC PRO Scanner:</b> Avvio ciclo globale con strategia bilanciata...")
     
     soglia_distanza = 2.0                  # Tolleranza al 2% identica a Streamlit
-    panieri_da_scansionare = ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto (TOTAL 1-2-3)"]
+        # Aggiungi i nuovi panieri alla lista globale di scansione
+    panieri_da_scansionare = [
+        "S&P 500", 
+        "NASDAQ 100", 
+        "FTSE MIB (FIB)", 
+        "Crypto (TOTAL 1-2-3)",
+        "US Mid-Caps",           # <-- Monitora le aziende minori americane
+        "Crypto & AI Stocks",    # <-- Monitora i proxy crypto
+        "Euro Stoxx 50"          # <-- Monitora l'Europa allargata
+    ]
+
     segnali_trovati = 0
 
     for nome_paniere in panieri_da_scansionare:
