@@ -266,71 +266,198 @@ with tab1:
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, xaxis5_rangeslider_visible=False, height=2000, showlegend=False)
                         st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
                     else: st.warning(f"Dati storici insufficienti per {ticker}.")
+
 # ==========================================
-# --- TAB 2: BACKTESTING ---
+# --- TAB 2: BACKTESTING AVANZATO (MOMENTUM & ROLLING POC) ---
 # ==========================================
 with tab2:
-    st.subheader("⚙️ Motore di Simulazione Storica (Backtest)")
+    st.subheader("⚙️ Backtest Quantitativo Avanzato — POC Dinamici di Momentum")
+    st.markdown("*Calcola e disegna i POC storici intervallati ad ogni cambio di momentum, fino all'ancora finale dall'ATH.*")
+    
     b_col1, b_col2, b_col3 = st.columns(3)
     with b_col1:
-        bt_ticker = st.text_input("Inserisci un singolo Ticker da testare:", value="AAPL")
-        capitale_iniziale = st.number_input("Capitale iniziale ($):", min_value=100, value=10000, step=500)
+        bt_ticker = st.text_input("Ticker singolo per simulazione e grafico:", value="AAPL", key="bt_tick_av")
+        capitale_iniziale = st.number_input("Capitale iniziale ($):", min_value=100, value=10000, step=500, key="bt_cap_av")
     with b_col2:
-        bt_periodo = st.selectbox("Orizzonte temporale dei dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"])
-        mappa_periodi = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
-        rischio_trade = st.slider("Rischio percentuale per operazione (%):", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
+        bt_periodo = st.selectbox("Estensione dati storici:", ["3 Anni", "5 Anni", "Storico Massimo"], key="bt_per_av")
+        mappa_periodi = {"3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
+        rischio_trade = st.slider("Rischio percentuale per trade (%):", min_value=0.5, max_value=5.0, value=1.0, step=0.5, key="bt_risk_av")
     with b_col3:
-        comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5)
+        comun_fee = st.number_input("Commissioni per eseguito ($):", min_value=0.0, value=1.99, step=0.5, key="bt_fee_av")
 
-    if st.button("🚀 Esegui Backtest Strategia", type="primary"):
-        st.info(f"Elaborazione per {bt_ticker}...")
+    if st.button("🚀 Avvia Backtest & Mappatura POC Dinamici", type="primary", key="btn_run_bt_av"):
+        st.info(f"Scansione storica e calcolo dei vettori di momentum per {bt_ticker}...")
         df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
-        if df_bt is not None and len(df_bt) > 60:
-            capitale, in_posizione, prezzo_ingresso = capitale_iniziale, False, 0
-            equity_curve, date_curve, trade_history = [capitale_iniziale], [df_bt.index], []
-
-            for i in range(50, len(df_bt)):
-                df_storico_finora = df_bt.iloc[:i]
-                riga_attuale = df_bt.iloc[i]
-                prezzo_corrente = float(riga_attuale["Close"])
-                data_corrente = df_bt.index[i]
-
-                if not in_posizione:
-                    p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora)
-                    if p_poc is None: continue
-                    posizione_tipo = "LONG" if prezzo_corrente >= p_poc else "SHORT"
-                    prezzo_ingresso = prezzo_corrente
-                    livello_sl, livello_tp = (p_vl * 0.985, p_vh) if posizione_tipo == "LONG" else (p_vh * 1.015, p_vl)
-
-                    if livello_sl > 0 and abs(prezzo_ingresso - livello_sl) > 0:
-                        in_posizione = True
-                        size_contratti = (capitale * (rischio_trade / 100)) / abs(prezzo_ingresso - livello_sl)
-                else:
-                    high_g, low_g = float(riga_attuale["High"]), float(riga_attuale["Low"])
-                    uscito, p_chiusura = False, 0
-                    if posizione_tipo == "LONG":
-                        if low_g <= livello_sl: uscito, p_chiusura = True, livello_sl
-                        elif high_g >= livello_tp: uscito, p_chiusura = True, livello_tp
-                    elif posizione_tipo == "SHORT":
-                        if high_g >= livello_sl: uscito, p_chiusura = True, livello_sl
-                        elif low_g <= livello_tp: uscito, p_chiusura = True, livello_tp
-
-                    if uscito:
-                        pnl = ((p_chiusura - prezzo_ingresso) if posizione_tipo == "LONG" else (prezzo_ingresso - p_chiusura)) * size_contratti - (comun_fee * 2)
-                        capitale += pnl
-                        trade_history.append({"Data": data_corrente.strftime("%d/%m/%Y"), "Tipo": posizione_tipo, "PnL ($)": round(pnl, 2), "Capitale": round(capitale, 2)})
-                        equity_curve.append(capitale)
-                        date_curve.append(data_corrente)
-                        in_posizione = False
-
-            st.subheader("📊 Statistiche di Performance Log")
+        
+        if df_bt is not None and len(df_bt) > 100:
+            df_bt.columns = [str(c).strip() for c in df_bt.columns]
+            close_series = df_bt["Close"].astype(float)
+            high_series = df_bt["High"].astype(float)
+            low_series = df_bt["Low"].astype(float)
+            
+            # Indicatori strutturali per cambi di momentum e volatilità
+            df_bt["EMA200"] = close_series.ewm(span=200, adjust=False).mean()
+            delta = close_series.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            df_bt["RSI"] = 100 - (100 / (1 + (gain / np.where(loss == 0, 0.00001, loss))))
+            tr = pd.concat([high_series-low_series, (high_series-close_series.shift(1)).abs(), (low_series-close_series.shift(1)).abs()], axis=1).max(axis=1)
+            df_bt["ATR"] = tr.rolling(window=14).mean()
+            
+            d_ath_globale = high_series.idxmax()
+            idx_ath_globale = df_bt.index.get_loc(d_ath_globale)
+            
+            # --- MAPPATURA DEI SEGMENTI DI MOMENTUM ---
+            punti_ancora = [0] # Il primo blocco parte dall'inizio dello storico
+            stato_trend = "LONG" if close_series.iloc[0] > df_bt["EMA200"].iloc[0] else "SHORT"
+            
+            for i in range(20, len(df_bt)):
+                # Se arriviamo all'ATH globale, interrompiamo i segmenti intermedi: l'ultimo sarà ancorato lì
+                if i == idx_ath_globale:
+                    punti_ancora.append(i)
+                    break
+                    
+                prezzo_c = close_series.iloc[i]
+                ema_c = df_bt["EMA200"].iloc[i]
+                rsi_c = df_bt["RSI"].iloc[i]
+                
+                # Cambio Momentum 1: Il prezzo incrocia stabilmente la EMA200
+                nuovo_trend = "LONG" if prezzo_c > ema_c else "SHORT"
+                if nuovo_trend != stato_trend:
+                    punti_ancora.append(i)
+                    stato_trend = nuovo_trend
+                    continue
+                
+                # Cambio Momentum 2: Estremi RSI (Ipercomprato/Ipervenduto) seguiti da rientro in banda
+                if rsi_c > 75 or rsi_c < 25:
+                    if i < len(df_bt) - 1:
+                        rsi_next = (100 - (100 / (1 + ((close_series.diff().where(close_series.diff() > 0, 0)).rolling(window=14).mean() / max(0.00001, (-close_series.diff().where(close_series.diff() < 0, 0)).rolling(window=14).mean())).iloc[i+1])))
+                        if (rsi_c > 75 and rsi_next <= 75) or (rsi_c < 25 and rsi_next >= 25):
+                            punti_ancora.append(i)
+            # Assicuriamoci che l'indice finale sia coperto e rimuoviamo duplicati ordinati
+            if len(df_bt) - 1 not in punti_ancora:
+                punti_ancora.append(len(df_bt) - 1)
+            punti_ancora = sorted(list(set(punti_ancora)))
+            
+            # --- SIMULAZIONE E CALCOLO POC ROTANTI ---
+            capitale = capitale_iniziale
+            in_posizione = False
+            trade_history = []
+            equity_curve = [capitale]
+            date_curve = [df_bt.index[0]]
+            
+            # Dizionario per salvare i segmenti POC da plottare sul grafico
+            linee_poc_da_disegnare = []
+            
+            for s in range(len(punti_ancora) - 1):
+                idx_inizio = punti_ancora[s]
+                idx_fine = punti_ancora[s+1]
+                
+                # Estraiamo il sotto-dataframe del momentum corrente per calcolare il suo POC
+                df_segmento = df_bt.iloc[idx_inizio:idx_fine+1]
+                if len(df_segmento) < 5: continue
+                
+                poc_segmento, _, _, _, _ = calc_vp(df_segmento)
+                if poc_segmento is None: continue
+                
+                # Memorizziamo le coordinate per il disegno grafico
+                linee_poc_da_disegnare.append({
+                    "x0": df_bt.index[idx_inizio],
+                    "x1": df_bt.index[idx_fine],
+                    "y": poc_segmento,
+                    "tipo": "Intermedio" if idx_inizio != idx_ath_globale else "Dall'ATH"
+                })
+                
+                # Ciclo interno di esecuzione trading per il segmento corrente
+                for i in range(idx_inizio, idx_fine + 1):
+                    prezzo_corrente = float(close_series.iloc[i])
+                    data_corrente = df_bt.index[i]
+                    atr_attuale = df_bt["ATR"].iloc[i]
+                    
+                    if np.isnan(atr_attuale) or atr_attuale <= 0: continue
+                    
+                    if not in_posizione:
+                        # Regola operativa allineata: ingresso se il prezzo testa il POC di momentum attuale
+                        distanza_poc = abs((prezzo_corrente - poc_segmento) / poc_segmento) * 100
+                        if distanza_poc <= 2.0:
+                            posizione_tipo = "LONG" if prezzo_corrente >= poc_segmento else "SHORT"
+                            prezzo_ingresso = prezzo_corrente
+                            livello_sl = prezzo_ingresso - (1.5 * atr_attuale) if posizione_tipo == "LONG" else prezzo_ingresso + (1.5 * atr_attuale)
+                            livello_tp = prezzo_ingresso + (3.0 * atr_attuale) if posizione_tipo == "LONG" else prezzo_ingresso - (3.0 * atr_attuale)
+                            
+                            if abs(prezzo_ingresso - livello_sl) > 0:
+                                in_posizione = True
+                                size_contratti = (capitale * (rischio_trade / 100)) / abs(prezzo_ingresso - livello_sl)
+                    else:
+                        high_g, low_g = float(high_series.iloc[i]), float(low_series.iloc[i])
+                        uscito = False
+                        p_chiusura = 0
+                        
+                        if posizione_tipo == "LONG":
+                            if low_g <= livello_sl: uscito, p_chiusura = True, livello_sl
+                            elif high_g >= livello_tp: uscito, p_chiusura = True, livello_tp
+                        else:
+                            if high_g >= livello_sl: uscito, p_chiusura = True, livello_sl
+                            elif low_g <= livello_tp: uscito, p_chiusura = True, livello_tp
+                            
+                        if uscito:
+                            pnl = ((p_chiusura - prezzo_ingresso) if posizione_tipo == "LONG" else (prezzo_ingresso - p_chiusura)) * size_contratti - (comun_fee * 2)
+                            capitale += pnl
+                            trade_history.append({
+                                "Data": data_corrente.strftime("%d/%m/%Y"),
+                                "Tipo": posizione_tipo,
+                                "Ingresso": round(prezzo_ingresso, 2),
+                                "Uscita": round(p_chiusura, 2),
+                                "PnL ($)": round(pnl, 2),
+                                "Capitale": round(capitale, 2)
+                            })
+                            equity_curve.append(capitale)
+                            date_curve.append(data_corrente)
+                            in_posizione = False
+            # --- GENERAZIONE DEI GRAFICI E OUTPUT ---
+            st.subheader("📊 Analisi Grafica dei Segmenti Volumetrici")
+            
+            # Grafico principale: Candele + Livelli POC dinamici sovrapposti
+            fig_mappa = grp.Figure()
+            fig_mappa.add_trace(grp.Candlestick(
+                x=df_bt.index, open=df_bt["Open"], high=df_bt["High"], low=df_bt["Low"], close=df_bt["Close"], name="Prezzo"
+            ))
+            
+            # Disegniamo i singoli vettori POC calcolati per ogni finestra di momentum
+            for linea in linee_poc_da_disegnare:
+                colore = "#38bdf8" if linea["tipo"] == "Intermedio" else "#f43f5e"
+                nome_l = "POC Intermedio" if linea["tipo"] == "Intermedio" else "POC Ancorato ATH"
+                fig_mappa.add_trace(grp.Scatter(
+                    x=[linea["x0"], linea["x1"]], y=[linea["y"], linea["y"]],
+                    mode="lines", line=dict(color=colore, width=3, dash="dash" if linea["tipo"] == "Intermedio" else "solid"),
+                    name=nome_l, showlegend=False
+                ))
+            
+            fig_mappa.update_layout(title=f"Mappatura Storica POC Rotanti su {bt_ticker}", template="plotly_dark", height=600, xaxis_rangeslider_visible=False)
+            st.plotly_chart(fig_mappa, use_container_width=True)
+            
+            # Report metriche di performance nel pannello inferiore
             if trade_history:
                 df_trades = pd.DataFrame(trade_history)
+                profitti = df_trades[df_trades["PnL ($)"] > 0]["PnL ($)"].sum()
+                perdite = abs(df_trades[df_trades["PnL ($)"] < 0]["PnL ($)"].sum())
                 win_rate = round((len(df_trades[df_trades["PnL ($)"] > 0]) / len(df_trades)) * 100, 2)
-                st.columns(2).metric("Ritorno Totale", f"{round(((capitale - capitale_iniziale) / capitale_iniziale) * 100, 2)} %")
+                profit_factor = round(profitti / max(0.01, perdite), 2)
+                
+                c_1, c_2, c_3 = st.columns(3)
+                c_1.metric("Capitale Finale", f"$ {round(capitale, 2)}", f"{round(((capitale-capitale_iniziale)/capitale_iniziale)*100,2)} %")
+                c_2.metric("Win Rate Operazioni", f"{win_rate} %")
+                c_3.metric("Profit Factor", f"{profit_factor}")
+                
+                st.subheader("📋 Registro Eseguiti di Strategia")
                 st.dataframe(df_trades, use_container_width=True)
             else:
-                st.warning("Nessuna operazione eseguita nel periodo selezionato.")
+                st.warning("L'algoritmo non ha intercettato test volumetrici sui POC intermedi. Prova ad aumentare la tolleranza orizzontale o a cambiare asset.")
+        else:
+            st.error("Dati storici insufficienti caricati da yFinance. Verifica il corretto inserimento del Ticker.")
+
+
+
 # ==========================================
 # --- TAB 3: LIVE ALERTS STRATEGICI ---
 # ==========================================
