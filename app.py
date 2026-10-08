@@ -304,6 +304,9 @@ with tab2:
             tr = pd.concat([high_series-low_series, (high_series-close_series.shift(1)).abs(), (low_series-close_series.shift(1)).abs()], axis=1).max(axis=1)
             df_bt["ATR"] = tr.rolling(window=14).mean()
             
+            # CREAZIONE SICURA DEL VETTORE RSI FUTURO (Spostato indietro di 1 per avere l'indice i+1 pronto)
+            df_bt["RSI_NEXT"] = df_bt["RSI"].shift(-1)
+            
             d_ath_globale = high_series.idxmax()
             idx_ath_globale = df_bt.index.get_loc(d_ath_globale)
             
@@ -320,6 +323,7 @@ with tab2:
                 prezzo_c = close_series.iloc[i]
                 ema_c = df_bt["EMA200"].iloc[i]
                 rsi_c = df_bt["RSI"].iloc[i]
+                rsi_next = df_bt["RSI_NEXT"].iloc[i] # Estrazione sicura senza ricalcolo Booleano equivoco
                 
                 # Cambio Momentum 1: Il prezzo incrocia stabilmente la EMA200
                 nuovo_trend = "LONG" if prezzo_c > ema_c else "SHORT"
@@ -330,8 +334,7 @@ with tab2:
                 
                 # Cambio Momentum 2: Estremi RSI (Ipercomprato/Ipervenduto) seguiti da rientro in banda
                 if rsi_c > 75 or rsi_c < 25:
-                    if i < len(df_bt) - 1:
-                        rsi_next = (100 - (100 / (1 + ((close_series.diff().where(close_series.diff() > 0, 0)).rolling(window=14).mean() / max(0.00001, (-close_series.diff().where(close_series.diff() < 0, 0)).rolling(window=14).mean())).iloc[i+1])))
+                    if not np.isnan(rsi_next):
                         if (rsi_c > 75 and rsi_next <= 75) or (rsi_c < 25 and rsi_next >= 25):
                             punti_ancora.append(i)
             # Assicuriamoci che l'indice finale sia coperto e rimuoviamo duplicati ordinati
