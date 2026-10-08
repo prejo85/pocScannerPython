@@ -286,236 +286,142 @@ with tab1:
                         st.warning(f"Dati storici insufficienti per {ticker}.")
 
 # ==========================================
-# --- TAB 2: BACKTESTING AVANZATO (MOMENTUM & ROLLING POC) ---
+# --- TAB 2: MAPPATURA ANCHORED POC DINAMICI ---
 # ==========================================
 with tab2:
-    st.subheader("⚙️ Backtest Quantitativo Avanzato — POC Dinamici di Momentum")
-    st.markdown("*Calcola e disegna i POC storici intervallati ad ogni cambio di momentum, fino all'ancora finale dall'ATH.*")
+    st.subheader("📐 Mappatura Quantitativa — POC Dinamici di Momentum")
+    st.markdown("*Genera gli istogrammi dei volumi ancorati ad ogni cambio di momentum storico fino all'ATH, con proiezione orizzontale continua del POC.*")
     
-    b_col1, b_col2, b_col3 = st.columns(3)
+    b_col1, b_col2 = st.columns(2)
     with b_col1:
-        bt_ticker = st.text_input("Ticker singolo per simulazione e grafico:", value="AAPL", key="bt_tick_av")
-        capitale_iniziale = st.number_input("Capitale iniziale ($):", min_value=100, value=10000, step=500, key="bt_cap_av")
+        bt_ticker = st.text_input("Inserisci il Ticker da mappare (es. AAPL):", value="AAPL", key="bt_tick_av")
     with b_col2:
-        bt_periodo = st.selectbox("Estensione dati storici:", ["3 Anni", "5 Anni", "Storico Massimo"], key="bt_per_av")
-        mappa_periodi = {"3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
-        rischio_trade = st.slider("Rischio percentuale per trade (%):", min_value=0.5, max_value=5.0, value=1.0, step=0.5, key="bt_risk_av")
-    with b_col3:
-        comun_fee = st.number_input("Commissioni per eseguito ($):", min_value=0.0, value=1.99, step=0.5, key="bt_fee_av")
+        bt_periodo = st.selectbox("Estensione temporale dello storico:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], index=2, key="bt_per_av")
+        mappa_periodi = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
 
-    if st.button("🚀 Avvia Backtest & Mappatura POC Dinamici", type="primary", key="btn_run_bt_av"):
-        st.info(f"Scansione storica e calcolo dei vettori di momentum per {bt_ticker}...")
-        df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
+    if st.button("🚀 Avvia Mappatura Grafica POC", type="primary", key="btn_run_bt_av"):
+        st.info(f"Analisi vettoriale e scansione dei blocchi volumetrici per {bt_ticker}...")
+        df_bt = scarica_dati_sicuri(bt_ticker, mappa_periodi[bt_periodo], "1d")
         
         if df_bt is not None and len(df_bt) > 100:
-            df_bt.columns = [str(c).strip() for c in df_bt.columns]
             close_series = df_bt["Close"].astype(float)
             high_series = df_bt["High"].astype(float)
             low_series = df_bt["Low"].astype(float)
             
-            # Indicatori strutturali per cambi di momentum e volatilità
+            # Calcolo indicatori per intercettare i cambi di trend strutturali
             df_bt["EMA200"] = close_series.ewm(span=200, adjust=False).mean()
             delta = close_series.diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
             df_bt["RSI"] = 100 - (100 / (1 + (gain / np.where(loss == 0, 0.00001, loss))))
-            tr = pd.concat([high_series-low_series, (high_series-close_series.shift(1)).abs(), (low_series-close_series.shift(1)).abs()], axis=1).max(axis=1)
-            df_bt["ATR"] = tr.rolling(window=14).mean()
-            
-            # CREAZIONE SICURA DEL VETTORE RSI FUTURO (Spostato indietro di 1 per avere l'indice i+1 pronto)
             df_bt["RSI_NEXT"] = df_bt["RSI"].shift(-1)
             
             d_ath_globale = high_series.idxmax()
             idx_ath_globale = df_bt.index.get_loc(d_ath_globale)
             
-            # --- MAPPATURA DEI SEGMENTI DI MOMENTUM ---
-            punti_ancora = [0] # Il primo blocco parte dall'inizio dello storico
+            # Algoritmo di segmentazione automatica delle ancore
+            punti_ancora = [0]
             stato_trend = "LONG" if close_series.iloc[0] > df_bt["EMA200"].iloc[0] else "SHORT"
             
             for i in range(20, len(df_bt)):
-                # Se arriviamo all'ATH globale, interrompiamo i segmenti intermedi: l'ultimo sarà ancorato lì
                 if i == idx_ath_globale:
                     punti_ancora.append(i)
                     break
-                    
                 prezzo_c = close_series.iloc[i]
                 ema_c = df_bt["EMA200"].iloc[i]
                 rsi_c = df_bt["RSI"].iloc[i]
-                rsi_next = df_bt["RSI_NEXT"].iloc[i] # Estrazione sicura senza ricalcolo Booleano equivoco
+                rsi_next = df_bt["RSI_NEXT"].iloc[i]
                 
-                # Cambio Momentum 1: Il prezzo incrocia stabilmente la EMA200
+                # Svolta 1: Incrocio della media mobile a 200 periodi
                 nuovo_trend = "LONG" if prezzo_c > ema_c else "SHORT"
                 if nuovo_trend != stato_trend:
                     punti_ancora.append(i)
                     stato_trend = nuovo_trend
                     continue
                 
-                # Cambio Momentum 2: Estremi RSI (Ipercomprato/Ipervenduto) seguiti da rientro in banda
+                # Svolta 2: Rientro dalle bande estreme dell'RSI (Iperestensione)
                 if rsi_c > 75 or rsi_c < 25:
                     if not np.isnan(rsi_next):
                         if (rsi_c > 75 and rsi_next <= 75) or (rsi_c < 25 and rsi_next >= 25):
                             punti_ancora.append(i)
-            # Assicuriamoci che l'indice finale sia coperto e rimuoviamo duplicati ordinati
-            if len(df_bt) - 1 not in punti_ancora:
+                            
+            if len(df_bt) - 1 not in punti_ancora: 
                 punti_ancora.append(len(df_bt) - 1)
             punti_ancora = sorted(list(set(punti_ancora)))
             
-            # --- SIMULAZIONE E CALCOLO VISIVO DETTAGLIATO ---
-            capitale = capitale_iniziale
-            in_posizione = False
-            trade_history = []
-            
-            # Strutture dati avanzate per il disegno di profili e linee estese
             profili_volumetrici_locali = []
             linee_poc_estese = []
-            
+            # Calcolo dei singoli Volume Profile per ogni finestra temporale individuata
             for s in range(len(punti_ancora) - 1):
-                idx_inizio = punti_ancora[s]
-                idx_fine = punti_ancora[s+1]
-                
+                idx_inizio, idx_fine = punti_ancora[s], punti_ancora[s+1]
                 df_segmento = df_bt.iloc[idx_inizio:idx_fine+1]
                 if len(df_segmento) < 5: continue
                 
-                # Calcoliamo il volume profile completo del segmento corrente (200 bins)
-                p_poc, p_vh, p_vl, prezzi_v, volumi_v = calc_vp(df_segmento)
+                # Risoluzione a 80 bins per garantire fluidità di rendering su Streamlit Cloud
+                p_poc, p_vh, p_vl, prezzi_v, volumi_v = calc_vp(df_segmento, div=80)
                 if p_poc is None: continue
                 
-                # Memorizziamo i dati del profilo per il rendering visivo a blocchi
                 profili_volumetrici_locali.append({
-                    "data_ancora": df_bt.index[idx_inizio],
-                    "data_fine_blocco": df_bt.index[idx_fine],
-                    "prezzi": prezzi_v,
-                    "volumi": volumi_v,
-                    "val_min": p_vl,
-                    "val_max": p_vh
+                    "data_ancora": df_bt.index[idx_inizio], "data_fine_blocco": df_bt.index[idx_fine], 
+                    "prezzi": prezzi_v, "volumi": volumi_v, "val_min": p_vl, "val_max": p_vh
                 })
                 
-                # ESTENSIONE DEL POC: La linea parte dall'inizio del blocco e si estende fino ALLA FINE DEL GRAFICO COMPLETO
+                # Estensione lineare continua: ogni linea rossa del POC arriva fino all'ULTIMA data disponibile del grafico
                 linee_poc_estese.append({
-                    "data_inizio": df_bt.index[idx_inizio],
-                    "data_fine_assoluta": df_bt.index[-1],
-                    "livello_prezzo": p_poc,
-                    "tipo": "Intermedio" if idx_inizio != idx_ath_globale else "Dall'ATH"
+                    "data_inizio": df_bt.index[idx_inizio], "data_fine_assoluta": df_bt.index[-1], 
+                    "livello_prezzo": p_poc, "tipo": "Intermedio" if idx_inizio != idx_ath_globale else "Dall'ATH"
                 })
-                
-                # Ciclo di esecuzione trading allineato all'interno del segmento di momentum
-                for i in range(idx_inizio, idx_fine + 1):
-                    prezzo_corrente = float(close_series.iloc[i])
-                    data_corrente = df_bt.index[i]
-                    atr_attuale = df_bt["ATR"].iloc[i]
-                    
-                    if np.isnan(atr_attuale) or atr_attuale <= 0: continue
-                    
-                    if not in_posizione:
-                        distanza_poc = abs((prezzo_corrente - p_poc) / p_poc) * 100
-                        if distanza_poc <= 2.0:
-                            posizione_tipo = "LONG" if prezzo_corrente >= p_poc else "SHORT"
-                            prezzo_ingresso = prezzo_corrente
-                            livello_sl = prezzo_ingresso - (1.5 * atr_attuale) if posizione_tipo == "LONG" else prezzo_ingresso + (1.5 * atr_attuale)
-                            livello_tp = prezzo_ingresso + (3.0 * atr_attuale) if posizione_tipo == "LONG" else prezzo_ingresso - (3.0 * atr_attuale)
-                            
-                            if abs(prezzo_ingresso - livello_sl) > 0:
-                                in_posizione = True
-                                size_contratti = (capitale * (rischio_trade / 100)) / abs(prezzo_ingresso - livello_sl)
-                    else:
-                        high_g, low_g = float(high_series.iloc[i]), float(low_series.iloc[i])
-                        uscito = False
-                        p_chiusura = 0
-                        
-                        if posizione_tipo == "LONG":
-                            if low_g <= livello_sl: uscito, p_chiusura = True, livello_sl
-                            elif high_g >= livello_tp: uscito, p_chiusura = True, livello_tp
-                        else:
-                            if high_g >= livello_sl: uscito, p_chiusura = True, livello_sl
-                            elif low_g <= livello_tp: uscito, p_chiusura = True, livello_tp
-                            
-                        if uscito:
-                            pnl = ((p_chiusura - prezzo_ingresso) if posizione_tipo == "LONG" else (prezzo_ingresso - p_chiusura)) * size_contratti - (comun_fee * 2)
-                            capitale += pnl
-                            trade_history.append({
-                                "Data": data_corrente.strftime("%d/%m/%Y"), "Tipo": posizione_tipo,
-                                "Ingresso": round(prezzo_ingresso, 2), "Uscita": round(p_chiusura, 2),
-                                "PnL ($)": round(pnl, 2), "Capitale": round(capitale, 2)
-                            })
-                            in_posizione = False
-            # --- DISEGNO GRAFICO AVANZATO CON VOLUME PROFILE TRADINGVIEW-STYLE ---
-            st.subheader("📊 Mappatura Strutturale ad Ancore Multiple (TradingView Style)")
-            
+
+            # --- CORPO GRAFICO MULTILIVELLO TRADINGVIEW-STYLE ---
             fig_tv = grp.Figure()
             
-            # 1. Candele di Sfondo
+            # Candele giapponesi di sfondo dello storico selezionato
             fig_tv.add_trace(grp.Candlestick(
                 x=df_bt.index, open=df_bt["Open"], high=df_bt["High"], low=df_bt["Low"], close=df_bt["Close"], name="Prezzo"
             ))
             
-            # 2. Disegno degli Istogrammi dei Volumi (all'inizio di ciascuna area di momentum)
+            # Rendering geometrico degli istogrammi laterali all'inizio di ciascun blocco di momentum
             for prof in profili_volumetrici_locali:
-                prezzi_p = prof["prezzi"]
-                volumi_p = prof["volumi"]
-                
+                prezzi_p, volumi_p = prof["prezzi"], prof["volumi"]
                 if len(volumi_p) > 0 and max(volumi_p) > 0:
                     max_vol = max(volumi_p)
-                    data_inizio_b = prof["data_ancora"]
-                    data_fine_b = prof["data_fine_blocco"]
-                    
-                    # Calcoliamo l'estensione orizzontale in giorni del blocco per proporzionare l'istogramma
+                    data_inizio_b, data_fine_b = prof["data_ancora"], prof["data_fine_blocco"]
                     ampiezza_blocco_giorni = max(1, (data_fine_b - data_inizio_b).days)
-                    passo_disegno = max(1, len(volumi_p) // 50)  # Riduce il carico grafico condensando i cassetti
+                    passo_disegno = max(1, len(volumi_p) // 40) # Condensamento dei cassetti verticali per massima fluidità
                     
                     for idx_v in range(0, len(volumi_p), passo_disegno):
-                        v_attuale = volumi_p[idx_v]
-                        p_livello = prezzi_p[idx_v]
-                        
-                        # Definiamo la larghezza della barra proporzionale al volume (max 22% della larghezza del blocco)
-                        larghezza_barra_giorni = int((v_attuale / max_vol) * (ampiezza_blocco_giorni * 0.22))
-                        if larghezza_barra_giorni < 1: larghezza_barra_giorni = 1
-                        
-                        # Disegniamo la barra orizzontale partendo dalla data iniziale dell'ancora
-                        colore_barra = "rgba(56, 189, 248, 0.28)" if prof["val_min"] <= p_livello <= prof["val_max"] else "rgba(100, 116, 139, 0.10)"
-                        fig_tv.add_shape(
-                            type="rect",
-                            x0=data_inizio_b,
-                            x1=data_inizio_b + pd.Timedelta(days=larghezza_barra_giorni),
-                            y0=p_livello - (p_livello * 0.002),
-                            y1=p_livello + (p_livello * 0.002),
-                            fillcolor=colore_barra,
-                            line=dict(width=0)
-                        )
+                        v_attuale, p_livello = volumi_p[idx_v], prezzi_p[idx_v]
+                        # Larghezza dell'istogramma impostata al massimo al 20% dello spazio orizzontale del blocco
+                        larghezza_barra_giorni = int((v_attuale / max_vol) * (ampiezza_blocco_giorni * 0.20))
+                        if File_barra_giorni := (larghezza_barra_giorni < 1): 
+                            larghezza_barra_giorni = 1
+                            
+                        colore_barra = "rgba(56, 189, 248, 0.25)" if prof["val_min"] <= p_livello <= prof["val_max"] else "rgba(100, 116, 139, 0.08)"
+                        fig_tv.add_shape(type="rect", x0=data_inizio_b, x1=data_inizio_b + pd.Timedelta(days=larghezza_barra_giorni), y0=p_livello - (p_livello * 0.003), y1=p_livello + (p_livello * 0.003), fillcolor=colore_barra, line=dict(width=0))
             
-            # 3. Disegno e Proiezione Estesa delle linee POC fino alla fine del grafico (Colore Rosso)
+            # Sovrapposizione delle linee orizzontali del POC estese fino a fine grafico (Colore Rosso)
             for poc_l in linee_poc_estese:
                 colore_poc = "#ef4444" if poc_l["tipo"] == "Intermedio" else "#f43f5e"
-                spessore = 2 if poc_l["tipo"] == "Intermedio" else 3
+                spessore_linea = 2 if poc_l["tipo"] == "Intermedio" else 3
                 
                 fig_tv.add_shape(
-                    type="line",
-                    x0=poc_l["data_inizio"],
-                    x1=poc_l["data_fine_assoluta"],  # Esteso fino all'ultimo giorno disponibile nello storico
-                    y0=poc_l["livello_prezzo"],
-                    y1=poc_l["livello_prezzo"],
-                    line=dict(color=colore_poc, width=spessore, dash="dash" if poc_l["tipo"] == "Intermedio" else "solid")
+                    type="line", 
+                    x0=poc_l["data_inizio"], x1=poc_l["data_fine_assoluta"], 
+                    y0=poc_l["livello_prezzo"], y1=poc_l["livello_prezzo"], 
+                    line=dict(color=colore_poc, width=spessore_linea, dash="dash" if poc_l["tipo"] == "Intermedio" else "solid")
                 )
-                
-                # Aggiungiamo un'etichetta di testo a destra per identificare il livello del POC
+                # Etichetta numerica del livello a fine asse destro
                 fig_tv.add_annotation(
-                    x=poc_l["data_fine_assoluta"], y=poc_l["livello_prezzo"],
-                    text=f" POC: {round(poc_l['livello_prezzo'], 2)}",
-                    showarrow=False, align="left", xanchor="left",
-                    font=dict(color=colore_poc, size=9)
+                    x=poc_l["data_fine_assoluta"], y=poc_l["livello_prezzo"], 
+                    text=f" POC: {round(poc_l['livello_prezzo'], 2)}", 
+                    showarrow=False, align="left", xanchor="left", font=dict(color=colore_poc, size=9)
                 )
             
-            fig_tv.update_layout(template="plotly_dark", height=700, xaxis_rangeslider_visible=False)
+            fig_tv.update_layout(template="plotly_dark", height=750, xaxis_rangeslider_visible=False, showlegend=False)
             st.plotly_chart(fig_tv, use_container_width=True)
-            
-            # 4. Statistiche Performance Tabellari
-            if trade_history:
-                df_trades = pd.DataFrame(trade_history)
-                win_rate = round((len(df_trades[df_trades["PnL ($)"] > 0]) / len(df_trades)) * 100, 2)
-                st.columns(2).metric("Capitale Finale Simulato", f"$ {round(capitale, 2)}", f"{round(((capitale-capitale_iniziale)/capitale_iniziale)*100,2)} %")
-                st.columns(2).metric("Percentuale Win Rate", f"{win_rate} %")
-                st.dataframe(df_trades, use_container_width=True)
-            else:
-                st.warning("Nessun trade eseguito testando i livelli POC di questo profilo.")
+            st.success(f"Mappatura completata con successo! Tracciati {len(linee_poc_estese)} profili di momentum strutturale.")
+        else:
+            st.error("Dati storici insufficienti per generare la mappatura. Controlla il Ticker inserito.")
 
 
 # ==========================================
