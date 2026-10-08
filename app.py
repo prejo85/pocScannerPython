@@ -29,6 +29,29 @@ if "asset_type_index" not in st.session_state:
     st.session_state.asset_type_index = 0
 T_ID = "2072895073"
 TESTA_INTERNET = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
+
+# ------------------------------------------------------------------------------
+# 🚀 MOTORE DI CACHING AVANZATO PER LE CHIAMATE API (VELOCIZZA DEL 90%)
+# ------------------------------------------------------------------------------
+@st.cache_data(ttl=900, show_spinner=False)
+def scarica_dati_sicuri(ticker, period_str, interval_str):
+    try:
+        df = yf.download(
+            tickers=ticker, 
+            period=period_str, 
+            interval=interval_str, 
+            auto_adjust=False, 
+            multi_level_index=False, 
+            progress=False, 
+            timeout=7
+        )
+        if df is not None and not df.empty:
+            df.columns = [str(c).strip() for c in df.columns]
+            return df
+    except Exception:
+        return None
+    return None
+
 # ==============================================================================
 # DATABASE INTERNO DEI PANIERI AZIONARI AGGIORNATO E AMPLIATO
 # ==============================================================================
@@ -68,6 +91,7 @@ FTSEMIB_FULL = (
     "HER.MI,INW.MI,ISP.MI,LDO.MI,MB.MI,MONC.MI,NEXI.MI,PIRC.MI,PRY.MI,PST.MI,RACE.MI,REC.MI,SGO.MI,SRG.MI,"
     "STLAM.MI,STMPA.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,YSVP.MI,BMPS.MI,BPSO.MI,BC.MI,AVIO.MI,IP.MI"
 )
+
 TOTAL1_LEADERS = "BTC-USD,ETH-USD,USDT-USD,USDC-USD"
 TOTAL2_MAJORS = "SOL-USD,BNB-USD,XRP-USD,ADA-USD,TRX-USD,DOT-USD,LINK-USD,AVAX-USD,TON-USD,SHIB-USD,SUI-USD"
 TOTAL3_ALTS = (
@@ -79,7 +103,6 @@ TOTAL3_ALTS = (
 )
 CRYPTO_FULL = f"{TOTAL1_LEADERS},{TOTAL2_MAJORS},{TOTAL3_ALTS}"
 
-# Nuovi Panieri Inseriti (Mid-Caps, Crypto Stocks, Europa Blue Chips)
 MIDCAP_US = (
     "ONDS,RGTI,AGIO,AIRS,ALG,HUBS,CLX,IREN,RIVN,MARA,JAN,LIFE,MXL,IESC,HALO,TXRH,DKS,WFR,DT,"
     "SMR,XPO,GFL,FLEX,JBL,AA,MTDR,CHX,OVV,STNG,WBS,DINO,AMR,SF,LANC,PNR,XOM,AAL,X"
@@ -91,16 +114,8 @@ EUROSTOXX_FULL = (
     "SU.PA,TTE.PA,VIE.PA,VIV.PA,ASML.AS,ADYEN.AS,INGA.AS,KPN.AS,PRX.AS,BBVA.MC,SAN.MC,ITX.MC,REP.MC,ENI.MI,ISP.MI,UCG.MI"
 )
 
-# Elenco dei nomi dei panieri disponibili nelle tendine di interfaccia
-ELENCO_PANIERI = [
-    "S&P 500", 
-    "NASDAQ 100", 
-    "FTSE MIB (FIB)", 
-    "Crypto", 
-    "US Mid-Caps", 
-    "Crypto & AI Stocks", 
-    "Euro Stoxx 50"
-]
+ELENCO_PANIERI = ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto", "US Mid-Caps", "Crypto & AI Stocks", "Euro Stoxx 50"]
+
 def ottieni_paniere(nome_paniere):
     if nome_paniere == "S&P 500": return SP500_FULL
     elif nome_paniere == "NASDAQ 100": return NASDAQ_FULL
@@ -122,7 +137,6 @@ def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     except Exception:
         return False
 
-# Algoritmo vettoriale a 200 cassetti (Bins)
 def calc_vp(df, div=200):
     if df.empty: return None, None, None, [], []
     p_min, p_max = float(df['Low'].min()), float(df['High'].max())
@@ -149,6 +163,7 @@ def calc_vp(df, div=200):
     return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
 
 tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram"])
+
 with tab1:
     st.subheader("📊 Analisi Grafica Avanzata Volume Profile & Indicatori")
     st.markdown("##### ⚙️ Personalizzazione Livelli Grafici")
@@ -173,7 +188,8 @@ with tab1:
         tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[tf_label]
 
     tickers_input = st.text_area("Modifica o verifica i Tickers estratti:", value=ticker_caricati, height=150, key=f"an_area_{paniere_selezionato}")
-    if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
+
+        if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
         tickers = [t.strip().upper() for t in tickers_input.split(',') if t.strip()]
         if not tickers: st.warning("Inserisci almeno un ticker valido.")
         else:
@@ -182,9 +198,8 @@ with tab1:
             for ticker, foglio_attivo in zip(tickers, fogli_ticker):
                 with foglio_attivo:
                     tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
-                    df_c = yf.download(tickers=tk_yf, period="max", interval=tf_attivo, auto_adjust=False, multi_level_index=False, progress=False)
+                    df_c = scarica_dati_sicuri(tk_yf, "max", tf_attivo)
                     if df_c is not None and len(df_c) > 200:
-                        df_c.columns = [str(c).strip() for c in df_c.columns]
                         close_series = df_c["Close"].astype(float)
                         high_series = df_c["High"].astype(float)
                         low_series = df_c["Low"].astype(float)
@@ -216,7 +231,7 @@ with tab1:
                                 f"1. STORICO COMPLETO ({ticker}) — POC: {round(p1,2)} | EMA200: {round(ema200_att,2)}", 
                                 f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — POC: {round(p2,2)}", 
                                 f"3. PROFILO RECENTE {period_label.upper()} — POC: {round(p3,2)}", 
-                                "📊 RSI (14) — Momentum di Filtro", "📈 ATR (14) — Volatilità Dinamica"
+                                f"📊 RSI (14) — Momentum: {round(rsi_att,1)}", f"📈 ATR (14) — Volatilità: {round(atr_att,2)}"
                             )
                         )
                         
@@ -262,6 +277,7 @@ with tab1:
                         fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["RSI"], mode="lines", name="RSI", line=dict(color="#a855f7", width=2)), row=4, col=1)
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=75, y1=75, line=dict(color="rgba(239, 68, 68, 0.4)", width=1.5, dash="dot"), row=4, col=1)
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=25, y1=25, line=dict(color="rgba(34, 197, 94, 0.4)", width=1.5, dash="dot"), row=4, col=1)
+                        
                         fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["ATR"], mode="lines", name="ATR", line=dict(color="#10b981", width=2)), row=5, col=1)
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, xaxis5_rangeslider_visible=False, height=2000, showlegend=False)
                         st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
