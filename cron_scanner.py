@@ -166,10 +166,31 @@ def calc_vp(df, div=200):
 if __name__ == "__main__":
     print("Avvio scansione POC con Strategia Bilanciata (Filtri Dinamici)...")
     
+    oggi = datetime.datetime.now().weekday()  # 0=Lunedì, 4=Venerdì, 5=Sabato
+    poc_scelti = []
+
+    if oggi == 5:    # 5 rappresenta il Sabato
+        poc_scelti = ["Generale", "ATH"]
+        print("📅 Oggi è Sabato: impostato controllo POC Generale e ATH.")
+    elif oggi == 4:  # 2 rappresenta il Mercoledì
+        poc_scelti = ["Recente (90D)"]
+        print("📅 Oggi è Venerdì: impostato controllo POC Recente (90G).")
+    else:
+        # Opzionale: cosa fare negli altri giorni? 
+        # Se lo script gira solo sabato e mercoledì tramite cron/task scheduler, puoi lasciarlo vuoto o bloccarlo.
+        print("📅 Oggi non è né Sabato né Mercoledì. Lo scanner non eseguirà controlli sui POC.")
+        # Se vuoi comunque testarlo manualmente in qualsiasi giorno, scommenta la riga sotto:
+        # poc_scelti = ["Generale", "ATH", "Recente (90D)"]
+    
+    # Se la lista è vuota (es. gira di martedì), interrompiamo subito l'esecuzione
+    if not poc_scelti:
+        print("Nessun profilo POC selezionato per oggi. Fine ciclo.")
+        import sys
+        sys.exit()
+    
     invia_messaggio_telegram_sbloccato(T_ID, "🚀 <b>POC PRO Scanner:</b> Avvio ciclo globale con strategia bilanciata...")
     
     soglia_distanza = 2.0                  # Tolleranza al 2% identica a Streamlit
-    poc_scelti = ["Generale", "ATH", "Recente (90D)"]
     panieri_da_scansionare = ["S&P 500", "NASDAQ 100", "FTSE MIB (FIB)", "Crypto (TOTAL 1-2-3)"]
     segnali_trovati = 0
 
