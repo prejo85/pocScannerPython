@@ -189,9 +189,10 @@ with tab1:
 
     tickers_input = st.text_area("Modifica o verifica i Tickers estratti:", value=ticker_caricati, height=150, key=f"an_area_{paniere_selezionato}")
 
-        if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
+    if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
         tickers = [t.strip().upper() for t in tickers_input.split(',') if t.strip()]
-        if not tickers: st.warning("Inserisci almeno un ticker valido.")
+        if not tickers:
+            st.warning("Inserisci almeno un ticker valido.")
         else:
             st.success("Generazione fogli ticker...")
             fogli_ticker = st.tabs([t.replace("-USD", "") for t in tickers])
@@ -281,7 +282,8 @@ with tab1:
                         fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["ATR"], mode="lines", name="ATR", line=dict(color="#10b981", width=2)), row=5, col=1)
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, xaxis5_rangeslider_visible=False, height=2000, showlegend=False)
                         st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
-                    else: st.warning(f"Dati storici insufficienti per {ticker}.")
+                    else:
+                        st.warning(f"Dati storici insufficienti per {ticker}.")
 
 # ==========================================
 # --- TAB 2: BACKTESTING AVANZATO (MOMENTUM & ROLLING POC) ---
