@@ -337,7 +337,7 @@ with tab2:
                     if not np.isnan(rsi_next):
                         if (rsi_c > 75 and rsi_next <= 75) or (rsi_c < 25 and rsi_next >= 25):
                             punti_ancora.append(i)
-                        # Assicuriamoci che l'indice finale sia coperto e rimuoviamo duplicati ordinati
+            # Assicuriamoci che l'indice finale sia coperto e rimuoviamo duplicati ordinati
             if len(df_bt) - 1 not in punti_ancora:
                 punti_ancora.append(len(df_bt) - 1)
             punti_ancora = sorted(list(set(punti_ancora)))
@@ -390,7 +390,7 @@ with tab2:
                     
                     if not in_posizione:
                         distanza_poc = abs((prezzo_corrente - p_poc) / p_poc) * 100
-                        if Black-Scholes_oppure_trigger := (distanza_poc <= 2.0):
+                        if distanza_poc <= 2.0:
                             posizione_tipo = "LONG" if prezzo_corrente >= p_poc else "SHORT"
                             prezzo_ingresso = prezzo_corrente
                             livello_sl = prezzo_ingresso - (1.5 * atr_attuale) if posizione_tipo == "LONG" else prezzo_ingresso + (1.5 * atr_attuale)
@@ -431,11 +431,11 @@ with tab2:
             ))
             
             # 2. Disegno degli Istogrammi dei Volumi (all'inizio di ciascuna area di momentum)
-            for prof in profProfiles := profili_volumetrici_locali:
+            for prof in profili_volumetrici_locali:
                 prezzi_p = prof["prezzi"]
                 volumi_p = prof["volumi"]
                 
-                if volumetrici_ok := (len(volumi_p) > 0 and max(volumi_p) > 0):
+                if len(volumi_p) > 0 and max(volumi_p) > 0:
                     max_vol = max(volumi_p)
                     data_inizio_b = prof["data_ancora"]
                     data_fine_b = prof["data_fine_blocco"]
@@ -448,7 +448,7 @@ with tab2:
                         v_attuale = volumi_p[idx_v]
                         p_livello = prezzi_p[idx_v]
                         
-                        # Definiamo la larghezza della barra proporzionale al volume (max 20% della larghezza del blocco)
+                        # Definiamo la larghezza della barra proporzionale al volume (max 22% della larghezza del blocco)
                         larghezza_barra_giorni = int((v_attuale / max_vol) * (ampiezza_blocco_giorni * 0.22))
                         if larghezza_barra_giorni < 1: larghezza_barra_giorni = 1
                         
@@ -489,7 +489,7 @@ with tab2:
             fig_tv.update_layout(template="plotly_dark", height=700, xaxis_rangeslider_visible=False)
             st.plotly_chart(fig_tv, use_container_width=True)
             
-            # 4. Statistiche Performance Tabellari (Invariate)
+            # 4. Statistiche Performance Tabellari
             if trade_history:
                 df_trades = pd.DataFrame(trade_history)
                 win_rate = round((len(df_trades[df_trades["PnL ($)"] > 0]) / len(df_trades)) * 100, 2)
@@ -498,7 +498,6 @@ with tab2:
                 st.dataframe(df_trades, use_container_width=True)
             else:
                 st.warning("Nessun trade eseguito testando i livelli POC di questo profilo.")
-
 
 
 # ==========================================
