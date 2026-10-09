@@ -284,91 +284,93 @@ with tab1:
                             if mostra_poc:
                                 fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=p_poc, y1=p_poc, line=dict(color="#ef4444", width=2.5), row=r_idx, col=1)
                             
-                            # --- TRACCIAMENTO GEOMETRICO RIGIDO DELLA TRENDLINE SUI MASSIMI (UPPER HULL) ---
+                            # --- ALGORITMO DI TRACCIAMENTO STRUTTURALE SULLE CANDELE DI SWING (LINEA BIANCA) ---
                             if mostra_trend and r_idx == 3 and len(df_s) > 20:
-                                # 1. Identifichiamo il Massimo Assoluto del periodo recente e la sua posizione
+                                # 1. Identifichiamo lo Swing High Assoluto del periodo recente
                                 idx_max_assoluto = df_s["High"].idxmax()
                                 val_max_assoluto = float(df_s["High"].max())
-                                pos_max_assoluto = df_s.index.get_loc(idx_max_assoluto)
                                 
-                                # 2. Isoliamo i dati strettamente successivi al Massimo Assoluto
-                                df_successivo = df_s.loc[idx_max_assoluto:]
+                                # Convertiamo l'indice in datetime puro per evitare bug di indicizzazione asincrona
+                                date_max_assoluto = pd.to_datetime(idx_max_assoluto)
                                 
-                                if len(df_successivo) > 4:
-                                    punti_lh = []
-                                    finestra = 2 
+                                # 2. Isoliamo lo storico successivo allo Swing High Assoluto
+                                df_successivo = df_s.loc[date_max_assoluto:]
+                                
+                                if len(df_successivo) > 5:
+                                    punti_swing_lh = []
+                                    # Finestra di lookback/lookahead per confermare la forza del Pivot strutturale
+                                    k_finestra = 3  
                                     
-                                    # Rileviamo tutti i Pivot High locali (Lower Highs potenziali)
-                                    for i in range(finestra, len(df_successivo) - finestra):
-                                        date_corrente = df_successivo.index[i]
+                                    # Estraiamo tutti i veri Swing High intermedi isolati
+                                    for i in range(k_finestra, len(df_successivo) - k_finestra):
+                                        data_corrente = df_successivo.index[i]
                                         val_corrente = float(df_successivo["High"].iloc[i])
                                         
-                                        int_sinistro = df_successivo["High"].iloc[i - finestra : i].astype(float).values
-                                        int_destro = df_successivo["High"].iloc[i + 1 : i + finestra + 1].astype(float).values
+                                        # Controlliamo la superiorità del prezzo rispetto alla sua finestra locale
+                                        max_sinistro = df_successivo["High"].iloc[i - k_finestra : i].max()
+                                        max_destro = df_successivo["High"].iloc[i + 1 : i + k_finestra + 1].max()
                                         
-                                        if all(val_corrente >= x for x in int_sinistro) and all(val_corrente >= x for x in int_destro):
+                                        if val_corrente >= max_sinistro and val_corrente >= max_destro:
                                             if val_corrente < val_max_assoluto:
-                                                punti_lh.append((date_corrente, val_corrente))
-                                    
-                                    # Se non trova Pivot stretti, colleziona tutti i massimi giornalieri successivi per il controllo geometrico
-                                    if not punti_lh:
-                                        for data_c, riga_c in df_successivo.iloc[2:].iterrows():
-                                            if float(riga_c["High"]) < val_max_assoluto:
-                                                punti_lh.append((data_c, float(riga_c["High"])))
-                                    
-                                    # 3. Selezione del punto di ancoraggio corretto (Filtro geometrico anti-taglio)
-                                    best_idx_lh = None
-                                    best_val_lh = None
-                                    pendenza_massima = -999999.0 # Cerchiamo la pendenza più alta (meno ripida verso il basso)
-                                    
-                                    for idx_lh_corr, val_lh_corr in punti_lh:
-                                        pos_lh_corr = df_s.index.get_loc(idx_lh_corr)
-                                        dist_candele = pos_lh_corr - pos_max_assoluto
-                                        
-                                        if dist_candele > 0:
-                                            # Calcola la traiettoria temporanea per questo specifico Pivot
-                                            m_temp = (val_lh_corr - val_max_assoluto) / dist_candele
-                                            
-                                            # Verifica se questa linea taglia i prezzi delle altre candele intermedie
-                                            taglia_prezzi = False
-                                            for verifica_i in range(1, len(df_successivo)):
-                                                data_v = df_successivo.index[verifica_i]
-                                                pos_v = df_s.index.get_loc(data_v)
-                                                dist_v = pos_v - pos_max_assoluto
+                                                punti_swing_lh.append((data_corrente, val_corrente))
                                                 
-                                                # Valore teorico della linea in questo punto
-                                                linea_val_v = val_max_assoluto + (m_temp * dist_v)
-                                                # Se il massimo reale della candela è superiore alla linea, allora la sta tagliando
-                                                if float(df_successivo["High"].iloc[verifica_i]) > linea_val_v + 0.001:
-                                                    taglia_prezzi = True
+                                    # Se l'azione ha un crollo verticale senza swing a 3 barre, allarghiamo la maglia alle candele giornaliere
+                                    if not punti_swing_lh:
+                                        for d_c, r_c in df_successivo.iloc[2:].iterrows():
+                                            if float(r_c["High"]) < val_max_assoluto:
+                                                punti_swing_lh.append((d_c, float(r_c["High"])))
+                                                
+                                    # 3. Filtro geometrico dell'Involucro Superiore (Evita il taglio dei corpi candela)
+                                    miglior_data_swing = None
+                                    miglior_val_swing = None
+                                    pendenza_ottimale = -999999.0
+                                    
+                                    # Calcoliamo la distanza temporale reale espressa in giorni per mantenere coerente la retta
+                                    for data_sw, val_sw in punti_swing_lh:
+                                        dist_giorni = (data_sw - date_max_assoluto).days
+                                        
+                                        if dist_giorni > 0:
+                                            # Calcolo coefficiente angolare temporaneo (pendenza della retta)
+                                            m_trend = (val_sw - val_max_assoluto) / dist_giorni
+                                            
+                                            # Verifichiamo se questa specifica traiettoria taglia il massimo di qualche altra candela intermedia
+                                            intersezione_rilevata = False
+                                            for verif_idx in range(1, len(df_successivo)):
+                                                data_check = df_successivo.index[verif_idx]
+                                                giorni_check = (data_check - date_max_assoluto).days
+                                                
+                                                prezzo_teorico_linea = val_max_assoluto + (m_trend * giorni_check)
+                                                if float(df_successivo["High"].iloc[verif_idx]) > prezzo_teorico_linea + 0.01:
+                                                    intersezione_rilevata = True
                                                     break
                                             
-                                            # Se non taglia o se stiamo cercando il miglior compromesso geometrico
-                                            if not taglia_prezzi and m_temp > pendenza_massima:
-                                                pendenza_massima = m_temp
-                                                best_idx_lh = idx_lh_corr
-                                                best_val_lh = val_lh_corr
-                                    
-                                    # Fallback di sicurezza: se tutti i punti tagliano, prendiamo il Pivot cronologicamente più vicino
-                                    if best_idx_lh is None and punti_lh:
-                                        punti_lh.sort(key=lambda x: df_s.index.get_loc(x[0]))
-                                        best_idx_lh, best_val_lh = punti_lh[0]
-                                        pos_lh_effettivo = df_s.index.get_loc(best_idx_lh)
-                                        pendenza_massima = (best_val_lh - val_max_assoluto) / (pos_lh_effettivo - pos_max_assoluto)
-                                    
-                                    # 4. Tracciamento finale della Trendline proiettata
-                                    if best_idx_lh is not None:
-                                        totale_candele_subset = len(df_s)
-                                        candele_mancanti = (totale_candele_subset - 1) - pos_max_assoluto
-                                        val_fine_proiettato = val_max_assoluto + (pendenza_massima * candele_mancanti)
+                                            # Selezioniamo la retta che sta sopra a tutti i prezzi massimi minimizzando la discesa
+                                            if not intersezione_rilevata and m_trend > pendenza_ottimale:
+                                                pendenza_ottimale = m_trend
+                                                miglior_data_swing = data_sw
+                                                miglior_val_swing = val_sw
+                                                
+                                    # 4. Fallback strutturale se tutti i vettori intersecano i massimi
+                                    if miglior_data_swing is None and punti_swing_lh:
+                                        # Ancoriamo geometricamente sul massimo decrescente più alto disponibile
+                                        punti_swing_lh.sort(key=lambda x: x[1], reverse=True)
+                                        miglior_data_swing, miglior_val_swing = punti_swing_lh[0]
+                                        dist_giorni = (miglior_data_swing - date_max_assoluto).days
+                                        if dist_giorni > 0:
+                                            pendenza_ottimale = (miglior_val_swing - val_max_assoluto) / dist_giorni
+                                            
+                                    # 5. Proiezione lineare ed estensione precisa fino alla fine dell'asse X
+                                    if miglior_data_swing is not None:
+                                        giorni_totali_grafico = (df_s.index[-1] - date_max_assoluto).days
+                                        val_proiezione_destra = val_max_assoluto + (pendenza_ottimale * giorni_totali_grafico)
                                         
                                         fig.add_trace(
                                             grp.Scatter(
-                                                x=[idx_max_assoluto, df_s.index[-1]], 
-                                                y=[val_max_assoluto, val_fine_proiettato],
+                                                x=[date_max_assoluto, df_s.index[-1]], 
+                                                y=[val_max_assoluto, val_proiezione_destra],
                                                 mode="lines",
-                                                line=dict(color="#ffffff", width=2.5),
-                                                name="Trendline Recente",
+                                                line=dict(color="#ffffff", width=2.5, dash="solid"),
+                                                name="Trendline Strutturale LH",
                                                 showlegend=False
                                             ),
                                             row=r_idx, col=1
