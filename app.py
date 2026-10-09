@@ -161,8 +161,12 @@ with tab1:
     with t_col2: mostra_va = st.checkbox("Mostra Value Area & Istogrammi (VAH/VAL)", value=True, key="chk_va")
     with t_col3: mostra_rr = st.checkbox("Mostra Zone Target / Stop Loss Strategici (ATR 1:2)", value=True, key="chk_rr")
     with t_col4: mostra_bb = st.checkbox("Mostra Bande di Bollinger (Volatilità Price)", value=True, key="chk_bb")
-    mostra_trend = st.checkbox("📐 Mostra Trendline Dinamica sui Massimi (Linea Bianca)", value=True, key="chk_trend")
-
+    
+    # Checkbox per il controllo dinamico delle nuove geometrie sul lato destro
+    c_col1, c_col2 = st.columns(2)
+    with c_col1: mostra_trend = st.checkbox("📐 Mostra Trendline Dinamica sui Massimi (Linea Bianca)", value=True, key="chk_trend")
+    with c_col2: mostra_sl_tp = st.checkbox("🎯 Mostra Linee Orizzontali SL / TP (Gialla e Azzurra)", value=True, key="chk_sltp")
+    
     st.markdown("---")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -177,12 +181,16 @@ with tab1:
         tf_label = st.selectbox("Seleziona Timeframe Candele:", ["Giornaliero (Daily)", "Settimanale (Weekly)"], key="an_timeframe")
         tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[tf_label]
 
-    # Sostituisci la vecchia riga st.text_area con questa:
-    tickers_input = st.text_area("Modifica o verifica i Tickers estratti:", value="", height=80, key=f"an_area_{paniere_selezionato}")
-
+    # Campo ticker compatto e vuoto di default a disposizione del trader
+    tickers_input = st.text_area("Modifica o verifica i Tickers estratti:", value="", height=100, key=f"an_area_{paniere_selezionato}")
     if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
-        tickers = [t.strip().upper() for t in tickers_input.split(',') if t.strip()]
-        if not tickers: st.warning("Inserisci almeno un ticker valido.")
+        if tickers_input.strip() == "":
+            tickers = [t.strip().upper() for t in ticker_caricati.split(',') if t.strip()]
+        else:
+            tickers = [t.strip().upper() for t in tickers_input.split(',') if t.strip()]
+            
+        if not tickers: 
+            st.warning("Inserisci almeno un ticker valido.")
         else:
             st.success("Generazione fogli ticker...")
             fogli_ticker = st.tabs([t.replace("-USD", "") for t in tickers])
@@ -216,17 +224,16 @@ with tab1:
                         p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
                         
                         if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]: continue
-                        # --- CALCOLO VALORI DI INGRESSO, DIREZIONE, SL E TP PER IL MENU DI RIEPILOGO ---
+                        
+                        # --- CALCOLO VALORI DI RISK MANAGEMENT PER IL MENU DI RIEPILOGO ---
                         is_long_1 = p_att >= p1
                         is_long_2 = p_att >= p2
                         is_long_3 = p_att >= p3
-
+                        
                         sl_1 = p_att - (1.5 * atr_att) if is_long_1 else p_att + (1.5 * atr_att)
                         tp_1 = p_att + (3.0 * atr_att) if is_long_1 else p_att - (3.0 * atr_att)
-
                         sl_2 = p_att - (1.5 * atr_att) if is_long_2 else p_att + (1.5 * atr_att)
                         tp_2 = p_att + (3.0 * atr_att) if is_long_2 else p_att - (3.0 * atr_att)
-
                         sl_3 = p_att - (1.5 * atr_att) if is_long_3 else p_att + (1.5 * atr_att)
                         tp_3 = p_att + (3.0 * atr_att) if is_long_3 else p_att - (3.0 * atr_att)
                         
@@ -234,8 +241,8 @@ with tab1:
                         st.markdown(f"""
                         <div style='background: rgba(15, 23, 42, 0.6); padding: 15px; border-radius: 14px; margin-bottom: 25px; border: 1px solid rgba(56, 189, 248, 0.2);'>
                             <h4 style='margin-top:0; color:#38bdf8; font-family: "Plus Jakarta Sans", sans-serif;'>🎯 Riepilogo Ingressi Operativi & Risk Management</h4>
-                            <p style='margin-bottom:8px; font-size:15px;'>📈 <b>1. Profilo Generale (Storico):</b> <span style='color:{"#22c55e" if is_long_1 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_1 else 'SHORT 🔴'}</span> | Entry: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p1, dec_f)}</b> | <span style='color:#f59e0b;'>SL: {round(sl_1, dec_f)}</span> | <span style='color:#06b6d4;'>TP: {round(tp_1, dec_f)}</span></p>
-                            <p style='margin-bottom:8px; font-size:15px;'>🏛️ <b>2. Profilo Dall'ATH:</b> <span style='color:{"#22c55e" if is_long_2 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_2 else 'SHORT 🔴'}</span> | Entry: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p2, dec_f)}</b> | <span style='color:#f59e0b;'>SL: {round(sl_2, dec_f)}</span> | <span style='color:#06b6d4;'>TP: {round(tp_2, dec_f)}</span></p>
+                            <p style='margin-bottom:6px; font-size:15px;'>📈 <b>1. Profilo Generale (Storico):</b> <span style='color:{"#22c55e" if is_long_1 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_1 else 'SHORT 🔴'}</span> | Entry: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p1, dec_f)}</b> | <span style='color:#f59e0b;'>SL: {round(sl_1, dec_f)}</span> | <span style='color:#06b6d4;'>TP: {round(tp_1, dec_f)}</span></p>
+                            <p style='margin-bottom:6px; font-size:15px;'>🏛️ <b>2. Profilo Dall'ATH:</b> <span style='color:{"#22c55e" if is_long_2 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_2 else 'SHORT 🔴'}</span> | Entry: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p2, dec_f)}</b> | <span style='color:#f59e0b;'>SL: {round(sl_2, dec_f)}</span> | <span style='color:#06b6d4;'>TP: {round(tp_2, dec_f)}</span></p>
                             <p style='margin-bottom:0; font-size:15px;'>⚡ <b>3. Profilo Recente ({period_label}):</b> <span style='color:{"#22c55e" if is_long_3 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_3 else 'SHORT 🔴'}</span> | Entry: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p3, dec_f)}</b> | <span style='color:#f59e0b;'>SL: {round(sl_3, dec_f)}</span> | <span style='color:#06b6d4;'>TP: {round(tp_3, dec_f)}</span></p>
                         </div>
                         """, unsafe_allow_html=True)
@@ -275,38 +282,41 @@ with tab1:
                             col_z = "rgba(34, 197, 94, 0.08)" if is_long else "rgba(239, 68, 68, 0.08)"
                             ic, dir_n = ("🟢", "LONG") if is_long else ("🔴", "SHORT")
                             
-                            d_li, d_lf = df_s.index[int(len(df_s)*0.70)], df_s.index[-1]
+                            d_lf = df_s.index[-1]
+                            
+                            # --- LIMITAZIONE DELLE LINEE DI RISK MANAGEMENT IN PROSSIMITÀ DEL SEGNALE ---
+                            if len(df_s) > 8:
+                                d_li_rischio = df_s.index[-8]
+                            else:
+                                d_li_rischio = df_s.index
+                                
                             if mostra_rr and not np.isnan(atr_att):
-                                fig.add_shape(type="rect", x0=d_li, x1=d_lf, y0=min(p_att, tp), y1=max(p_att, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
-                                fig.add_shape(type="line", x0=d_li, x1=d_lf, y0=sl, y1=sl, line=dict(color="#f59e0b", width=1.5, dash="dash"), row=r_idx, col=1)
-                                fig.add_shape(type="line", x0=d_li, x1=d_lf, y0=tp, y1=tp, line=dict(color="#06b6d4", width=2), row=r_idx, col=1)
+                                fig.add_shape(type="rect", x0=d_li_rischio, x1=d_lf, y0=min(p_att, tp), y1=max(p_att, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
                             
                             if mostra_poc:
                                 fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=p_poc, y1=p_poc, line=dict(color="#ef4444", width=2.5), row=r_idx, col=1)
                             
-                            # --- ALGORITMO DI TRACCIAMENTO STRUTTURALE SULLE CANDELE DI SWING (LINEA BIANCA) ---
+                            # Linea d'ingresso viola passante estesa lungo tutto l'asse X
+                            fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=p_att, y1=p_att, line=dict(color="#a855f7", width=2, dash="dot"), row=r_idx, col=1)
+                            
+                            # Disegno dei segmenti ridotti per Stop Loss (Gialla) e Take Profit (Azzurra)
+                            if mostra_sl_tp and not np.isnan(atr_att):
+                                fig.add_shape(type="line", x0=d_li_rischio, x1=d_lf, y0=sl, y1=sl, line=dict(color="#f59e0b", width=2, dash="dash"), row=r_idx, col=1)
+                                fig.add_shape(type="line", x0=d_li_rischio, x1=d_lf, y0=tp, y1=tp, line=dict(color="#06b6d4", width=2, dash="solid"), row=r_idx, col=1)
+                            # --- ALGORITMO DI TRACCIAMENTO SULLE CANDELE DI SWING (SOLO SUL GRAFICO RECENTE 3) ---
                             if mostra_trend and r_idx == 3 and len(df_s) > 20:
-                                # 1. Identifichiamo lo Swing High Assoluto del periodo recente
                                 idx_max_assoluto = df_s["High"].idxmax()
                                 val_max_assoluto = float(df_s["High"].max())
-                                
-                                # Convertiamo l'indice in datetime puro per evitare bug di indicizzazione asincrona
                                 date_max_assoluto = pd.to_datetime(idx_max_assoluto)
-                                
-                                # 2. Isoliamo lo storico successivo allo Swing High Assoluto
                                 df_successivo = df_s.loc[date_max_assoluto:]
                                 
                                 if len(df_successivo) > 5:
                                     punti_swing_lh = []
-                                    # Finestra di lookback/lookahead per confermare la forza del Pivot strutturale
                                     k_finestra = 3  
                                     
-                                    # Estraiamo tutti i veri Swing High intermedi isolati
                                     for i in range(k_finestra, len(df_successivo) - k_finestra):
                                         data_corrente = df_successivo.index[i]
                                         val_corrente = float(df_successivo["High"].iloc[i])
-                                        
-                                        # Controlliamo la superiorità del prezzo rispetto alla sua finestra locale
                                         max_sinistro = df_successivo["High"].iloc[i - k_finestra : i].max()
                                         max_destro = df_successivo["High"].iloc[i + 1 : i + k_finestra + 1].max()
                                         
@@ -314,52 +324,37 @@ with tab1:
                                             if val_corrente < val_max_assoluto:
                                                 punti_swing_lh.append((data_corrente, val_corrente))
                                                 
-                                    # Se l'azione ha un crollo verticale senza swing a 3 barre, allarghiamo la maglia alle candele giornaliere
                                     if not punti_swing_lh:
                                         for d_c, r_c in df_successivo.iloc[2:].iterrows():
                                             if float(r_c["High"]) < val_max_assoluto:
                                                 punti_swing_lh.append((d_c, float(r_c["High"])))
                                                 
-                                    # 3. Filtro geometrico dell'Involucro Superiore (Evita il taglio dei corpi candela)
                                     miglior_data_swing = None
-                                    miglior_val_swing = None
                                     pendenza_ottimale = -999999.0
                                     
-                                    # Calcoliamo la distanza temporale reale espressa in giorni per mantenere coerente la retta
                                     for data_sw, val_sw in punti_swing_lh:
                                         dist_giorni = (data_sw - date_max_assoluto).days
-                                        
                                         if dist_giorni > 0:
-                                            # Calcolo coefficiente angolare temporaneo (pendenza della retta)
                                             m_trend = (val_sw - val_max_assoluto) / dist_giorni
-                                            
-                                            # Verifichiamo se questa specifica traiettoria taglia il massimo di qualche altra candela intermedia
                                             intersezione_rilevata = False
                                             for verif_idx in range(1, len(df_successivo)):
                                                 data_check = df_successivo.index[verif_idx]
                                                 giorni_check = (data_check - date_max_assoluto).days
-                                                
                                                 prezzo_teorico_linea = val_max_assoluto + (m_trend * giorni_check)
                                                 if float(df_successivo["High"].iloc[verif_idx]) > prezzo_teorico_linea + 0.01:
                                                     intersezione_rilevata = True
                                                     break
-                                            
-                                            # Selezioniamo la retta che sta sopra a tutti i prezzi massimi minimizzando la discesa
                                             if not intersezione_rilevata and m_trend > pendenza_ottimale:
                                                 pendenza_ottimale = m_trend
                                                 miglior_data_swing = data_sw
-                                                miglior_val_swing = val_sw
                                                 
-                                    # 4. Fallback strutturale se tutti i vettori intersecano i massimi
                                     if miglior_data_swing is None and punti_swing_lh:
-                                        # Ancoriamo geometricamente sul massimo decrescente più alto disponibile
-                                        punti_swing_lh.sort(key=lambda x: x[1], reverse=True)
-                                        miglior_data_swing, miglior_val_swing = punti_swing_lh[0]
+                                        punti_swing_lh.sort(key=lambda x: x, reverse=True)
+                                        miglior_data_swing, miglior_val_swing = punti_swing_lh
                                         dist_giorni = (miglior_data_swing - date_max_assoluto).days
                                         if dist_giorni > 0:
                                             pendenza_ottimale = (miglior_val_swing - val_max_assoluto) / dist_giorni
                                             
-                                    # 5. Proiezione lineare ed estensione precisa fino alla fine dell'asse X
                                     if miglior_data_swing is not None:
                                         giorni_totali_grafico = (df_s.index[-1] - date_max_assoluto).days
                                         val_proiezione_destra = val_max_assoluto + (pendenza_ottimale * giorni_totali_grafico)
@@ -375,8 +370,8 @@ with tab1:
                                             ),
                                             row=r_idx, col=1
                                         )
-
-                            # Badge informativo ancorato all'ultima candela con freccia direzionale
+                            
+                            # Badge informativo ancorato sul prezzo attuale a destra del grafico
                             txt_label_grafico = f"📊 ENTRY {dir_n} {round(p_att, 2)}<br>🔸 SL: {round(sl, 2)}<br>🔹 TP: {round(tp, 2)}"
                             fig.add_annotation(
                                 x=d_lf, y=p_att,
@@ -396,7 +391,6 @@ with tab1:
                                 borderpad=5,
                                 row=r_idx, col=1
                             )
-
                             
                             txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Setup: {ic} {dir_n}<br>🟣 ENTRY: {round(p_att,2)}<br>🔴 POC: {round(p_poc,2)}<br>🟠 VAH: {round(p_vh,2)}<br>🔵 VAL: {round(p_vl,2)}"
                             fig.add_annotation(xref="paper", yref="paper", x=0.01, y={1:0.98, 2:0.72, 3:0.44}[r_idx], text=txt_leg, showarrow=False, align="left", bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.4)", borderwidth=1.5, borderpad=8, font=dict(color="white", size=10))
@@ -406,10 +400,11 @@ with tab1:
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=75, y1=75, line=dict(color="rgba(239, 68, 68, 0.4)", width=1.5, dash="dot"), row=4, col=1)
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=25, y1=25, line=dict(color="rgba(34, 197, 94, 0.4)", width=1.5, dash="dot"), row=4, col=1)
                         fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["ATR"], mode="lines", name="ATR", line=dict(color="#10b981", width=2)), row=5, col=1)
+                        
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, xaxis5_rangeslider_visible=False, height=2000, showlegend=False)
                         st.plotly_chart(fig, width="stretch", key=f"chart_{ticker}")
-                    else: st.warning(f"Dati storici insufficienti per {ticker}.")
-
+                    else: 
+                        st.warning(f"Dati storici insufficienti per {ticker}.")
 
 # ==========================================
 # --- TAB 2: BACKTESTING ---
