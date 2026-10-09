@@ -284,21 +284,21 @@ with tab1:
                             if mostra_poc:
                                 fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=p_poc, y1=p_poc, line=dict(color="#ef4444", width=2.5), row=r_idx, col=1)
                             
-                            # --- TRACCIAMENTO DELLA TRENDLINE BIANCA SOLO SUL GRAFICO 3 (PROFILO RECENTE) ---
+                            # --- TRACCIAMENTO DELLA TRENDLINE BIANCA SOLO SUL GRAFICO 3 (PROFILO RECENTE UNIVERSALE) ---
                             if mostra_trend and r_idx == 3 and len(df_s) > 20:
-                                # 1. Identifichiamo il Massimo Assoluto del periodo recente
+                                # 1. Identifichiamo il Massimo Assoluto del periodo recente e la sua posizione
                                 idx_max_assoluto = df_s["High"].idxmax()
                                 val_max_assoluto = float(df_s["High"].max())
                                 pos_max_assoluto = df_s.index.get_loc(idx_max_assoluto)
                                 
-                                # 2. Isoliamo i dati successivi al Massimo Assoluto
+                                # 2. Isoliamo i dati strettamente successivi al Massimo Assoluto
                                 df_successivo = df_s.loc[idx_max_assoluto:]
                                 
-                                if len(df_successivo) > 5:
+                                if len(df_successivo) > 4:
                                     punti_lh = []
-                                    finestra = 2 
                                     
-                                    # Scansione per identificare i Pivot High locali isolati (i massimi delle candele cerchiate)
+                                    # Prova prima con un filtro di stabilità (Pivot High locale)
+                                    finestra = 2 
                                     for i in range(finestra, len(df_successivo) - finestra):
                                         date_corrente = df_successivo.index[i]
                                         val_corrente = float(df_successivo["High"].iloc[i])
@@ -306,19 +306,29 @@ with tab1:
                                         int_sinistro = df_successivo["High"].iloc[i - finestra : i].astype(float).values
                                         int_destro = df_successivo["High"].iloc[i + 1 : i + finestra + 1].astype(float).values
                                         
-                                        if all(val_corrente > x for x in int_sinistro) and all(val_corrente > x for x in int_destro):
+                                        if all(val_corrente >= x for x in int_sinistro) and all(val_corrente >= x for x in int_destro):
                                             if val_corrente < val_max_assoluto:
                                                 punti_lh.append((date_corrente, val_corrente))
                                     
-                                    # 3. Disegnamo la linea calcolando la pendenza corretta sulle candele del Grafico 3
+                                    # Se l'azione ha un trend strano e non restituisce Pivot locali, 
+                                    # usiamo come secondo punto il Massimo Assoluto del subset rimanente (struttura macro decrescente)
+                                    if not punti_lh and len(df_successivo) > 5:
+                                        df_rimanente = df_successivo.iloc[3:] # Taglia le immediate candele adiacenti al picco
+                                        if not df_rimanente.empty:
+                                            idx_macro_lh = df_rimanente["High"].idxmax()
+                                            val_macro_lh = float(df_rimanente["High"].max())
+                                            if val_macro_lh < val_max_assoluto:
+                                                punti_lh.append((idx_macro_lh, val_macro_lh))
+                                    
+                                    # 3. Se abbiamo individuato almeno un punto LH valido, proiettiamo la retta geometrica
                                     if punti_lh:
-                                        # Ordina in ordine cronologico per agganciare il primo Pivot strutturale della discesa
-                                        punti_lh.sort(key=lambda x: x[0])
+                                        # Scegliamo il punto più alto tra i massimi decrescenti per evitare che la linea tagli le candele
+                                        punti_lh.sort(key=lambda x: x[1], reverse=True)
                                         idx_lh, val_lh = punti_lh[0]
                                         pos_lh = df_s.index.get_loc(idx_lh)
                                         
                                         distanza_candele = pos_lh - pos_max_assoluto
-                                        if distanza_candele > 0:
+                                        if Kid_dist := distanza_candele > 0:
                                             pendenza_per_candela = (val_lh - val_max_assoluto) / distanza_candele
                                             
                                             totale_candele_subset = len(df_s)
@@ -337,19 +347,20 @@ with tab1:
                                                 row=r_idx, col=1
                                             )
                                     else:
-                                        # Fallback se non ci sono pivot intermedi confermati nel periodo recente
+                                        # Fallback geometrico estremo lineare se il mercato si muove in linea retta senza rimbalzi
                                         idx_ultimo = df_successivo.index[-1]
                                         val_ultimo = float(df_successivo["High"].iloc[-1])
-                                        fig.add_trace(
-                                            grp.Scatter(
-                                                x=[idx_max_assoluto, idx_ultimo], 
-                                                y=[val_max_assoluto, val_ultimo],
-                                                mode="lines",
-                                                line=dict(color="#ffffff", width=1.5, dash="dash"),
-                                                showlegend=False
-                                            ),
-                                            row=r_idx, col=1
-                                        )
+                                        if idx_ultimo != idx_max_assoluto:
+                                            fig.add_trace(
+                                                grp.Scatter(
+                                                    x=[idx_max_assoluto, idx_ultimo], 
+                                                    y=[val_max_assoluto, val_ultimo],
+                                                    mode="lines",
+                                                    line=dict(color="#ffffff", width=1.5, dash="dash"),
+                                                    showlegend=False
+                                                ),
+                                                row=r_idx, col=1
+                                            )
 
                             # Badge informativo ancorato all'ultima candela con freccia direzionale
                             txt_label_grafico = f"📊 ENTRY {dir_n} {round(p_att, 2)}<br>🔸 SL: {round(sl, 2)}<br>🔹 TP: {round(tp, 2)}"
