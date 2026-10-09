@@ -176,7 +176,9 @@ with tab1:
         tf_label = st.selectbox("Seleziona Timeframe Candele:", ["Giornaliero (Daily)", "Settimanale (Weekly)"], key="an_timeframe")
         tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[tf_label]
 
-    tickers_input = st.text_area("Modifica o verifica i Tickers estratti:", value=ticker_caricati, height=150, key=f"an_area_{paniere_selezionato}")
+    # Sostituisci la vecchia riga st.text_area con questa:
+    tickers_input = st.text_area("Modifica o verifica i Tickers estratti:", value="", height=100, key=f"an_area_{paniere_selezionato}")
+
     if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
         tickers = [t.strip().upper() for t in tickers_input.split(',') if t.strip()]
         if not tickers: st.warning("Inserisci almeno un ticker valido.")
