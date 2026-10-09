@@ -293,6 +293,40 @@ with tab1:
                             # Nuova linea di Take Profit (Azzurra tratteggiata) lungo tutto lo storico
                             fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=tp, y1=tp, line=dict(color="#06b6d4", width=1.5, dash="dash"), row=r_idx, col=1)
                             
+                            # --- TRACCIAMENTO AUTOMATICO DELLA TRENDLINE SUI MASSIMI (LINEA BIANCA) ---
+                            if len(df_s) > 20:
+                                # 1. Troviamo la candela con il Massimo Assoluto nel periodo visualizzato
+                                idx_max_assoluto = df_s["High"].idxmax()
+                                val_max_assoluto = float(df_s["High"].max())
+                                
+                                # 2. Isoliamo i dati successivi al Massimo Assoluto per cercare il secondo picco
+                                df_successivo = df_s.loc[idx_max_assoluto:]
+                                
+                                if len(df_successivo) > 5:
+                                    # Cerchiamo un massimo locale (picco) nei dati successivi usando una finestra mobile di 3 candele
+                                    massimi_locali = df_successivo[(df_successivo["High"] == df_successivo["High"].rolling(3, center=True).max())]
+                                    
+                                    # Escludiamo il punto di partenza stesso per trovare un vero massimo decrescente
+                                    massimi_locali = massimi_locali[massimi_locali.index != idx_max_assoluto]
+                                    
+                                    if not massimi_locali.empty:
+                                        # Prendiamo il picco più rilevante o l'ultimo picco confermato
+                                        idx_secondo_picco = massimi_locali["High"].idxmax()
+                                        val_secondo_picco = float(massimi_locali["High"].max())
+                                    else:
+                                        # Fallback se non ci sono picchi intermedi: uniamo il massimo assoluto con l'ultima candela disponibile
+                                        idx_secondo_picco = df_successivo.index[-1]
+                                        val_secondo_picco = float(df_successivo["High"].iloc[-1])
+                                    
+                                    # 3. Tracciamo la Trendline reale che unisce i due punti e si estende sul grafico
+                                    fig.add_shape(
+                                        type="line",
+                                        x0=idx_max_assoluto, y0=val_max_assoluto,
+                                        x1=df_s.index[-1], y1=val_secondo_picco, # Estesa fino all'estremità destra
+                                        line=dict(color="#ffffff", width=2.5, dash="solid"),
+                                        row=r_idx, col=1
+                                    )
+
                             # Badge informativo ancorato all'ultima candela con freccia direzionale
                             txt_label_grafico = f"📊 ENTRY {dir_n} {round(p_att, 2)}<br>🔸 SL: {round(sl, 2)}<br>🔹 TP: {round(tp, 2)}"
                             fig.add_annotation(
