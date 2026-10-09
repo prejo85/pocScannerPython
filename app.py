@@ -163,7 +163,9 @@ def calc_vp(df, div=200):
     return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
 
 tab1, tab2, tab3 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram"])
-
+# ==========================================
+# --- TAB 1: TRE POC DINAMICI ---
+# ==========================================
 with tab1:
     st.subheader("📊 Analisi Grafica Avanzata Volume Profile & Indicatori")
     st.markdown("##### ⚙️ Personalizzazione Livelli Grafici")
@@ -188,19 +190,18 @@ with tab1:
         tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[tf_label]
 
     tickers_input = st.text_area("Modifica o verifica i Tickers estratti:", value=ticker_caricati, height=150, key=f"an_area_{paniere_selezionato}")
-
     if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
         tickers = [t.strip().upper() for t in tickers_input.split(',') if t.strip()]
-        if not tickers:
-            st.warning("Inserisci almeno un ticker valido.")
+        if not tickers: st.warning("Inserisci almeno un ticker valido.")
         else:
             st.success("Generazione fogli ticker...")
             fogli_ticker = st.tabs([t.replace("-USD", "") for t in tickers])
             for ticker, foglio_attivo in zip(tickers, fogli_ticker):
                 with foglio_attivo:
                     tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
-                    df_c = scarica_dati_sicuri(tk_yf, "max", tf_attivo)
+                    df_c = yf.download(tickers=tk_yf, period="max", interval=tf_attivo, auto_adjust=False, multi_level_index=False, progress=False)
                     if df_c is not None and len(df_c) > 200:
+                        df_c.columns = [str(c).strip() for c in df_c.columns]
                         close_series = df_c["Close"].astype(float)
                         high_series = df_c["High"].astype(float)
                         low_series = df_c["Low"].astype(float)
@@ -225,17 +226,30 @@ with tab1:
                         p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
                         
                         if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]: continue
+                        # --- CALCOLO VALORI DI INGRESSO E DIREZIONE PER IL MENU DI RIEPILOGO ---
+                        is_long_1 = p_att >= p1
+                        is_long_2 = p_att >= p2
+                        is_long_3 = p_att >= p3
+                        
+                        dec_f = 4 if asset_type == "Criptovaluta" else 2
+                        st.markdown(f"""
+                        <div style='background: rgba(15, 23, 42, 0.6); padding: 15px; border-radius: 14px; margin-bottom: 25px; border: 1px solid rgba(56, 189, 248, 0.2);'>
+                            <h4 style='margin-top:0; color:#38bdf8; font-family: "Plus Jakarta Sans", sans-serif;'>🎯 Riepilogo Ingressi Operativi</h4>
+                            <p style='margin-bottom:6px; font-size:15px;'>📈 <b>1. Profilo Generale (Storico):</b> <span style='color:{"#22c55e" if is_long_1 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_1 else 'SHORT 🔴'}</span> | Ingresso: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p1, dec_f)}</b></p>
+                            <p style='margin-bottom:6px; font-size:15px;'>🏛️ <b>2. Profilo Dall'ATH:</b> <span style='color:{"#22c55e" if is_long_2 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_2 else 'SHORT 🔴'}</span> | Ingresso: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p2, dec_f)}</b></p>
+                            <p style='margin-bottom:0; font-size:15px;'>⚡ <b>3. Profilo Recente ({period_label}):</b> <span style='color:{"#22c55e" if is_long_3 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_3 else 'SHORT 🔴'}</span> | Ingresso: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p3, dec_f)}</b></p>
+                        </div>
+                        """, unsafe_allow_html=True)
                         
                         fig = make_subplots(
                             rows=5, cols=1, vertical_spacing=0.06, row_heights=[0.24, 0.24, 0.24, 0.14, 0.14], 
                             subplot_titles=(
-                                f"1. STORICO COMPLETO ({ticker}) — POC: {round(p1,2)} | EMA200: {round(ema200_att,2)}", 
-                                f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — POC: {round(p2,2)}", 
-                                f"3. PROFILO RECENTE {period_label.upper()} — POC: {round(p3,2)}", 
-                                f"📊 RSI (14) — Momentum: {round(rsi_att,1)}", f"📈 ATR (14) — Volatilità: {round(atr_att,2)}"
+                                f"1. STORICO COMPLETO ({ticker}) — {'LONG 🟢' if is_long_1 else 'SHORT 🔴'} Entry: {round(p_att,2)} | POC: {round(p1,2)} | EMA200: {round(ema200_att,2)}", 
+                                f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — {'LONG 🟢' if is_long_2 else 'SHORT 🔴'} Entry: {round(p_att,2)} | POC: {round(p2,2)}", 
+                                f"3. PROFILO RECENTE {period_label.upper()} — {'LONG 🟢' if is_long_3 else 'SHORT 🔴'} Entry: {round(p_att,2)} | POC: {round(p3,2)}", 
+                                "📊 RSI (14) — Momentum di Filtro", "📈 ATR (14) — Volatilità Dinamica"
                             )
                         )
-                        
                         cfg = [(1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")]
                         for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
                             if df_s.empty: continue
@@ -271,19 +285,38 @@ with tab1:
                             if mostra_poc:
                                 fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=p_poc, y1=p_poc, line=dict(color="#ef4444", width=2.5), row=r_idx, col=1)
                             
-                            txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Setup: {ic} {dir_n}<br>🔴 POC: {round(p_poc,2)}<br>🟠 VAH: {round(p_vh,2)}<br>🔵 VAL: {round(p_vl,2)}"
+                            # --- TRACCIAMENTO LINEA DI INGRESSO E FRECCIA DIREZIONALE SUL GRAFICO ---
+                            fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=p_att, y1=p_att, line=dict(color="#a855f7", width=2, dash="dot"), row=r_idx, col=1)
+                            
+                            fig.add_annotation(
+                                x=d_lf, y=p_att,
+                                text=f"📊 ENTRY {dir_n} {round(p_att, 2)}",
+                                showarrow=True,
+                                arrowhead=2,
+                                arrowsize=1,
+                                arrowwidth=2,
+                                arrowcolor="#22c55e" if is_long else "#ef4444",
+                                ax=-55,
+                                ay=-35 if is_long else 35,
+                                font=dict(color="white", size=10, family="Plus Jakarta Sans"),
+                                bgcolor="#22c55e" if is_long else "#ef4444",
+                                bordercolor="white",
+                                borderwidth=1,
+                                borderpad=4,
+                                row=r_idx, col=1
+                            )
+                            
+                            txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Setup: {ic} {dir_n}<br>🟣 ENTRY: {round(p_att,2)}<br>🔴 POC: {round(p_poc,2)}<br>🟠 VAH: {round(p_vh,2)}<br>🔵 VAL: {round(p_vl,2)}"
                             fig.add_annotation(xref="paper", yref="paper", x=0.01, y={1:0.98, 2:0.72, 3:0.44}[r_idx], text=txt_leg, showarrow=False, align="left", bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.4)", borderwidth=1.5, borderpad=8, font=dict(color="white", size=10))
                         
                         df_recent_ind = df_c.tail(180 if tf_attivo == "1wk" else 365)
                         fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["RSI"], mode="lines", name="RSI", line=dict(color="#a855f7", width=2)), row=4, col=1)
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=75, y1=75, line=dict(color="rgba(239, 68, 68, 0.4)", width=1.5, dash="dot"), row=4, col=1)
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=25, y1=25, line=dict(color="rgba(34, 197, 94, 0.4)", width=1.5, dash="dot"), row=4, col=1)
-                        
                         fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["ATR"], mode="lines", name="ATR", line=dict(color="#10b981", width=2)), row=5, col=1)
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, xaxis5_rangeslider_visible=False, height=2000, showlegend=False)
                         st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
-                    else:
-                        st.warning(f"Dati storici insufficienti per {ticker}.")
+                    else: st.warning(f"Dati storici insufficienti per {ticker}.")
 
 # ==========================================
 # --- TAB 2: MAPPATURA ANCHORED POC DINAMICI ---
