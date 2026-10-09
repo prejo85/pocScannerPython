@@ -213,18 +213,27 @@ with tab1:
                         p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
                         
                         if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]: continue
-                        # --- CALCOLO VALORI DI INGRESSO E DIREZIONE PER IL MENU DI RIEPILOGO ---
+                        # --- CALCOLO VALORI DI INGRESSO, DIREZIONE, SL E TP PER IL MENU DI RIEPILOGO ---
                         is_long_1 = p_att >= p1
                         is_long_2 = p_att >= p2
                         is_long_3 = p_att >= p3
+
+                        sl_1 = p_att - (1.5 * atr_att) if is_long_1 else p_att + (1.5 * atr_att)
+                        tp_1 = p_att + (3.0 * atr_att) if is_long_1 else p_att - (3.0 * atr_att)
+
+                        sl_2 = p_att - (1.5 * atr_att) if is_long_2 else p_att + (1.5 * atr_att)
+                        tp_2 = p_att + (3.0 * atr_att) if is_long_2 else p_att - (3.0 * atr_att)
+
+                        sl_3 = p_att - (1.5 * atr_att) if is_long_3 else p_att + (1.5 * atr_att)
+                        tp_3 = p_att + (3.0 * atr_att) if is_long_3 else p_att - (3.0 * atr_att)
                         
                         dec_f = 4 if asset_type == "Criptovaluta" else 2
                         st.markdown(f"""
                         <div style='background: rgba(15, 23, 42, 0.6); padding: 15px; border-radius: 14px; margin-bottom: 25px; border: 1px solid rgba(56, 189, 248, 0.2);'>
-                            <h4 style='margin-top:0; color:#38bdf8; font-family: "Plus Jakarta Sans", sans-serif;'>🎯 Riepilogo Ingressi Operativi</h4>
-                            <p style='margin-bottom:6px; font-size:15px;'>📈 <b>1. Profilo Generale (Storico):</b> <span style='color:{"#22c55e" if is_long_1 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_1 else 'SHORT 🔴'}</span> | Ingresso: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p1, dec_f)}</b></p>
-                            <p style='margin-bottom:6px; font-size:15px;'>🏛️ <b>2. Profilo Dall'ATH:</b> <span style='color:{"#22c55e" if is_long_2 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_2 else 'SHORT 🔴'}</span> | Ingresso: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p2, dec_f)}</b></p>
-                            <p style='margin-bottom:0; font-size:15px;'>⚡ <b>3. Profilo Recente ({period_label}):</b> <span style='color:{"#22c55e" if is_long_3 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_3 else 'SHORT 🔴'}</span> | Ingresso: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p3, dec_f)}</b></p>
+                            <h4 style='margin-top:0; color:#38bdf8; font-family: "Plus Jakarta Sans", sans-serif;'>🎯 Riepilogo Ingressi Operativi & Risk Management</h4>
+                            <p style='margin-bottom:8px; font-size:15px;'>📈 <b>1. Profilo Generale (Storico):</b> <span style='color:{"#22c55e" if is_long_1 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_1 else 'SHORT 🔴'}</span> | Entry: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p1, dec_f)}</b> | <span style='color:#f59e0b;'>SL: {round(sl_1, dec_f)}</span> | <span style='color:#06b6d4;'>TP: {round(tp_1, dec_f)}</span></p>
+                            <p style='margin-bottom:8px; font-size:15px;'>🏛️ <b>2. Profilo Dall'ATH:</b> <span style='color:{"#22c55e" if is_long_2 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_2 else 'SHORT 🔴'}</span> | Entry: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p2, dec_f)}</b> | <span style='color:#f59e0b;'>SL: {round(sl_2, dec_f)}</span> | <span style='color:#06b6d4;'>TP: {round(tp_2, dec_f)}</span></p>
+                            <p style='margin-bottom:0; font-size:15px;'>⚡ <b>3. Profilo Recente ({period_label}):</b> <span style='color:{"#22c55e" if is_long_3 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_3 else 'SHORT 🔴'}</span> | Entry: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p3, dec_f)}</b> | <span style='color:#f59e0b;'>SL: {round(sl_3, dec_f)}</span> | <span style='color:#06b6d4;'>TP: {round(tp_3, dec_f)}</span></p>
                         </div>
                         """, unsafe_allow_html=True)
                         
@@ -272,26 +281,37 @@ with tab1:
                             if mostra_poc:
                                 fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=p_poc, y1=p_poc, line=dict(color="#ef4444", width=2.5), row=r_idx, col=1)
                             
-                            # --- TRACCIAMENTO LINEA DI INGRESSO E FRECCIA DIREZIONALE SUL GRAFICO ---
+                            # --- TRACCIAMENTO LINEE ORIZZONTALI DI RISK MANAGEMENT (INTERA AMPIEZZA) ---
+                            # Linea d'ingresso viola tratteggiata
                             fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=p_att, y1=p_att, line=dict(color="#a855f7", width=2, dash="dot"), row=r_idx, col=1)
                             
+                            # Nuova linea di Stop Loss (Arancione/Gialla tratteggiata) lungo tutto lo storico
+                            fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=sl, y1=sl, line=dict(color="#f59e0b", width=1.5, dash="dash"), row=r_idx, col=1)
+                            
+                            # Nuova linea di Take Profit (Azzurra tratteggiata) lungo tutto lo storico
+                            fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=tp, y1=tp, line=dict(color="#06b6d4", width=1.5, dash="dash"), row=r_idx, col=1)
+                            
+                            # Badge informativo ancorato all'ultima candela con freccia direzionale
+                            txt_label_grafico = f"📊 ENTRY {dir_n} {round(p_att, 2)}<br>🔸 SL: {round(sl, 2)}<br>🔹 TP: {round(tp, 2)}"
                             fig.add_annotation(
                                 x=d_lf, y=p_att,
-                                text=f"📊 ENTRY {dir_n} {round(p_att, 2)}",
+                                text=txt_label_grafico,
                                 showarrow=True,
                                 arrowhead=2,
                                 arrowsize=1,
                                 arrowwidth=2,
                                 arrowcolor="#22c55e" if is_long else "#ef4444",
-                                ax=-55,
-                                ay=-35 if is_long else 35,
-                                font=dict(color="white", size=10, family="Plus Jakarta Sans"),
+                                ax=-65,
+                                ay=-45 if is_long else 45,
+                                align="left",
+                                font=dict(color="white", size=9, family="Plus Jakarta Sans"),
                                 bgcolor="#22c55e" if is_long else "#ef4444",
                                 bordercolor="white",
                                 borderwidth=1,
-                                borderpad=4,
+                                borderpad=5,
                                 row=r_idx, col=1
                             )
+
                             
                             txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Setup: {ic} {dir_n}<br>🟣 ENTRY: {round(p_att,2)}<br>🔴 POC: {round(p_poc,2)}<br>🟠 VAH: {round(p_vh,2)}<br>🔵 VAL: {round(p_vl,2)}"
                             fig.add_annotation(xref="paper", yref="paper", x=0.01, y={1:0.98, 2:0.72, 3:0.44}[r_idx], text=txt_leg, showarrow=False, align="left", bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.4)", borderwidth=1.5, borderpad=8, font=dict(color="white", size=10))
