@@ -302,7 +302,7 @@ with tab1:
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=25, y1=25, line=dict(color="rgba(34, 197, 94, 0.4)", width=1.5, dash="dot"), row=4, col=1)
                         fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["ATR"], mode="lines", name="ATR", line=dict(color="#10b981", width=2)), row=5, col=1)
                         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, xaxis5_rangeslider_visible=False, height=2000, showlegend=False)
-                        st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}")
+                        st.plotly_chart(fig, width="stretch", key=f"chart_{ticker}")
                     else: st.warning(f"Dati storici insufficienti per {ticker}.")
 
 
