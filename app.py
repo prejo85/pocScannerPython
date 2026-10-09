@@ -177,7 +177,7 @@ with tab1:
         tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[tf_label]
 
     # Sostituisci la vecchia riga st.text_area con questa:
-    tickers_input = st.text_area("Modifica o verifica i Tickers estratti:", value="", height=100, key=f"an_area_{paniere_selezionato}")
+    tickers_input = st.text_area("Modifica o verifica i Tickers estratti:", value="", height=80, key=f"an_area_{paniere_selezionato}")
 
     if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
         tickers = [t.strip().upper() for t in tickers_input.split(',') if t.strip()]
