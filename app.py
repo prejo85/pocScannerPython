@@ -161,7 +161,8 @@ with tab1:
     with t_col2: mostra_va = st.checkbox("Mostra Value Area & Istogrammi (VAH/VAL)", value=True, key="chk_va")
     with t_col3: mostra_rr = st.checkbox("Mostra Zone Target / Stop Loss Strategici (ATR 1:2)", value=True, key="chk_rr")
     with t_col4: mostra_bb = st.checkbox("Mostra Bande di Bollinger (Volatilità Price)", value=True, key="chk_bb")
-    
+    mostra_trend = st.checkbox("📐 Mostra Trendline Dinamica sui Massimi (Linea Bianca)", value=True, key="chk_trend")
+
     st.markdown("---")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -294,69 +295,67 @@ with tab1:
                             fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=tp, y1=tp, line=dict(color="#06b6d4", width=1.5, dash="dash"), row=r_idx, col=1)
                             
                             # --- TRACCIAMENTO GEOMETRICO DELLA TRENDLINE SUI MASSIMI (PIVOT HIGHS) ---
-                            if len(df_s) > 20:
-                                # 1. Identifichiamo la data e il valore del Massimo Assoluto nel grafico corrente
+                            if mostra_trend and len(df_s) > 20:
+                                # 1. Identifichiamo il Massimo Assoluto del periodo
                                 idx_max_assoluto = df_s["High"].idxmax()
                                 val_max_assoluto = float(df_s["High"].max())
                                 
-                                # 2. Isoliamo la porzione di storico successiva al Massimo Assoluto
+                                # 2. Isoliamo i dati successivi al Massimo Assoluto
                                 df_successivo = df_s.loc[idx_max_assoluto:]
                                 
-                                if len(df_successivo) > 6:
-                                    # Definiamo una finestra di stabilità (3 candele a sinistra e 3 a destra)
-                                    finestra = 3
+                                if len(df_successivo) > 5:
                                     punti_lh = []
+                                    # Lookback ridotto a 2 per identificare i Pivot High locali isolati (i massimi delle candele cerchiate)
+                                    finestra = 2 
                                     
-                                    # 3. Scansioniamo i dati alla ricerca di un vero Pivot High isolato
-                                    for idx_corrente in range(finestra, len(df_successivo) - finestra):
-                                        prezzi_high = df_successivo["High"].values
-                                        val_corrente = prezzi_high[idx_corrente]
+                                    for i in range(finestra, len(df_successivo) - finestra):
+                                        date_corrente = df_successivo.index[i]
+                                        val_corrente = float(df_successivo["High"].iloc[i])
                                         
-                                        # Controlliamo se la candela corrente è più alta delle 'n' candele precedenti e successive
-                                        int_sinistro = prezzi_high[idx_corrente - finestra : idx_corrente]
-                                        int_destro = prezzi_high[idx_corrente + 1 : idx_corrente + finestra + 1]
+                                        # Estraiamo i massimi delle candele adiacenti a sinistra e destra
+                                        int_sinistro = df_successivo["High"].iloc[i - finestra : i].astype(float).values
+                                        int_destro = df_successivo["High"].iloc[i + 1 : i + finestra + 1].astype(float).values
                                         
-                                        if all(val_corrente >= x for x in int_sinistro) and all(val_corrente >= x for x in int_destro):
-                                            # Verifichiamo che sia un massimo decrescente rispetto al picco di partenza
+                                        # Condizione di Pivot High: deve essere il massimo locale isolato
+                                        if all(val_corrente > x for x in int_sinistro) and all(val_corrente > x for x in int_destro):
+                                            # Deve essere un Lower High (decrescente rispetto al massimo assoluto)
                                             if val_corrente < val_max_assoluto:
-                                                punti_lh.append((df_successivo.index[idx_corrente], val_corrente))
+                                                punti_lh.append((date_corrente, val_corrente))
                                     
-                                    # 4. Ancoraggio e proiezione della retta sul grafico
+                                    # 3. Disegniamo la linea con pendenza temporale se troviamo almeno un LH valido
                                     if punti_lh:
-                                        # Scegliamo il Pivot High strutturalmente più significativo (il massimo locale più alto trovato)
-                                        punti_lh.sort(key=lambda x: x[1], reverse=True)
+                                        # Selezioniamo il primo LH strutturale rilevato dopo la discesa o quello con volume/rilevanza maggiore
+                                        # Ordiniamo per data per prendere il primo rimbalzo significativo (quello cerchiato a sinistra nel grafico)
+                                        punti_lh.sort(key=lambda x: x[0])
                                         idx_lh, val_lh = punti_lh[0]
                                         
-                                        # Calcoliamo l'inclinazione (coefficiente angolare) geometrica per estendere la retta all'infinito a destra
-                                        x0_num = df_s.index.get_loc(idx_max_assoluto)
-                                        x1_num = df_s.index.get_loc(idx_lh)
-                                        ultimo_x_num = len(df_s) - 1
+                                        # Calcoliamo la pendenza basandoci sulla differenza in giorni/secondi (timestamp) per evitare distorsioni su Plotly
+                                        t0 = idx_max_assoluto.timestamp()
+                                        t1 = idx_lh.timestamp()
+                                        t_fine = df_s.index[-1].timestamp()
                                         
-                                        if x1_num > x0_num:
-                                            m_pendenza = (val_lh - val_max_assoluto) / (x1_num - x0_num)
-                                            val_proiettato_finale = val_max_assoluto + m_pendenza * (ultimo_x_num - x0_num)
+                                        if t1 > t0:
+                                            pendenza = (val_lh - val_max_assoluto) / (t1 - t0)
+                                            val_fine_proiettato = val_max_assoluto + pendenza * (t_fine - t0)
                                             
                                             fig.add_shape(
                                                 type="line",
                                                 x0=idx_max_assoluto, y0=val_max_assoluto,
-                                                x1=df_s.index[-1], y1=val_proiettato_finale,
+                                                x1=df_s.index[-1], y1=val_fine_proiettato,
                                                 line=dict(color="#ffffff", width=2.5, dash="solid"),
                                                 row=r_idx, col=1
                                             )
                                     else:
-                                        # Fallback geometrico pulito: colleghiamo il massimo assoluto al massimo dell'ultima settimana di dati
-                                        df_coda = df_successivo.tail(7)
-                                        idx_coda_max = df_coda["High"].idxmax()
-                                        val_coda_max = float(df_coda["High"].max())
-                                        
-                                        if idx_coda_max != idx_max_assoluto:
-                                            fig.add_shape(
-                                                type="line",
-                                                x0=idx_max_assoluto, y0=val_max_assoluto,
-                                                x1=idx_coda_max, y1=val_coda_max,
-                                                line=dict(color="#ffffff", width=2, dash="dash"),
-                                                row=r_idx, col=1
-                                            )
+                                        # Fallback geometrico se non ci sono pivot intermedi confermati
+                                        idx_ultimo = df_successivo.index[-1]
+                                        val_ultimo = float(df_successivo["High"].iloc[-1])
+                                        fig.add_shape(
+                                            type="line",
+                                            x0=idx_max_assoluto, y0=val_max_assoluto,
+                                            x1=idx_ultimo, y1=val_ultimo,
+                                            line=dict(color="#ffffff", width=1.5, dash="dash"),
+                                            row=r_idx, col=1
+                                        )
 
                             # Badge informativo ancorato all'ultima candela con freccia direzionale
                             txt_label_grafico = f"📊 ENTRY {dir_n} {round(p_att, 2)}<br>🔸 SL: {round(sl, 2)}<br>🔹 TP: {round(tp, 2)}"
