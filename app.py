@@ -293,39 +293,70 @@ with tab1:
                             # Nuova linea di Take Profit (Azzurra tratteggiata) lungo tutto lo storico
                             fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=tp, y1=tp, line=dict(color="#06b6d4", width=1.5, dash="dash"), row=r_idx, col=1)
                             
-                            # --- TRACCIAMENTO AUTOMATICO DELLA TRENDLINE SUI MASSIMI (LINEA BIANCA) ---
+                            # --- TRACCIAMENTO GEOMETRICO DELLA TRENDLINE SUI MASSIMI (PIVOT HIGHS) ---
                             if len(df_s) > 20:
-                                # 1. Troviamo la candela con il Massimo Assoluto nel periodo visualizzato
+                                # 1. Identifichiamo la data e il valore del Massimo Assoluto nel grafico corrente
                                 idx_max_assoluto = df_s["High"].idxmax()
                                 val_max_assoluto = float(df_s["High"].max())
                                 
-                                # 2. Isoliamo i dati successivi al Massimo Assoluto per cercare il secondo picco
+                                # 2. Isoliamo la porzione di storico successiva al Massimo Assoluto
                                 df_successivo = df_s.loc[idx_max_assoluto:]
                                 
-                                if len(df_successivo) > 5:
-                                    # Cerchiamo un massimo locale (picco) nei dati successivi usando una finestra mobile di 3 candele
-                                    massimi_locali = df_successivo[(df_successivo["High"] == df_successivo["High"].rolling(3, center=True).max())]
+                                if len(df_successivo) > 6:
+                                    # Definiamo una finestra di stabilità (3 candele a sinistra e 3 a destra)
+                                    finestra = 3
+                                    punti_lh = []
                                     
-                                    # Escludiamo il punto di partenza stesso per trovare un vero massimo decrescente
-                                    massimi_locali = massimi_locali[massimi_locali.index != idx_max_assoluto]
+                                    # 3. Scansioniamo i dati alla ricerca di un vero Pivot High isolato
+                                    for idx_corrente in range(finestra, len(df_successivo) - finestra):
+                                        prezzi_high = df_successivo["High"].values
+                                        val_corrente = prezzi_high[idx_corrente]
+                                        
+                                        # Controlliamo se la candela corrente è più alta delle 'n' candele precedenti e successive
+                                        int_sinistro = prezzi_high[idx_corrente - finestra : idx_corrente]
+                                        int_destro = prezzi_high[idx_corrente + 1 : idx_corrente + finestra + 1]
+                                        
+                                        if all(val_corrente >= x for x in int_sinistro) and all(val_corrente >= x for x in int_destro):
+                                            # Verifichiamo che sia un massimo decrescente rispetto al picco di partenza
+                                            if val_corrente < val_max_assoluto:
+                                                punti_lh.append((df_successivo.index[idx_corrente], val_corrente))
                                     
-                                    if not massimi_locali.empty:
-                                        # Prendiamo il picco più rilevante o l'ultimo picco confermato
-                                        idx_secondo_picco = massimi_locali["High"].idxmax()
-                                        val_secondo_picco = float(massimi_locali["High"].max())
+                                    # 4. Ancoraggio e proiezione della retta sul grafico
+                                    if punti_lh:
+                                        # Scegliamo il Pivot High strutturalmente più significativo (il massimo locale più alto trovato)
+                                        punti_lh.sort(key=lambda x: x[1], reverse=True)
+                                        idx_lh, val_lh = punti_lh[0]
+                                        
+                                        # Calcoliamo l'inclinazione (coefficiente angolare) geometrica per estendere la retta all'infinito a destra
+                                        x0_num = df_s.index.get_loc(idx_max_assoluto)
+                                        x1_num = df_s.index.get_loc(idx_lh)
+                                        ultimo_x_num = len(df_s) - 1
+                                        
+                                        if x1_num > x0_num:
+                                            m_pendenza = (val_lh - val_max_assoluto) / (x1_num - x0_num)
+                                            val_proiettato_finale = val_max_assoluto + m_pendenza * (ultimo_x_num - x0_num)
+                                            
+                                            fig.add_shape(
+                                                type="line",
+                                                x0=idx_max_assoluto, y0=val_max_assoluto,
+                                                x1=df_s.index[-1], y1=val_proiettato_finale,
+                                                line=dict(color="#ffffff", width=2.5, dash="solid"),
+                                                row=r_idx, col=1
+                                            )
                                     else:
-                                        # Fallback se non ci sono picchi intermedi: uniamo il massimo assoluto con l'ultima candela disponibile
-                                        idx_secondo_picco = df_successivo.index[-1]
-                                        val_secondo_picco = float(df_successivo["High"].iloc[-1])
-                                    
-                                    # 3. Tracciamo la Trendline reale che unisce i due punti e si estende sul grafico
-                                    fig.add_shape(
-                                        type="line",
-                                        x0=idx_max_assoluto, y0=val_max_assoluto,
-                                        x1=df_s.index[-1], y1=val_secondo_picco, # Estesa fino all'estremità destra
-                                        line=dict(color="#ffffff", width=2.5, dash="solid"),
-                                        row=r_idx, col=1
-                                    )
+                                        # Fallback geometrico pulito: colleghiamo il massimo assoluto al massimo dell'ultima settimana di dati
+                                        df_coda = df_successivo.tail(7)
+                                        idx_coda_max = df_coda["High"].idxmax()
+                                        val_coda_max = float(df_coda["High"].max())
+                                        
+                                        if idx_coda_max != idx_max_assoluto:
+                                            fig.add_shape(
+                                                type="line",
+                                                x0=idx_max_assoluto, y0=val_max_assoluto,
+                                                x1=idx_coda_max, y1=val_coda_max,
+                                                line=dict(color="#ffffff", width=2, dash="dash"),
+                                                row=r_idx, col=1
+                                            )
 
                             # Badge informativo ancorato all'ultima candela con freccia direzionale
                             txt_label_grafico = f"📊 ENTRY {dir_n} {round(p_att, 2)}<br>🔸 SL: {round(sl, 2)}<br>🔹 TP: {round(tp, 2)}"
