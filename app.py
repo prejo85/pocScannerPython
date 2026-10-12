@@ -407,340 +407,191 @@ with tab1:
                         st.warning(f"Dati storici insufficienti per {ticker}.")
 
 # ==============================================================================
-# --- TAB 2: BACKTESTING CON GRAFICO SEGNALI (PARTE 1 - LOGICA E CICLO) --------
+# --- TAB 2: BACKTESTING - STRATEGIA ISTITUZIONALE PRICE ACTION & VP (PARTE 1) --
 # ==============================================================================
 with tab2:
-    st.subheader(
-        "⚙️ Motore di Simulazione Storica (Volume Profile & Rounding Bottom)"
-    )
-    st.markdown(
-        "Questo modulo esegue il backtest della strategia individuata sul grafico giornaliero: "
-        "ingresso Long alla conferma dell'inversione ad arco (crossover EMA 9/21) dopo un test del supporto volumetrico (HVN)."
-    )
+    st.subheader("📐 Simulazione Avanzata Volume Profile & Breakout ad Arco")
+    st.markdown("""
+    **Logica Istituzionale del Grafico:**
+    1. Identifica il forte supporto volumetrico (**HVN Line**) tramite il Volume Profile.
+    2. Attende la formazione dell'arco di accumulazione e il successivo **Breakout con Candela Piena** (basso rapporto Spike/Corpo) sopra la resistenza dell'arco.
+    3. Gestione ad uscite parziali: **TP1 (50%)** sulla prima inefficienza volumetrica, spostamento dello Stop a **BreakEven**, e gestione del resto in **Trailing/Run** sui massimi.
+    """)
 
     b_col1, b_col2, b_col3 = st.columns(3)
     with b_col1:
-        bt_ticker = st.text_input(
-            "Inserisci un singolo Ticker da testare:",
-            value="BTC-USD",
-            key="bt_tick_g",
-        )
-        capitale_iniziale = st.number_input(
-            "Capitale iniziale ($):",
-            min_value=100,
-            value=10000,
-            step=500,
-            key="bt_cap_g",
-        )
+        bt_ticker = st.text_input("Ticker Asset da testare:", value="BTC-USD", key="bt_tick_real")
+        capitale_iniziale = st.number_input("Capitale iniziale ($):", min_value=100, value=10000, step=500, key="bt_cap_real")
     with b_col2:
-        bt_periodo = st.selectbox(
-            "Orizzonte temporale dei dati:",
-            ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"],
-            index=1,
-            key="bt_per_g",
-        )
-        mappa_periodi = {
-            "1 Anno": "1y",
-            "3 Anni": "3y",
-            "5 Anni": "5y",
-            "Storico Massimo": "max",
-        }
-        rischio_trade = st.slider(
-            "Rischio percentuale per operazione (%):",
-            min_value=0.5,
-            max_value=5.0,
-            value=2.0,
-            step=0.5,
-            key="bt_rischio_g",
-        )
+        bt_periodo = st.selectbox("Orizzonte dati storici:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], index=1, key="bt_per_real")
+        mappa_periodi = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
+        rischio_trade = st.slider("Rischio capitale per trade (%):", min_value=0.5, max_value=5.0, value=2.0, step=0.5, key="bt_rischio_real")
     with b_col3:
-        comun_fee = st.number_input(
-            "Commissioni per singolo eseguito ($):",
-            min_value=0.0,
-            value=1.0,
-            step=0.5,
-            key="bt_fee_g",
-        )
+        comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.0, step=0.5, key="bt_fee_real")
 
-    if st.button("🚀 Esegui Backtest Strategia", type="primary", key="bt_btn_g"):
-        st.info(f"Elaborazione dati storici per {bt_ticker}...")
+    if st.button("🚀 Avvia Backtest Istituzionale", type="primary", key="bt_btn_real"):
+        st.info(f"Analisi dei flussi volumetrici storici per {bt_ticker}...")
 
-        df_bt = yf.download(
-            tickers=bt_ticker,
-            period=mappa_periodi[bt_periodo],
-            interval="1d",
-            auto_adjust=False,
-            multi_level_index=False,
-            progress=False,
-        )
+        df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
 
         if df_bt is not None and len(df_bt) > 60:
             df_bt.columns = [str(c).strip() for c in df_bt.columns]
-
-            # Calcolo indicatori tecnici di trend e inversione ad arco
-            df_bt["EMA_9"] = (
-                df_bt["Close"].astype(float).ewm(span=9, adjust=False).mean()
-            )
-            df_bt["EMA_21"] = (
-                df_bt["Close"].astype(float).ewm(span=21, adjust=False).mean()
-            )
-
-            # Inizializzazione variabili del motore e liste di tracciamento grafico
+            
+            # Parametri del portafoglio logico
             capitale = capitale_iniziale
             in_posizione = False
-            prezzo_ingresso, livello_sl, livello_tp, size_contratti = 0, 0, 0, 0
-
+            prezzo_ingresso = 0
+            livello_sl = 0
+            livello_tp1 = 0  # Inefficienza volumetrica superiore (VAH)
+            metà_size = 0
+            tp1_preso = False
+            
             equity_curve = [capitale_iniziale]
-            date_curve = [df_bt.index[50]]
+            date_curve = [df_bt.index]
             trade_history = []
 
-            # Array per registrare i punti esatti dei segnali da inserire nel plot
+            # Array per la mappatura dei marker sui grafici Plotly
             entrate_x, entrate_y = [], []
+            tp1_x, tp1_y = [], []
             uscite_x, uscite_y, esiti_colori = [], [], []
-
-            # Ciclo di simulazione storica progressiva barra per barra
-            for i in range(50, len(df_bt)):
+            # --- PARTE 2: MOTORE DI STRATEGIA CANDELA PIENA & PARZIALIZZAZIONE ----
+            for i in range(40, len(df_bt)):
                 df_storico_finora = df_bt.iloc[:i]
                 riga_attuale = df_bt.iloc[i]
-                prezzo_corrente = float(riga_attuale["Close"])
+                
+                # Definizione dei prezzi della candela attuale per l'analisi della Price Action
+                p_apertura = float(riga_attuale["Open"])
+                p_massimo = float(riga_attuale["High"])
+                p_minimo = float(riga_attuale["Low"])
+                p_chiusura = float(riga_attuale["Close"])
                 data_corrente = df_bt.index[i]
 
+                # 1. RICERCA CONFIGURAZIONE SEGNALE (STRUTTURA VOLUME PROFILE + ARCO)
                 if not in_posizione:
+                    # Calcolo matematico del Volume Profile accumulato per estrarre la reazione sui nodi volumetrici
                     p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora, div=50)
-                    if p_poc is None:
-                        continue
+                    if p_poc is None: continue
 
-                    hvn_supporto = p_poc
-                    df_finestra = df_storico_finora.tail(20)
+                    hvn_supporto = p_poc  # La linea nera di forte concentrazione volumetrica del grafico
+                    df_arco = df_storico_finora.tail(25)
+                    
+                    # Il prezzo deve aver reagito e consolidato formando una base (Arco) intorno all'HVN
+                    reazione_zona_volume = ((df_arco["Close"].astype(float) - hvn_supporto).abs() / hvn_supporto < 0.04).any()
+                    
+                    # Identificazione del massimo della struttura dell'arco (la resistenza superiore)
+                    resistenza_arco = float(df_arco["High"].max())
 
-                    # Verifica test del supporto istituzionale (HVN)
-                    testato_supporto = (
-                        (df_finestra["Close"].astype(float) - hvn_supporto).abs()
-                        / hvn_supporto
-                        < 0.05
-                    ).any()
+                    # CONDIZIONE DI BREAKOUT CON CANDELA PIENA (No Spike Grandi)
+                    corpo_candela = abs(p_chiusura - p_apertura)
+                    intero_range = p_massimo - p_minimo
+                    
+                    if intero_range > 0:
+                        # Uno spike superiore troppo pronunciato indica inefficacia o reiezione (fakeout)
+                        spike_superiore = p_massimo - max(p_apertura, p_chiusura)
+                        rapporto_corpo_pieno = corpo_candela / intero_range
+                        nessuno_spike_anomalo = spike_superiore / intero_range < 0.25
+                    else:
+                        rapporto_corpo_pieno, nessuno_spike_anomalo = 0, False
 
-                    # Trigger Crossover per simulare l'uscita dalla base dell'arco
-                    ema9_prec = float(df_bt["EMA_9"].iloc[i - 1])
-                    ema21_prec = float(df_bt["EMA_21"].iloc[i - 1])
-                    ema9_corr = float(riga_attuale["EMA_9"])
-                    ema21_corr = float(riga_attuale["EMA_21"])
-                    crossover_rialzista = (ema9_prec <= ema21_prec) and (
-                        ema9_corr > ema21_corr
-                    )
+                    # Trigger: Rottura rialzista della resistenza con corpo solido e pieno
+                    breakout_valido = (p_chiusura > resistenza_arco) and (rapporto_corpo_pieno > 0.60) and nessuno_spike_anomalo
 
-                    if testato_supporto and crossover_rialzista:
+                    if reazione_zona_volume and breakout_valido:
                         in_posizione = True
-                        prezzo_ingresso = prezzo_corrente
-                        livello_sl = float(df_finestra["Low"].min())
-                        livello_tp = max(prezzo_ingresso * 1.20, p_vh)
-
-                        distanza_sl = abs(prezzo_ingresso - livello_sl)
-                        if distanza_sl > 0:
-                            rischio_monetario = capitale * (rischio_trade / 100)
-                            size_contratti = rischio_monetario / distanza_sl
-                            # Registriamo i dati per il plot grafico
+                        prezzo_ingresso = p_chiusura
+                        tp1_preso = False
+                        
+                        # Stop Loss posizionato protettivamente sotto il minimo dell'arco di accumulazione
+                        livello_sl = float(df_arco["Low"].min())
+                        
+                        # Il Primo Target (TP1) è impostato sulla chiusura delle inefficienze superiori (VAH del profilo)
+                        livello_tp1 = p_vh if p_vh > prezzo_ingresso else prezzo_ingresso * 1.12
+                        
+                        distanza_protettiva = abs(prezzo_ingresso - livello_sl)
+                        if distanza_protettiva > 0:
+                            rischio_totale = capitale * (rischio_trade / 100)
+                            size_totale = rischio_totale / distanza_protettiva
+                            metà_size = size_totale / 2
+                            
                             entrate_x.append(data_corrente)
                             entrate_y.append(prezzo_ingresso)
                         else:
                             in_posizione = False
 
+                # 2. GESTIONE OPERATIVA DELLA POSIZIONE (TP PARZIALE -> BREAKEVEN -> RUNNER)
                 else:
-                    high_g = float(riga_attuale["High"])
-                    low_g = float(riga_attuale["Low"])
-                    uscito = False
-                    p_chiusura, esito_trade, col_marker = 0, "", ""
+                    if not tp1_preso:
+                        # Fase A: Verifica se la candela corrente intercetta l'inefficienza del Take Profit 1
+                        if p_massimo >= livello_tp1:
+                            tp1_preso = True
+                            pnl_parziale = (livello_tp1 - prezzo_ingresso) * metà_size - comun_fee
+                            capitale += pnl_parziale
+                            
+                            # REGOLA CHIAVE: Spostamento dello Stop Loss a BreakEven dopo il primo target preso
+                            livello_sl = prezzo_ingresso 
+                            
+                            tp1_x.append(data_corrente)
+                            tp1_y.append(livello_tp1)
+                        
+                        # Se tocca lo Stop Loss iniziale prima di aver preso il TP1, chiude l'intera size in perdita
+                        elif p_minimo <= livello_sl:
+                            pnl_totale = (livello_sl - prezzo_ingresso) * (metà_size * 2) - (comun_fee * 2)
+                            capitale += pnl_totale
+                            trade_history.append({"Data": data_corrente.strftime("%d/%m/%Y"), "Esito": "SL Totale 🔴", "PnL ($)": round(pnl_totale, 2), "Capitale": round(capitale, 2)})
+                            uscite_x.append(data_corrente)
+                            uscite_y.append(livello_sl)
+                            esiti_colori.append("#ef4444")
+                            equity_curve.append(capitale)
+                            date_curve.append(data_corrente)
+                            in_posizione = False
+                    else:
+                        # Fase B: Gestione del Runner (restante 50%). Chiude solo a BreakEven o sul Target Finale dei massimi
+                        massimi_storici_target = prezzo_ingresso * 1.40  # Target macro di lungo termine
+                        
+                        if p_minimo <= livello_sl:  # Esce al prezzo di ingresso (BreakEven), salvaguardando il profitto del TP1
+                            pnl_runner = 0 - comun_fee  # Nessun guadagno o perdita monetaria sulla seconda metà dell'ordine
+                            capitale += pnl_runner
+                            trade_history.append({"Data": data_corrente.strftime("%d/%m/%Y"), "Esito": "Runner a BreakEven ⚪", "PnL ($)": round(pnl_parziale + pnl_runner, 2), "Capitale": round(capitale, 2)})
+                            uscite_x.append(data_corrente)
+                            uscite_y.append(livello_sl)
+                            esiti_colori.append("#64748b")
+                            equity_curve.append(capitale)
+                            date_curve.append(data_corrente)
+                            in_posizione = False
+                            
+                        elif p_massimo >= massimi_storici_target:
+                            pnl_runner = (massimi_storici_target - prezzo_ingresso) * metà_size - comun_fee
+                            capitale += pnl_runner
+                            trade_history.append({"Data": data_corrente.strftime("%d/%m/%Y"), "Esito": "Target Esteso Preso 🟢", "PnL ($)": round(pnl_parziale + pnl_runner, 2), "Capitale": round(capitale, 2)})
+                            uscite_x.append(data_corrente)
+                            uscite_y.append(massimi_storici_target)
+                            esiti_colori.append("#22c55e")
+                            equity_curve.append(capitale)
+                            date_curve.append(data_corrente)
+                            in_posizione = False
 
-                    if low_g <= livello_sl:
-                        uscito, p_chiusura, esito_trade, col_marker = (
-                            True,
-                            livello_sl,
-                            "SL 🔴",
-                            "#ef4444",
-                        )
-                    elif high_g >= livello_tp:
-                        uscito, p_chiusura, esito_trade, col_marker = (
-                            True,
-                            livello_tp,
-                            "TP 🟢",
-                            "#22c55e",
-                        )
-
-                    if uscito:
-                        pnl_netto = (
-                            (p_chiusura - prezzo_ingresso) * size_contratti
-                        ) - (comun_fee * 2)
-                        capitale += pnl_netto
-
-                        trade_history.append(
-                            {
-                                "Data": data_corrente.strftime("%d/%m/%Y"),
-                                "Asset": bt_ticker,
-                                "Tipo": "LONG",
-                                "Esito": esito_trade,
-                                "Ingresso ($)": round(prezzo_ingresso, 2),
-                                "Chiusura ($)": round(p_chiusura, 2),
-                                "PnL Netto ($)": round(pnl_netto, 2),
-                                "Capitale Residuo ($)": round(capitale, 2),
-                            }
-                        )
-                        uscite_x.append(data_corrente)
-                        uscite_y.append(p_chiusura)
-                        esiti_colori.append(col_marker)
-
-                        equity_curve.append(capitale)
-                        date_curve.append(data_corrente)
-                        in_posizione = False
-            # --- PARTE 2: METRICHE FINALI E GENERAZIONE GRAFICO INTEGRATO ---------
-            st.subheader("📊 Resoconto Performance della Strategia")
+            # 3. INTERFACCIA E RENDERING DEL GRAFICO CON SEGNALI REALI
+            st.subheader("📊 Statistiche del Portafoglio Istituzionale")
             if trade_history:
                 df_trades = pd.DataFrame(trade_history)
-                operazioni_totali = len(df_trades)
-                operazioni_vincenti = len(df_trades[df_trades["PnL Netto ($)"] > 0])
-                win_rate = round((operazioni_vincenti / operazioni_totali) * 100, 2)
-                ritorno_totale = round(
-                    ((capitale - capitale_iniziale) / capitale_iniziale) * 100,
-                    2,
-                )
-
-                m_col1, m_col2, m_col3 = st.columns(3)
-                with m_col1:
-                    st.metric("Ritorno Totale Percentuale", f"{ritorno_totale} %")
-                with m_col2:
-                    st.metric("Percentuale di Win Rate", f"{win_rate} %")
-                with m_col3:
-                    st.metric("Operazioni Totali Chiuse", f"{operazioni_totali}")
-
-                st.markdown("### 🗂️ Registro Analitico Eseguiti")
                 st.dataframe(df_trades, use_container_width=True)
 
-                # COSTRUZIONE DEL GRAFICO MULTI-PANNELLO AVANZATO CON PLOT DI SEGNALI
-                st.markdown("### 📈 Visualizzazione Grafica Asset e Punti di Entry")
-                fig_backtest = make_subplots(
-                    rows=2,
-                    cols=1,
-                    shared_xaxes=True,
-                    vertical_spacing=0.08,
-                    row_heights=[0.7, 0.3],
-                    subplot_titles=(
-                        f"Andamento Storico Candele e Segnali Operativi ({bt_ticker})",
-                        "Evoluzione del Capitale del Portafoglio (Equity Curve, $)",
-                    ),
-                )
-
-                # Pannello 1: Candlestick Storico Completo dell'Asset
-                fig_backtest.add_trace(
-                    grp.Candlestick(
-                        x=df_bt.index,
-                        open=df_bt["Open"],
-                        high=df_bt["High"],
-                        low=df_bt["Low"],
-                        close=df_bt["Close"],
-                        name="Prezzo",
-                    ),
-                    row=1,
-                    col=1,
-                )
-
-                # Overlay Medie Mobili (EMA 9 ed EMA 21) che definiscono la curvatura ad arco
-                fig_backtest.add_trace(
-                    grp.Scatter(
-                        x=df_bt.index,
-                        y=df_bt["EMA_9"],
-                        mode="lines",
-                        line=dict(color="#38bdf8", width=1.2),
-                        name="EMA 9 (Arco Veloce)",
-                    ),
-                    row=1,
-                    col=1,
-                )
-                fig_backtest.add_trace(
-                    grp.Scatter(
-                        x=df_bt.index,
-                        y=df_bt["EMA_21"],
-                        mode="lines",
-                        line=dict(color="#a855f7", width=1.2),
-                        name="EMA 21 (Arco Lenta)",
-                    ),
-                    row=1,
-                    col=1,
-                )
-
-                # Plot Marker dei Segnali d'Ingresso (Entry Point -> Triangolo Verde Verso l'Alto)
+                fig_real = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.7, 0.3])
+                fig_real.add_trace(grp.Candlestick(x=df_bt.index, open=df_bt["Open"], high=df_bt["High"], low=df_bt["Low"], close=df_bt["Close"], name="Prezzo"), row=1, col=1)
+                
+                # Tracciamento visivo dei punti operativi sul grafico delle candele
                 if entrate_x:
-                    fig_backtest.add_trace(
-                        grp.Scatter(
-                            x=entrate_x,
-                            y=entrate_y,
-                            mode="markers",
-                            marker=dict(
-                                symbol="triangle-up",
-                                size=13,
-                                color="#22c55e",
-                                line=dict(color="white", width=1.5),
-                            ),
-                            name="ENTRY POINT (Long)",
-                        ),
-                        row=1,
-                        col=1,
-                    )
-
-                # Plot Marker dei Segnali d'Uscita (Target Raggiunti -> Cerchi Colorati)
+                    fig_real.add_trace(grp.Scatter(x=entrate_x, y=entrate_y, mode="markers", marker=dict(symbol="triangle-up", size=14, color="#a855f7"), name="BREAKOUT CANDELA PIENA"), row=1, col=1)
+                if tp1_x:
+                    fig_real.add_trace(grp.Scatter(x=tp1_x, y=tp1_y, mode="markers", marker=dict(symbol="diamond", size=10, color="#06b6d4"), name="TP1 PARZIALE (Inefficienza Chiusa)"), row=1, col=1)
                 if uscite_x:
-                    fig_backtest.add_trace(
-                        grp.Scatter(
-                            x=uscite_x,
-                            y=uscite_y,
-                            mode="markers",
-                            marker=dict(
-                                symbol="circle",
-                                size=10,
-                                color=esiti_colori,
-                                line=dict(color="white", width=1),
-                            ),
-                            name="CHIUSURA POSIZIONE",
-                        ),
-                        row=1,
-                        col=1,
-                    )
-
-                # Pannello 2: Disegno Curva dell'Equity di Portafoglio
-                fig_backtest.add_trace(
-                    grp.Scatter(
-                        x=date_curve,
-                        y=equity_curve,
-                        mode="lines+markers",
-                        name="Capitale ($)",
-                        line=dict(color="#38bdf8", width=2.5),
-                    ),
-                    row=2,
-                    col=1,
-                )
-
-                # Impostazioni Layout Grafico Globale
-                fig_backtest.update_layout(
-                    template="plotly_dark",
-                    height=850,
-                    xaxis_rangeslider_visible=False,
-                    xaxis2_rangeslider_visible=False,
-                    showlegend=True,
-                    legend=dict(
-                        orientation="h",
-                        yanchor="bottom",
-                        y=1.02,
-                        xanchor="right",
-                        x=1,
-                    ),
-                )
-                st.plotly_chart(fig_backtest, use_container_width=True)
+                    fig_real.add_trace(grp.Scatter(x=uscite_x, y=uscite_y, mode="markers", marker=dict(symbol="circle", size=10, color=esiti_colori), name="CHIUSURA POSIZIONE / BE"), row=1, col=1)
+                
+                fig_real.add_trace(grp.Scatter(x=date_curve, y=equity_curve, mode="lines+markers", line=dict(color="#38bdf8", width=2.5), name="Equity ($)"), row=2, col=1)
+                fig_real.update_layout(template="plotly_dark", height=800, xaxis_rangeslider_visible=False, showlegend=True)
+                st.plotly_chart(fig_real, use_container_width=True)
             else:
-                st.warning(
-                    "⚠️ Nessun Entry Point rilevato per i filtri impostati sull'orizzonte temporale scelto."
-                )
-        else:
-            st.error(
-                "❌ Dati storici estratti da Yahoo Finance insufficienti per elaborare la strategia."
-            )
+                st.warning("⚠️ Nessun breakout a candela piena rilevato sui nodi volumetrici principali in questo intervallo di tempo.")
 
 
 
