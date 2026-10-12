@@ -538,7 +538,7 @@ with tab2:
                         distanza_sl = abs(prezzo_ingresso - livello_sl)
                         if distanza_sl > 0:
                             rischio_monetario = capitale * (rischio_trade / 100)
-                            size_contratti = rischio_monetario / distancia_sl
+                            size_contratti = rischio_monetario / distanza_sl
                             # Registriamo i dati per il plot grafico
                             entrate_x.append(data_corrente)
                             entrate_y.append(prezzo_ingresso)
