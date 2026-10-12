@@ -670,30 +670,7 @@ with tab4:
             st.plotly_chart(fig_returns, use_container_width=True, key="garch_returns_chart")
             
             st.markdown("---")
-                    
-                    with g_plot1:
-                        st.markdown("##### Rendimenti Logaritmici (%)")
-                        fig_g1, ax_g1 = plt.subplots(figsize=(10, 4.5))
-                        fig_g1.patch.set_facecolor('#0d0f18')
-                        ax_g1.set_facecolor('#0f172a')
-                        ax_g1.plot(df_g.index, df_g['Returns'], color='#818cf8', alpha=0.8, linewidth=1)
-                        ax_g1.title.set_color('#f8fafc')
-                        ax_g1.tick_params(colors='#64748b', labelsize=9)
-                        ax_g1.grid(True, color='#334155', linestyle='--', alpha=0.5)
-                        st.pyplot(fig_g1)
-                        
-                    with g_plot2:
-                        st.markdown(f"##### Volatilità Condizionale Annualizzata GARCH ({param_p},{param_q})")
-                        fig_g2, ax_g2 = plt.subplots(figsize=(10, 4.5))
-                        fig_g2.patch.set_facecolor('#0d0f18')
-                        ax_g2.set_facecolor('#0f172a')
-                        ax_g2.plot(df_g.index, cond_vol_annualizzata, color='#f43f5e', linewidth=1.5)
-                        ax_g2.title.set_color('#f8fafc')
-                        ax_g2.tick_params(colors='#64748b', labelsize=9)
-                        ax_g2.grid(True, color='#334155', linestyle='--', alpha=0.5)
-                        st.pyplot(fig_g2)
-                        
-                    st.markdown("---")
+
                     res_col1, res_col2 = st.columns(2)
                     
                     with res_col1:
