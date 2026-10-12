@@ -573,7 +573,7 @@ with tab2:
                         distanza_sl = abs(prezzo_ingresso - livello_sl)
                         if distanza_sl > 0:
                             rischio_monetario = capitale * (rischio_trade / 100)
-                            size_totale = risco_monetario / distanza_sl
+                            size_totale = rischio_monetario / distanza_sl
                             size_tp1 = size_totale * 0.33
                             size_runner = size_totale - size_tp1
 
