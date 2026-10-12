@@ -407,7 +407,7 @@ with tab1:
                         st.warning(f"Dati storici insufficienti per {ticker}.")
 
 # ==============================================================================
-# --- TAB 2: BACKTESTING (PARTE 1 - CONFIGURAZIONE E INIZIALIZZAZIONE) ---------
+# --- TAB 2: BACKTESTING CON GRAFICO SEGNALI (PARTE 1 - LOGICA E CICLO) --------
 # ==============================================================================
 with tab2:
     st.subheader(
@@ -421,16 +421,23 @@ with tab2:
     b_col1, b_col2, b_col3 = st.columns(3)
     with b_col1:
         bt_ticker = st.text_input(
-            "Inserisci un singolo Ticker da testare:", value="BTC-USD"
+            "Inserisci un singolo Ticker da testare:",
+            value="BTC-USD",
+            key="bt_tick_g",
         )
         capitale_iniziale = st.number_input(
-            "Capitale iniziale ($):", min_value=100, value=10000, step=500
+            "Capitale iniziale ($):",
+            min_value=100,
+            value=10000,
+            step=500,
+            key="bt_cap_g",
         )
     with b_col2:
         bt_periodo = st.selectbox(
             "Orizzonte temporale dei dati:",
             ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"],
             index=1,
+            key="bt_per_g",
         )
         mappa_periodi = {
             "1 Anno": "1y",
@@ -444,6 +451,7 @@ with tab2:
             max_value=5.0,
             value=2.0,
             step=0.5,
+            key="bt_rischio_g",
         )
     with b_col3:
         comun_fee = st.number_input(
@@ -451,12 +459,12 @@ with tab2:
             min_value=0.0,
             value=1.0,
             step=0.5,
+            key="bt_fee_g",
         )
 
-    if st.button("🚀 Esegui Backtest Strategia", type="primary"):
+    if st.button("🚀 Esegui Backtest Strategia", type="primary", key="bt_btn_g"):
         st.info(f"Elaborazione dati storici per {bt_ticker}...")
 
-        # Download dello storico giornaliero (1D come da grafico)
         df_bt = yf.download(
             tickers=bt_ticker,
             period=mappa_periodi[bt_periodo],
@@ -469,7 +477,7 @@ with tab2:
         if df_bt is not None and len(df_bt) > 60:
             df_bt.columns = [str(c).strip() for c in df_bt.columns]
 
-            # Calcolo degli indicatori per la conferma dell'arco di inversione
+            # Calcolo indicatori tecnici di trend e inversione ad arco
             df_bt["EMA_9"] = (
                 df_bt["Close"].astype(float).ewm(span=9, adjust=False).mean()
             )
@@ -477,22 +485,26 @@ with tab2:
                 df_bt["Close"].astype(float).ewm(span=21, adjust=False).mean()
             )
 
-            # Inizializzazione variabili del motore di portafoglio
+            # Inizializzazione variabili del motore e liste di tracciamento grafico
             capitale = capitale_iniziale
             in_posizione = False
             prezzo_ingresso, livello_sl, livello_tp, size_contratti = 0, 0, 0, 0
 
             equity_curve = [capitale_iniziale]
-            date_curve = [df_bt.index]
+            date_curve = [df_bt.index[50]]
             trade_history = []
-      
+
+            # Array per registrare i punti esatti dei segnali da inserire nel plot
+            entrate_x, entrate_y = [], []
+            uscite_x, uscite_y, esiti_colori = [], [], []
+
+            # Ciclo di simulazione storica progressiva barra per barra
             for i in range(50, len(df_bt)):
                 df_storico_finora = df_bt.iloc[:i]
                 riga_attuale = df_bt.iloc[i]
                 prezzo_corrente = float(riga_attuale["Close"])
                 data_corrente = df_bt.index[i]
 
-                # 1. LOGICA DI INGRESSO (ENTRY POINT)
                 if not in_posizione:
                     p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora, div=50)
                     if p_poc is None:
@@ -501,14 +513,14 @@ with tab2:
                     hvn_supporto = p_poc
                     df_finestra = df_storico_finora.tail(20)
 
-                    # Controllo se il prezzo ha testato l'HVN negli ultimi 20 giorni (tolleranza 5%)
+                    # Verifica test del supporto istituzionale (HVN)
                     testato_supporto = (
                         (df_finestra["Close"].astype(float) - hvn_supporto).abs()
                         / hvn_supporto
                         < 0.05
                     ).any()
 
-                    # Trigger di inversione ad arco: Crossover rialzista EMA 9 > EMA 21
+                    # Trigger Crossover per simulare l'uscita dalla base dell'arco
                     ema9_prec = float(df_bt["EMA_9"].iloc[i - 1])
                     ema21_prec = float(df_bt["EMA_21"].iloc[i - 1])
                     ema9_corr = float(riga_attuale["EMA_9"])
@@ -524,23 +536,35 @@ with tab2:
                         livello_tp = max(prezzo_ingresso * 1.20, p_vh)
 
                         distanza_sl = abs(prezzo_ingresso - livello_sl)
-                        if Blackbox := (distanza_sl > 0):
+                        if distanza_sl > 0:
                             rischio_monetario = capitale * (rischio_trade / 100)
-                            size_contratti = rischio_monetario / distanza_sl
+                            size_contratti = rischio_monetario / distancia_sl
+                            # Registriamo i dati per il plot grafico
+                            entrate_x.append(data_corrente)
+                            entrate_y.append(prezzo_ingresso)
                         else:
                             in_posizione = False
 
-                # 2. GESTIONE DELLA POSIZIONE (MONITORAGGIO SL / TP)
                 else:
                     high_g = float(riga_attuale["High"])
                     low_g = float(riga_attuale["Low"])
                     uscito = False
-                    p_chiusura, esito_trade = 0, ""
+                    p_chiusura, esito_trade, col_marker = 0, "", ""
 
                     if low_g <= livello_sl:
-                        uscito, p_chiusura, esito_trade = True, livello_sl, "SL 🔴"
+                        uscito, p_chiusura, esito_trade, col_marker = (
+                            True,
+                            livello_sl,
+                            "SL 🔴",
+                            "#ef4444",
+                        )
                     elif high_g >= livello_tp:
-                        uscito, p_chiusura, esito_trade = True, livello_tp, "TP 🟢"
+                        uscito, p_chiusura, esito_trade, col_marker = (
+                            True,
+                            livello_tp,
+                            "TP 🟢",
+                            "#22c55e",
+                        )
 
                     if uscito:
                         pnl_netto = (
@@ -560,11 +584,14 @@ with tab2:
                                 "Capitale Residuo ($)": round(capitale, 2),
                             }
                         )
+                        uscite_x.append(data_corrente)
+                        uscite_y.append(p_chiusura)
+                        esiti_colori.append(col_marker)
+
                         equity_curve.append(capitale)
                         date_curve.append(data_corrente)
                         in_posizione = False
-
-            # 3. INTERFACCIA GRAFICA DI RESOCONTO
+            # --- PARTE 2: METRICHE FINALI E GENERAZIONE GRAFICO INTEGRATO ---------
             st.subheader("📊 Resoconto Performance della Strategia")
             if trade_history:
                 df_trades = pd.DataFrame(trade_history)
@@ -587,24 +614,125 @@ with tab2:
                 st.markdown("### 🗂️ Registro Analitico Eseguiti")
                 st.dataframe(df_trades, use_container_width=True)
 
-                fig_eq = grp.Figure()
-                fig_eq.add_trace(
+                # COSTRUZIONE DEL GRAFICO MULTI-PANNELLO AVANZATO CON PLOT DI SEGNALI
+                st.markdown("### 📈 Visualizzazione Grafica Asset e Punti di Entry")
+                fig_backtest = make_subplots(
+                    rows=2,
+                    cols=1,
+                    shared_xaxes=True,
+                    vertical_spacing=0.08,
+                    row_heights=[0.7, 0.3],
+                    subplot_titles=(
+                        f"Andamento Storico Candele e Segnali Operativi ({bt_ticker})",
+                        "Evoluzione del Capitale del Portafoglio (Equity Curve, $)",
+                    ),
+                )
+
+                # Pannello 1: Candlestick Storico Completo dell'Asset
+                fig_backtest.add_trace(
+                    grp.Candlestick(
+                        x=df_bt.index,
+                        open=df_bt["Open"],
+                        high=df_bt["High"],
+                        low=df_bt["Low"],
+                        close=df_bt["Close"],
+                        name="Prezzo",
+                    ),
+                    row=1,
+                    col=1,
+                )
+
+                # Overlay Medie Mobili (EMA 9 ed EMA 21) che definiscono la curvatura ad arco
+                fig_backtest.add_trace(
+                    grp.Scatter(
+                        x=df_bt.index,
+                        y=df_bt["EMA_9"],
+                        mode="lines",
+                        line=dict(color="#38bdf8", width=1.2),
+                        name="EMA 9 (Arco Veloce)",
+                    ),
+                    row=1,
+                    col=1,
+                )
+                fig_backtest.add_trace(
+                    grp.Scatter(
+                        x=df_bt.index,
+                        y=df_bt["EMA_21"],
+                        mode="lines",
+                        line=dict(color="#a855f7", width=1.2),
+                        name="EMA 21 (Arco Lenta)",
+                    ),
+                    row=1,
+                    col=1,
+                )
+
+                # Plot Marker dei Segnali d'Ingresso (Entry Point -> Triangolo Verde Verso l'Alto)
+                if entrate_x:
+                    fig_backtest.add_trace(
+                        grp.Scatter(
+                            x=entrate_x,
+                            y=entrate_y,
+                            mode="markers",
+                            marker=dict(
+                                symbol="triangle-up",
+                                size=13,
+                                color="#22c55e",
+                                line=dict(color="white", width=1.5),
+                            ),
+                            name="ENTRY POINT (Long)",
+                        ),
+                        row=1,
+                        col=1,
+                    )
+
+                # Plot Marker dei Segnali d'Uscita (Target Raggiunti -> Cerchi Colorati)
+                if uscite_x:
+                    fig_backtest.add_trace(
+                        grp.Scatter(
+                            x=uscite_x,
+                            y=uscite_y,
+                            mode="markers",
+                            marker=dict(
+                                symbol="circle",
+                                size=10,
+                                color=esiti_colori,
+                                line=dict(color="white", width=1),
+                            ),
+                            name="CHIUSURA POSIZIONE",
+                        ),
+                        row=1,
+                        col=1,
+                    )
+
+                # Pannello 2: Disegno Curva dell'Equity di Portafoglio
+                fig_backtest.add_trace(
                     grp.Scatter(
                         x=date_curve,
                         y=equity_curve,
                         mode="lines+markers",
-                        name="Portafoglio ($)",
+                        name="Capitale ($)",
                         line=dict(color="#38bdf8", width=2.5),
-                    )
+                    ),
+                    row=2,
+                    col=1,
                 )
-                fig_eq.update_layout(
-                    title=f"Andamento della Curva di Equity per {bt_ticker} ($)",
+
+                # Impostazioni Layout Grafico Globale
+                fig_backtest.update_layout(
                     template="plotly_dark",
-                    height=450,
-                    xaxis_title="Data Esecuzione",
-                    yaxis_title="Bilancio Capitale",
+                    height=850,
+                    xaxis_rangeslider_visible=False,
+                    xaxis2_rangeslider_visible=False,
+                    showlegend=True,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1,
+                    ),
                 )
-                st.plotly_chart(fig_eq, use_container_width=True)
+                st.plotly_chart(fig_backtest, use_container_width=True)
             else:
                 st.warning(
                     "⚠️ Nessun Entry Point rilevato per i filtri impostati sull'orizzonte temporale scelto."
