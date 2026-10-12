@@ -620,7 +620,7 @@ with tab4:
                         st.pyplot(fig_g2)
                         
                     st.markdown("---")
-                    res_col1, res_col2 = st.columns()
+                    res_col1, res_col2 = st.columns(2)
                     
                     with res_col1:
                         st.markdown("##### 📁 Parametri Stimati")
