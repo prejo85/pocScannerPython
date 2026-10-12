@@ -565,7 +565,8 @@ with tab4:
     
     g_col1, g_col2, g_col3 = st.columns(3)
     with g_col1:
-        garch_ticker = st.text_input("Inserisci Ticker da analizzare (es. AAPL, BTC-USD, ^GSPC):", value="^GSPC", key="garch_tk_input")
+        garch_ticker = st.text_input("Inserisci Ticker da analizzare (es. AAPL, BTC-USD, ^GSPC):", value="AAPL", key="garch_tk_input")
+        # Configurato con l'opzione "Storico Massimo"
         garch_periodo = st.selectbox("Orizzonte storico dati:", ["1 Anno", "3 Anni", "5 Anni", "10 Anni", "Storico Massimo"], index=1, key="garch_per_sel")
         mappa_periodi_garch = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "10 Anni": "10y", "Storico Massimo": "max"}
     with g_col2:
@@ -586,91 +587,100 @@ with tab4:
             df_g['Returns'] = 100 * np.log(df_g['Close'].astype(float) / df_g['Close'].astype(float).shift(1))
             df_g = df_g.dropna()
             
-            # ==============================================================================
-            # --- STRUTTURA GRAFICA INTEGRATA A TUTTA LARGHEZZA (PLOTLY) ---
-            # ==============================================================================
-            
-            # --- GRAFICO 1: SOVRAPPOSIZIONE PREZZO AZIONE + VOLATILITÀ GARCH (DUE ASSI Y) ---
-            st.markdown(f"##### 📊 Analisi di Correlazione: Prezzo di Chiusura vs Volatilità Condizionale GARCH")
-            
-            fig_combined = grp.Figure()
-            
-            # Asse Y Sinistro: Prezzo dell'Azione
-            fig_combined.add_trace(grp.Scatter(
-                x=df_g.index, 
-                y=df_g['Close'].astype(float), 
-                mode='lines', 
-                name=f'Prezzo Chiusura ({garch_ticker})', 
-                line=dict(color='#38bdf8', width=2)
-            ))
-            
-            # Asse Y Destro: Volatilità Condizionale Annualizzata GARCH
-            fig_combined.add_trace(grp.Scatter(
-                x=df_g.index, 
-                y=cond_vol_annualizzata, 
-                mode='lines', 
-                name=f'Volatilità Annualizzata {mod_type} (%)', 
-                line=dict(color='#f43f5e', width=1.75),
-                yaxis='y2' # Specifica il legame con il secondo asse Y
-            ))
-            
-            # Configurazione del layout a doppio asse Y con design scuro coordinato
-            fig_combined.update_layout(
-                template="plotly_dark",
-                height=450,
-                margin=dict(l=20, r=20, t=10, b=20),
-                xaxis_rangeslider_visible=False,
-                showlegend=True,
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                xaxis=dict(gridcolor='rgba(51, 65, 85, 0.25)'),
-                yaxis=dict(
-                    title=f"Prezzo {garch_ticker} (USD)",
-                    titlefont=dict(color="#38bdf8"),
-                    tickfont=dict(color="#38bdf8"),
-                    gridcolor='rgba(51, 65, 85, 0.25)'
-                ),
-                yaxis2=dict(
-                    title="Volatilità Condizionale GARCH (%)",
-                    titlefont=dict(color="#f43f5e"),
-                    tickfont=dict(color="#f43f5e"),
-                    anchor="x",
-                    overlaying="y",
-                    side="right",
-                    gridcolor='rgba(0, 0, 0, 0)' # Evita la sovrapposizione delle griglie
-                )
-            )
-            st.plotly_chart(fig_combined, use_container_width=True, key="garch_combined_chart")
-            
-            st.markdown("---")
-            
-            # --- GRAFICO 2: RENDIMENTI LOGARITMICI A TOTALE ESTENSIONE ORIZZONTALE ---
-            st.markdown("##### 📉 Rendimenti Logaritmici Giornalieri (%)")
-            
-            fig_returns = grp.Figure()
-            fig_returns.add_trace(grp.Scatter(
-                x=df_g.index, 
-                y=df_g['Returns'], 
-                mode='lines', 
-                name='Rendimenti %', 
-                line=dict(color='#818cf8', width=1)
-            ))
-            
-            fig_returns.update_layout(
-                template="plotly_dark",
-                height=280,
-                margin=dict(l=20, r=20, t=10, b=20),
-                xaxis_rangeslider_visible=False,
-                showlegend=False,
-                xaxis=dict(gridcolor='rgba(51, 65, 85, 0.25)'),
-                yaxis=dict(
-                    title="Variazione (%)",
-                    gridcolor='rgba(51, 65, 85, 0.25)'
-                )
-            )
-            st.plotly_chart(fig_returns, use_container_width=True, key="garch_returns_chart")
-            
-            st.markdown("---")
-
+            with st.spinner("Calcolo dei coefficienti di eteroschedasticità..."):
+                try:
+                    mod = arch_model(df_g['Returns'], p=param_p, q=param_q, vol=mappa_modelli[mod_type], dist='normal')
+                    res_garch = mod.fit(disp='off')
+                    
+                    # Estrazione e annualizzazione della volatilità condizionale condizionata (base 252 giorni trading)
+                    cond_vol_annualizzata = res_garch.conditional_volatility * np.sqrt(252)
+                    
+                    # ------------------------------------------------------------------------------
+                    # --- STRUTTURA GRAFICA INTEGRATA A TUTTA LARGHEZZA (PLOTLY) ---
+                    # ------------------------------------------------------------------------------
+                    
+                    # --- GRAFICO 1: SOVRAPPOSIZIONE PREZZO AZIONE + VOLATILITÀ GARCH (DUE ASSI Y) ---
+                    st.markdown(f"##### 📊 Analisi di Correlazione: Prezzo di Chiusura vs Volatilità Condizionale GARCH")
+                    
+                    fig_combined = grp.Figure()
+                    
+                    # Asse Y Sinistro: Prezzo dell'Azione
+                    fig_combined.add_trace(grp.Scatter(
+                        x=df_g.index, 
+                        y=df_g['Close'].astype(float), 
+                        mode='lines', 
+                        name=f'Prezzo Chiusura ({garch_ticker})', 
+                        line=dict(color='#38bdf8', width=2)
+                    ))
+                    
+                    # Asse Y Destro: Volatilità Condizionale Annualizzata GARCH
+                    fig_combined.add_trace(grp.Scatter(
+                        x=df_g.index, 
+                        y=cond_vol_annualizzata, 
+                        mode='lines', 
+                        name=f'Volatilità Annualizzata {mod_type} (%)', 
+                        line=dict(color='#f43f5e', width=1.75),
+                        yaxis='y2'
+                    ))
+                    
+                    # Layout doppio asse Y
+                    fig_combined.update_layout(
+                        template="plotly_dark",
+                        height=450,
+                        margin=dict(l=20, r=20, t=10, b=20),
+                        xaxis_rangeslider_visible=False,
+                        showlegend=True,
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        xaxis=dict(gridcolor='rgba(51, 65, 85, 0.25)'),
+                        yaxis=dict(
+                            title=f"Prezzo {garch_ticker} (USD)",
+                            titlefont=dict(color="#38bdf8"),
+                            tickfont=dict(color="#38bdf8"),
+                            gridcolor='rgba(51, 65, 85, 0.25)'
+                        ),
+                        yaxis2=dict(
+                            title="Volatilità Condizionale GARCH (%)",
+                            titlefont=dict(color="#f43f5e"),
+                            tickfont=dict(color="#f43f5e"),
+                            anchor="x",
+                            overlaying="y",
+                            side="right",
+                            gridcolor='rgba(0, 0, 0, 0)'
+                        )
+                    )
+                    st.plotly_chart(fig_combined, use_container_width=True, key="garch_combined_chart")
+                    
+                    st.markdown("---")
+                    
+                    # --- GRAFICO 2: RENDIMENTI LOGARITMICI A TOTALE ESTENSIONE ORIZZONTALE ---
+                    st.markdown("##### 📉 Rendimenti Logaritmici Giornalieri (%)")
+                    
+                    fig_returns = grp.Figure()
+                    fig_returns.add_trace(grp.Scatter(
+                        x=df_g.index, 
+                        y=df_g['Returns'], 
+                        mode='lines', 
+                        name='Rendimenti %', 
+                        line=dict(color='#818cf8', width=1)
+                    ))
+                    
+                    fig_returns.update_layout(
+                        template="plotly_dark",
+                        height=280,
+                        margin=dict(l=20, r=20, t=10, b=20),
+                        xaxis_rangeslider_visible=False,
+                        showlegend=False,
+                        xaxis=dict(gridcolor='rgba(51, 65, 85, 0.25)'),
+                        yaxis=dict(
+                            title="Variazione (%)",
+                            gridcolor='rgba(51, 65, 85, 0.25)'
+                        )
+                    )
+                    st.plotly_chart(fig_returns, use_container_width=True, key="garch_returns_chart")
+                    
+                    st.markdown("---")
+                    
+                    # --- RIGHE REGOLE DI RENDERING OUTPUT ---
                     res_col1, res_col2 = st.columns(2)
                     
                     with res_col1:
@@ -679,7 +689,6 @@ with tab4:
                         
                     with res_col2:
                         st.markdown("##### 📝 Tabella di Sintesi Statistica Completa")
-                        # L'uso di st.code mantiene l'allineamento fisso delle colonne del report
                         st.code(str(res_garch.summary()), language="text")
                         
                 except Exception as ex:
