@@ -407,117 +407,61 @@ with tab1:
                         st.warning(f"Dati storici insufficienti per {ticker}.")
 
 # ==============================================================================
-# --- TAB 2: BACKTESTING ISTITUZIONALE COMPLETO CON PROFILO VOLUMI (PARTE 1) ----
+# --- TAB 2: BACKTESTING - STRATEGIA ISTITUZIONALE VOLUMETRICA COMPLETA --------
 # ==============================================================================
 with tab2:
-    st.subheader(
-        "📐 Simulazione Avanzata Volume Profile & Breakout ad Arco Pieno"
-    )
+    st.subheader("📐 Simulazione Professionale Order Flow: Accumuli, Inefficienze e Parziali")
     st.markdown("""
-    **Logica Istituzionale di Price Action & Flussi Volumetrici:**
-    * **Filtro Volumetrico:** Calcola l'HVN/POC storico dell'asset e traccia l'istogramma orizzontale dei volumi.
-    * **Filtro Candela Piena:** Attende il test della zona volumetrica (Arco) e convalida l'ingresso solo su rottura della resistenza con candela a corpo solido (senza spike anomali).
-    * **Gestione Monetaria Professionale:** Raggiunto il TP1 (Inefficienza/VAH) liquida il **50% della size**, sposta lo Stop a **BreakEven** e lascia correre il resto.
+    **Regole Operative Istituzionali Implementate:**
+    * **Accumulo / Rounding:** Individuazione di aree volumetriche dense (HVN) in cui il prezzo rallenta e inverte il momentum.
+    * **Breakout di Momentum:** Ingresso su candela piena che rompe il pattern di accumulazione senza reiezioni (spike).
+    * **Gestione a 3 Target (33% / 33% / 34%):** TP1 alla prima inefficienza, TP2 alla seconda inefficienza, TP3 (Runner) lasciato correre fino ai massimi.
+    * **Protezione a BreakEven:** Al raggiungimento del TP1, lo Stop Loss viene spostato rigidamente a BE.
     """)
 
     b_col1, b_col2, b_col3, b_col4 = st.columns(4)
     with b_col1:
-        bt_ticker = st.text_input(
-            "Ticker Asset da testare:", value="BTC-USD", key="bt_tick_real"
-        )
-        capitale_iniziale = st.number_input(
-            "Capitale iniziale ($):",
-            min_value=100,
-            value=10000,
-            step=500,
-            key="bt_cap_real",
-        )
+        bt_ticker = st.text_input("Ticker da testare:", value="BTC-USD", key="bt_tk_inst")
+        capitale_iniziale = st.number_input("Capitale iniziale ($):", min_value=100, value=10000, step=500, key="bt_cap_inst")
     with b_col2:
-        bt_periodo = st.selectbox(
-            "Orizzonte dati storici:",
-            ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"],
-            index=1,
-            key="bt_per_real",
-        )
-        mappa_periodi = {
-            "1 Anno": "1y",
-            "3 Anni": "3y",
-            "5 Anni": "5y",
-            "Storico Massimo": "max",
-        }
+        bt_periodo = st.selectbox("Storico dati:", ["1 Anno", "3 Anni", "5 Anni"], index=1, key="bt_per_inst")
+        mappa_periodi = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y"}
     with b_col3:
-        tf_backtest_label = st.selectbox(
-            "Seleziona Timeframe Candele (TF):",
-            ["Giornaliero (Daily)", "Settimanale (Weekly)"],
-            index=0,
-            key="bt_tf_real",
-        )
-        tf_backtest_attivo = {
-            "Giornaliero (Daily)": "1d",
-            "Settimanale (Weekly)": "1wk",
-        }[tf_backtest_label]
+        tf_backtest_label = st.selectbox("Timeframe (TF):", ["Giornaliero (Daily)", "Settimanale (Weekly)"], key="bt_tf_inst")
+        tf_backtest_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[tf_backtest_label]
     with b_col4:
-        rischio_trade = st.slider(
-            "Rischio capitale per trade (%):",
-            min_value=0.5,
-            max_value=5.0,
-            value=2.0,
-            step=0.5,
-            key="bt_rischio_real",
-        )
-        comun_fee = st.number_input(
-            "Commissioni per singolo eseguito ($):",
-            min_value=0.0,
-            value=1.0,
-            step=0.5,
-            key="bt_fee_real",
-        )
+        rischio_trade = st.slider("Rischio per operazione (%):", min_value=0.5, max_value=5.0, value=2.0, step=0.5, key="bt_r_inst")
+        comun_fee = st.number_input("Commissioni eseguito ($):", min_value=0.0, value=1.0, step=0.5, key="bt_f_inst")
 
-    if st.button(
-        "🚀 Avvia Backtest Istituzionale", type="primary", key="bt_btn_real"
-    ):
-        st.info(
-            f"Estrazione storico in corso ({tf_backtest_label}) ed elaborazione flussi volumetrici per {bt_ticker}..."
-        )
+    if st.button("🚀 Avvia Analisi Quantitativa Istituzionale", type="primary", key="bt_btn_inst"):
+        st.info(f"Elaborazione flussi volumetrici e mappatura inefficienze per {bt_ticker}...")
 
-        df_bt = yf.download(
-            tickers=bt_ticker,
-            period=mappa_periodi[bt_periodo],
-            interval=tf_backtest_attivo,
-            auto_adjust=False,
-            multi_level_index=False,
-            progress=False,
-        )
+        df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval=tf_backtest_attivo, auto_adjust=False, multi_level_index=False, progress=False)
 
         if df_bt is not None and len(df_bt) > 60:
             df_bt.columns = [str(c).strip() for c in df_bt.columns]
 
-            # Calcolo preventivo del Volume Profile globale sull'intero set estratto per il grafico finale
-            p_poc_global, p_vh_global, p_vl_global, prezzi_vp, volumi_vp = (
-                calc_vp(df_bt, div=40)
-            )
+            # Profilo Volumi globale per il grafico finale
+            p_poc_global, p_vh_global, p_vl_global, prezzi_vp, volumi_vp = calc_vp(df_bt, div=40)
 
-            # Parametri operativi del simulatore di portafoglio
+            # Variabili di stato del portafoglio
             capitale = capitale_iniziale
             in_posizione = False
-            prezzo_ingresso, livello_sl, livello_tp1, metà_size = 0, 0, 0, 0
-            tp1_preso = False
+            prezzo_ingresso, livello_sl = 0, 0
+            livello_tp1, livello_tp2, livello_tp_runner = 0, 0, 0
+            size_1, size_2, size_runner = 0, 0, 0
+            tp1_preso, tp2_preso = False, False
 
             equity_curve = [capitale_iniziale]
-            date_curve = [df_bt.index[40]]  # Allineamento asse temporale
+            date_curve = [df_bt.index]
             trade_history = []
 
-            # Array di tracciamento per i nodi grafici Plotly
+            # Liste di tracciamento marker grafici
             entrate_x, entrate_y = [], []
-            tp1_x, tp1_y = [], []
+            tp1_x, tp1_y, tp2_x, tp2_y = [], [], [], []
             uscite_x, uscite_y, esiti_colori = [], [], []
-
-            
-            # --- PARTE 2: IDENTIFICAZIONE STRUTTURALE DELL'ARCO DI ACCUMULAZIONE ---
-            resistenza_statica_arco = None
-            fase_ribasso_confermata = False
-
-            for i in range(50, len(df_bt)):
+            # --- PARTE 2A: RILEVAMENTO ACCUMULO E MOMENTUM BREAKOUT ----------------
+            for i in range(45, len(df_bt)):
                 df_storico_finora = df_bt.iloc[:i]
                 riga_attuale = df_bt.iloc[i]
 
@@ -527,99 +471,101 @@ with tab2:
                 p_chiusura = float(riga_attuale["Close"])
                 data_corrente = df_bt.index[i]
 
-                # Ricalcolo dinamico del POC storico come pavimento istituzionale
-                p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora, div=40)
-                if p_poc is None:
-                    continue
-
-                # 1. LOGICA DI IDENTIFICAZIONE STRUTTURA (SOLO SE NON IN POSIZIONE)
                 if not in_posizione:
-                    # Definiamo una finestra di osservazione per mappare la forma a "tazza"
-                    df_struttura = df_storico_finora.tail(45)
+                    p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora, div=40)
+                    if p_poc is None:
+                        continue
 
-                    # Trova il massimo picco all'inizio della finestra (punto di origine dell'arco)
-                    picco_origine_arco = float(
-                        df_struttura["High"].iloc[:15].max()
+                    # Analisi della microstruttura recente (ultime 25 candele)
+                    df_micro = df_storico_finora.tail(25)
+                    minimo_accumulo = float(df_micro["Low"].min())
+                    resistenza_pattern = float(
+                        df_micro["High"].iloc[:-3].max()
                     )
-                    # Trova il punto più basso della correzione
-                    minimo_struttura = float(df_struttura["Low"].min())
 
-                    # CONDIZIONE A: Verifica se c'è stata una reale fase di contrazione/ribasso verso il POC
-                    if (
-                        minimo_struttura <= p_poc * 1.03
-                        and picco_origine_arco > p_poc * 1.08
-                    ):
-                        fase_ribasso_confermata = True
-                        # La vera linea bianca di resistenza è il picco statico da cui è nato l'arco
-                        resistenza_statica_arco = picco_origine_arco
+                    # Verifica stazionamento prezzi vicino al POC istituzionale
+                    prezzo_su_area_volume = (
+                        (df_micro["Close"].astype(float) - p_poc).abs() / p_poc
+                        < 0.04
+                    ).any()
+
+                    # Controllo cambio momentum con candela a corpo pieno
+                    range_totale = p_massimo - p_minimo
+                    if range_totale > 0:
+                        corpo_reale = abs(p_chiusura - p_apertura)
+                        spike_alto = p_massimo - max(p_apertura, p_chiusura)
+                        is_candela_piena = (corpo_reale / range_totale) > 0.62
+                        senza_reiezione = (spike_alto / range_totale) < 0.18
                     else:
-                        fase_ribasso_confermata = False
+                        is_candela_piena, senza_reiezione = False, False
 
-                    # Validazione candela a corpo pieno sul breakout (evita spike impulsivi o candele vuote)
-                    intero_range = p_massimo - p_minimo
-                    if intero_range > 0 and resistenza_statica_arco is not None:
-                        corpo_candela = abs(p_chiusura - p_apertura)
-                        spike_superiore = p_massimo - max(
-                            p_apertura, p_chiusura
+                    # Trigger d'ingresso sulla resistenza strutturale
+                    if (
+                        prezzo_su_area_volume
+                        and (p_chiusura > resistencia_pattern)
+                        and is_candela_piena
+                        and senza_reiezione
+                    ):
+                        # Mappatura delle inefficienze (Fair Value Gaps superiori)
+                        inefficienze_trovate = []
+                        for idx in range(i - 40, i - 2):
+                            low_prec = float(df_bt["Low"].iloc[idx])
+                            high_succ = float(df_bt["High"].iloc[idx + 2])
+                            if low_prec > high_succ and low_prec > p_chiusura:
+                                inefficienze_trovate.append(low_prec)
+
+                        inefficienze_trovate = sorted(
+                            list(set(inefficienze_trovate))
                         )
-                        candela_piena = (corpo_candela / intero_range) > 0.60
-                        senza_spike_reiezione = (
-                            spike_superiore / intero_range
-                        ) < 0.20
 
-                        # TRIGGER DI INGRESSO (ENTRY OK): Solo se usciamo da un ribasso e rompiamo la linea statica
-                        is_breakout_confermato = (
-                            p_chiusura > resistenza_statica_arco
-                            and df_storico_finora["Close"].iloc[-2]
-                            <= resistenza_statica_arco
+                        in_posizione = True
+                        prezzo_ingresso = p_chiusura
+                        tp1_preso, tp2_preso = False, False
+                        livello_sl = minimo_accumulo
+
+                        # Assegnazione dinamica dei 3 target strutturali
+                        livello_tp1 = (
+                            inefficienze_trovate[0]
+                            if len(inefficienze_trovate) > 0
+                            else prezzo_ingresso * 1.10
+                        )
+                        livello_tp2 = (
+                            inefficienze_trovate[1]
+                            if len(inefficienze_trovate) > 1
+                            else livello_tp1 * 1.12
+                        )
+                        livello_tp_runner = float(
+                            df_storico_finora["High"].max()
                         )
 
-                        if (
-                            fase_ribasso_confermata
-                            and is_breakout_confermato
-                            and candela_piena
-                            and senza_spike_reiezione
-                        ):
-                            in_posizione = True
-                            prezzo_ingresso = p_chiusura
-                            tp1_preso = False
-
-                            # Lo Stop Loss iniziale si posiziona rigidamente sotto il minimo dell'arco (pavimento sul POC)
-                            livello_sl = minimo_struttura
-
-                            # Set operativo dei Target basato sul tuo schema visivo
-                            livello_tp1 = prezzo_ingresso + (
-                                abs(prezzo_ingresso - livello_sl) * 1.2
+                        distanza_sl = abs(prezzo_ingresso - livello_sl)
+                        if distanza_sl > 0:
+                            rischio_monetario = capitale * (
+                                rischio_trade / 100
                             )
-                            livello_tp_finale = max(
-                                prezzo_ingresso * 1.40, p_vh
-                            )
+                            size_totale = rischio_monetario / distanza_sl
 
-                            distanza_sl = abs(prezzo_ingresso - livello_sl)
-                            if Blackbox := (distanza_sl > 0):
-                                rischio_monetario = capitale * (
-                                    rischio_trade / 100
-                                )
-                                size_totale = rischio_monetario / distanza_sl
-                                size_tp1 = size_totale * 0.33  # 33% TP
-                                size_runner = size_totale - size_tp1
-                                # Registrazione marker
-                                entrate_x.append(data_corrente)
-                                entrate_y.append(prezzo_ingresso)
-                            else:
-                                in_posizione = False
+                            # Ripartizione millimetrica della size: 33% / 33% / 34%
+                            size_1 = size_totale * 0.33
+                            size_2 = size_totale * 0.33
+                            size_runner = size_totale - (size_1 + size_2)
 
-                # 2. GESTIONE ATTIVA DELLA POSIZIONE (PROTEZIONE INDISTURBATA SUL RUNNER)
+                            entrate_x.append(data_corrente)
+                            entrate_y.append(prezzo_ingresso)
+                        else:
+                            in_posizione = False
+                # --- PARTE 2B: LOGICA GESTIONE POSITION & PRESE TARGETS -------------
                 else:
+                    # Monitoraggio del primo target parziale (33% TP)
                     if not tp1_preso:
                         if p_massimo >= livello_tp1:
                             tp1_preso = True
-                            pnl_parziale = (
-                                (livello_tp1 - prezzo_ingresso) * size_tp1
+                            pnl_1 = (
+                                (livello_tp1 - prezzo_ingresso) * size_1
                             ) - comun_fee
-                            capitale += pnl_parziale
+                            capitale += pnl_1
 
-                            # Al raggiungimento del primo target parziale (33%), proteggiamo a BreakEven
+                            # REGOLA MANDATORIA: Blindiamo a BreakEven immediato
                             livello_sl = prezzo_ingresso
 
                             tp1_x.append(data_corrente)
@@ -644,64 +590,86 @@ with tab2:
                             equity_curve.append(capitale)
                             date_curve.append(data_corrente)
                             in_posizione = False
-                    else:
-                        # Gestione avanzata del Runner (67% restante): lo stop segue solo gli swing strutturali reali
-                        minimo_recente_trend = float(
-                            df_bt["Low"].iloc[i - 12 : i].min()
-                        )
-                        if minimo_recente_trend > livello_sl:
-                            livello_sl = minimo_recente_trend
 
-                        if p_minimo <= livello_sl:
-                            pnl_runner = (
-                                (livello_sl - prezzo_ingresso) * size_runner
+                    # Monitoraggio del secondo target parziale (33% TP) al sicuro a BE
+                    elif tp1_preso and not tp2_preso:
+                        if p_massimo >= livello_tp2:
+                            tp2_preso = True
+                            pnl_2 = (
+                                (livello_tp2 - prezzo_ingresso) * size_2
                             ) - comun_fee
-                            capitale += pnl_runner
+                            capitale += pnl_2
+                            tp2_x.append(data_corrente)
+                            tp2_y.append(livello_tp2)
+
+                        elif p_minimo <= livello_sl:
+                            pnl_restante = 0 - (comun_fee * 2)
+                            capitale += pnl_restante
                             trade_history.append(
                                 {
                                     "Data": data_corrente.strftime("%d/%m/%Y"),
-                                    "Esito": "Runner Chiuso in Trailing ⚪",
+                                    "Esito": "Chiusura a BreakEven (Dopo TP1) ⚪",
                                     "PnL Netto ($)": round(
-                                        pnl_parziale + pnl_runner, 2
+                                        pnl_1 + pnl_restante, 2
                                     ),
                                     "Capitale": round(capitale, 2),
                                 }
                             )
                             uscite_x.append(data_corrente)
                             uscite_y.append(livello_sl)
-                            esiti_colori.append("#e2e8f0")
+                            esiti_colori.append("#64748b")
                             equity_curve.append(capitale)
                             date_curve.append(data_corrente)
                             in_posizione = False
 
-                        elif p_massimo >= livello_tp_finale:
+                    # Gestione dell'ultimo 34% (Runner) verso i massimi strutturali
+                    else:
+                        if p_massimo >= livello_tp_runner:
                             pnl_runner = (
-                                (livello_tp_finale - prezzo_ingresso)
+                                (livello_tp_runner - prezzo_ingresso)
                                 * size_runner
                             ) - comun_fee
                             capitale += pnl_runner
                             trade_history.append(
                                 {
                                     "Data": data_corrente.strftime("%d/%m/%Y"),
-                                    "Esito": "TP Macro Raggiunto 🟢",
+                                    "Esito": "Target Massimi Preso! 🟢",
                                     "PnL Netto ($)": round(
-                                        pnl_parziale + pnl_runner, 2
+                                        pnl_1 + pnl_2 + pnl_runner, 2
                                     ),
                                     "Capitale": round(capitale, 2),
                                 }
                             )
                             uscite_x.append(data_corrente)
-                            uscite_y.append(livello_tp_finale)
+                            uscite_y.append(livello_tp_runner)
                             esiti_colori.append("#22c55e")
                             equity_curve.append(capitale)
                             date_curve.append(data_corrente)
                             in_posizione = False
 
-            # --- PARTE 3: REPORT FINANZIARIO E PLOT CON TRAILING GESTITO ----------
-            st.subheader("📊 Resoconto Performance Finanziarie")
+                        elif p_minimo <= livello_sl:
+                            pnl_runner = 0 - comun_fee
+                            capitale += pnl_runner
+                            trade_history.append(
+                                {
+                                    "Data": data_corrente.strftime("%d/%m/%Y"),
+                                    "Esito": "Runner a BreakEven ⚪",
+                                    "PnL Netto ($)": round(
+                                        pnl_1 + pnl_2 + pnl_runner, 2
+                                    ),
+                                    "Capitale": round(capitale, 2),
+                                }
+                            )
+                            uscite_x.append(data_corrente)
+                            uscite_y.append(livello_sl)
+                            esiti_colori.append("#64748b")
+                            equity_curve.append(capitale)
+                            date_curve.append(data_corrente)
+                            in_posizione = False
+            # --- PARTE 2C: METRICHE FINANZIARIE E TRACCIAMENTO GRAFICO ------------
+            st.subheader("📊 Resoconto Performance Finanziarie Professionali")
             if trade_history:
                 df_trades = pd.DataFrame(trade_history)
-
                 operazioni_totali = len(df_trades)
                 operazioni_vincenti = len(
                     df_trades[df_trades["PnL Netto ($)"] > 0]
@@ -730,7 +698,7 @@ with tab2:
                 st.dataframe(df_trades, use_container_width=True)
 
                 st.markdown(
-                    "### 📈 Grafico di Price Action con Volume Profile & Segnali"
+                    "### 📈 Grafico Strutturale Order Flow con Profilo Volumi"
                 )
                 fig_real = make_subplots(
                     rows=2,
@@ -738,12 +706,7 @@ with tab2:
                     shared_xaxes=True,
                     vertical_spacing=0.08,
                     row_heights=[0.7, 0.3],
-                    subplot_titles=(
-                        f"Candele {tf_backtest_label} — Gestione Runner in Trend Indisturbato",
-                        "Evoluzione della Curva del Capitale (Equity Curve, $)",
-                    ),
                 )
-
                 fig_real.add_trace(
                     grp.Candlestick(
                         x=df_bt.index,
@@ -757,19 +720,16 @@ with tab2:
                     col=1,
                 )
 
+                # Rendering istogramma del Volume Profile sul lato sinistro del grafico
                 if prezzi_vp and volumi_vp and max(volumi_vp) > 0:
-                    max_vol = max(volumi_vp)
-                    data_inizio = df_bt.index.min()
+                    max_vol, data_inizio = max(volumi_vp), df_bt.index.min()
                     estensione_giorni = (df_bt.index.max() - data_inizio).days
                     step_k = max(1, len(volumi_vp) // 40)
-
                     for idx in range(0, len(volumi_vp), step_k):
                         p_centro = prezzi_vp[idx]
-                        vol_corrente = volumi_vp[idx]
-                        larghezza_proiezione = (vol_corrente / max_vol) * (
+                        larghezza_proiezione = (volumi_vp[idx] / max_vol) * (
                             estensione_giorni * 0.15
                         )
-
                         fig_real.add_shape(
                             type="rect",
                             x0=data_inizio,
@@ -792,12 +752,13 @@ with tab2:
                         x1=df_bt.index.max(),
                         y0=p_poc_global,
                         y1=p_poc_global,
-                        line=dict(color="#ef4444", width=2.5, dash="solid"),
-                        name="POC Base Accumulazione",
+                        line=dict(color="#ef4444", width=2.5),
+                        name="POC Base Accumulo",
                         row=1,
                         col=1,
                     )
 
+                # Plot geometrico dei target parziali intermedi
                 if entrate_x:
                     fig_real.add_trace(
                         grp.Scatter(
@@ -807,7 +768,7 @@ with tab2:
                             marker=dict(
                                 symbol="triangle-up", size=14, color="#00ffcc"
                             ),
-                            name="ENTRY (Rottura Strutturale)",
+                            name="ENTRY (Momentum)",
                         ),
                         row=1,
                         col=1,
@@ -819,9 +780,23 @@ with tab2:
                             y=tp1_y,
                             mode="markers",
                             marker=dict(
-                                symbol="diamond", size=11, color="#ffff00"
+                                symbol="diamond", size=10, color="#ffff00"
                             ),
-                            name="33% TP Preso",
+                            name="TP1 (1° Inefficienza)",
+                        ),
+                        row=1,
+                        col=1,
+                    )
+                if tp2_x:
+                    fig_real.add_trace(
+                        grp.Scatter(
+                            x=tp2_x,
+                            y=tp2_y,
+                            mode="markers",
+                            marker=dict(
+                                symbol="diamond", size=10, color="#ffaa00"
+                            ),
+                            name="TP2 (2° Inefficienza)",
                         ),
                         row=1,
                         col=1,
@@ -835,7 +810,7 @@ with tab2:
                             marker=dict(
                                 symbol="circle", size=10, color=esiti_colori
                             ),
-                            name="CHIUSURA EFFETTIVA POZISIORE",
+                            name="USCITA / BREAKEVEN",
                         ),
                         row=1,
                         col=1,
@@ -852,7 +827,6 @@ with tab2:
                     row=2,
                     col=1,
                 )
-
                 fig_real.update_layout(
                     template="plotly_dark",
                     height=850,
@@ -863,10 +837,10 @@ with tab2:
                 st.plotly_chart(fig_real, use_container_width=True)
             else:
                 st.warning(
-                    "⚠️ Nessun Breakout strutturale rilevato con le attuali regole di tracciamento."
+                    "⚠️ Nessun Breakout strutturale rilevato con le attuali regole di compressione."
                 )
         else:
-            st.error("❌ Dati di mercato insufficienti.")
+            st.error("❌ Storico dati insufficiente.")
 
 
 # ==========================================
