@@ -513,8 +513,11 @@ with tab2:
             uscite_x, uscite_y, esiti_colori = [], [], []
 
             
-            # --- PARTE 2: MOTORE STRUTTURALE CON TRAILING STOP SULLO SWING LOW ----
-            for i in range(40, len(df_bt)):
+            # --- PARTE 2: IDENTIFICAZIONE STRUTTURALE DELL'ARCO DI ACCUMULAZIONE ---
+            resistenza_statica_arco = None
+            fase_ribasso_confermata = False
+
+            for i in range(50, len(df_bt)):
                 df_storico_finora = df_bt.iloc[:i]
                 riga_attuale = df_bt.iloc[i]
 
@@ -524,65 +527,89 @@ with tab2:
                 p_chiusura = float(riga_attuale["Close"])
                 data_corrente = df_bt.index[i]
 
-                # 1. LOGICA DI INGRESSO: BREAKOUT DELLA RESISTENZA DELL'ARCO
+                # Ricalcolo dinamico del POC storico come pavimento istituzionale
+                p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora, div=40)
+                if p_poc is None:
+                    continue
+
+                # 1. LOGICA DI IDENTIFICAZIONE STRUTTURA (SOLO SE NON IN POSIZIONE)
                 if not in_posizione:
-                    p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora, div=40)
-                    if p_poc is None:
-                        continue
+                    # Definiamo una finestra di osservazione per mappare la forma a "tazza"
+                    df_struttura = df_storico_finora.tail(45)
 
-                    df_arco = df_storico_finora.tail(30)
-                    poggia_su_poc = (
-                        (df_arco["Low"].astype(float) - p_poc).abs() / p_poc
-                        < 0.05
-                    ).any()
+                    # Trova il massimo picco all'inizio della finestra (punto di origine dell'arco)
+                    picco_origine_arco = float(
+                        df_struttura["High"].iloc[:15].max()
+                    )
+                    # Trova il punto più basso della correzione
+                    minimo_struttura = float(df_struttura["Low"].min())
 
-                    resistenza_arco = float(df_arco["High"].iloc[:-3].max())
+                    # CONDIZIONE A: Verifica se c'è stata una reale fase di contrazione/ribasso verso il POC
+                    if (
+                        minimo_struttura <= p_poc * 1.03
+                        and picco_origine_arco > p_poc * 1.08
+                    ):
+                        fase_ribasso_confermata = True
+                        # La vera linea bianca di resistenza è il picco statico da cui è nato l'arco
+                        resistenza_statica_arco = picco_origine_arco
+                    else:
+                        fase_ribasso_confermata = False
 
+                    # Validazione candela a corpo pieno sul breakout (evita spike impulsivi o candele vuote)
                     intero_range = p_massimo - p_minimo
-                    if intero_range > 0:
+                    if intero_range > 0 and resistenza_statica_arco is not None:
                         corpo_candela = abs(p_chiusura - p_apertura)
                         spike_superiore = p_massimo - max(
                             p_apertura, p_chiusura
                         )
-                        candela_piena = (corpo_candela / intero_range) > 0.55
+                        candela_piena = (corpo_candela / intero_range) > 0.60
                         senza_spike_reiezione = (
                             spike_superiore / intero_range
                         ) < 0.20
-                    else:
-                        candela_piena, senza_spike_reiezione = False, False
 
-                    if (
-                        poggia_su_poc
-                        and p_chiusura > resistenza_arco
-                        and candela_piena
-                        and senza_spike_reiezione
-                    ):
-                        in_posizione = True
-                        prezzo_ingresso = p_chiusura
-                        tp1_preso = False
-
-                        # Lo Stop Loss iniziale si posiziona sotto la base strutturale dell'arco
-                        livello_sl = float(df_arco["Low"].min())
-
-                        # Definizione accurata dei target parziali
-                        livello_tp1 = resistenza_arco + (
-                            abs(prezzo_ingresso - livello_sl) * 1.3
+                        # TRIGGER DI INGRESSO (ENTRY OK): Solo se usciamo da un ribasso e rompiamo la linea statica
+                        is_breakout_confermato = (
+                            p_chiusura > resistenza_statica_arco
+                            and df_storico_finora["Close"].iloc[-2]
+                            <= resistenza_statica_arco
                         )
-                        livello_tp_finale = max(prezzo_ingresso * 1.45, p_vh)
 
-                        distanza_sl = abs(prezzo_ingresso - livello_sl)
-                        if distanza_sl > 0:
-                            rischio_monetario = capitale * (rischio_trade / 100)
-                            size_totale = rischio_monetario / distanza_sl
-                            size_tp1 = size_totale * 0.33
-                            size_runner = size_totale - size_tp1
+                        if (
+                            fase_ribasso_confermata
+                            and is_breakout_confermato
+                            and candela_piena
+                            and senza_spike_reiezione
+                        ):
+                            in_posizione = True
+                            prezzo_ingresso = p_chiusura
+                            tp1_preso = False
 
-                            entrate_x.append(data_corrente)
-                            entrate_y.append(prezzo_ingresso)
-                        else:
-                            in_posizione = False
+                            # Lo Stop Loss iniziale si posiziona rigidamente sotto il minimo dell'arco (pavimento sul POC)
+                            livello_sl = minimo_struttura
 
-                # 2. GESTIONE DINAMICA DEL TRADE (TRAILING STOP SULLA STRUTTURA)
+                            # Set operativo dei Target basato sul tuo schema visivo
+                            livello_tp1 = prezzo_ingresso + (
+                                abs(prezzo_ingresso - livello_sl) * 1.2
+                            )
+                            livello_tp_finale = max(
+                                prezzo_ingresso * 1.40, p_vh
+                            )
+
+                            distanza_sl = abs(prezzo_ingresso - livello_sl)
+                            if Blackbox := (distanza_sl > 0):
+                                rischio_monetario = capitale * (
+                                    rischio_trade / 100
+                                )
+                                size_totale = rischio_monetario / distanza_sl
+                                size_tp1 = size_totale * 0.33  # 33% TP
+                                size_runner = size_totale - size_tp1
+                                # Registrazione marker
+                                entrate_x.append(data_corrente)
+                                entrate_y.append(prezzo_ingresso)
+                            else:
+                                in_posizione = False
+
+                # 2. GESTIONE ATTIVA DELLA POSIZIONE (PROTEZIONE INDISTURBATA SUL RUNNER)
                 else:
                     if not tp1_preso:
                         if p_massimo >= livello_tp1:
@@ -592,7 +619,7 @@ with tab2:
                             ) - comun_fee
                             capitale += pnl_parziale
 
-                            # CORREZIONE: Lo stop protettivo viene alzato al BreakEven MA...
+                            # Al raggiungimento del primo target parziale (33%), proteggiamo a BreakEven
                             livello_sl = prezzo_ingresso
 
                             tp1_x.append(data_corrente)
@@ -618,12 +645,12 @@ with tab2:
                             date_curve.append(data_corrente)
                             in_posizione = False
                     else:
-                        # ...PER SEGUIRE IL TREND ED EVITARE FAKEOUT, AGGIORNIAMO LO STOP SOLO SE SI FORMA UN NUOVO SWING LOW SIGNIFICATIVO
-                        minimo_recente_struttura = float(
-                            df_bt["Low"].iloc[i - 10 : i].min()
+                        # Gestione avanzata del Runner (67% restante): lo stop segue solo gli swing strutturali reali
+                        minimo_recente_trend = float(
+                            df_bt["Low"].iloc[i - 12 : i].min()
                         )
-                        if minimo_recente_struttura > livello_sl:
-                            livello_sl = minimo_recente_struttura
+                        if minimo_recente_trend > livello_sl:
+                            livello_sl = minimo_recente_trend
 
                         if p_minimo <= livello_sl:
                             pnl_runner = (
@@ -669,6 +696,7 @@ with tab2:
                             equity_curve.append(capitale)
                             date_curve.append(data_corrente)
                             in_posizione = False
+
             # --- PARTE 3: REPORT FINANZIARIO E PLOT CON TRAILING GESTITO ----------
             st.subheader("📊 Resoconto Performance Finanziarie")
             if trade_history:
