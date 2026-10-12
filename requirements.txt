@@ -1,6 +1,8 @@
-streamlit>=1.35.0
+streamlit
 pandas
 numpy
 yfinance
 plotly
 requests
+matplotlib
+arch
