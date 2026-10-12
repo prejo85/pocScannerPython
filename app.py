@@ -9,6 +9,7 @@ import json
 import matplotlib.pyplot as plt
 from arch import arch_model
 
+
 st.set_page_config(layout="wide", page_title="POC Scanner Pro", page_icon="📐")
 
 # Stile scuro personalizzato per rendere la dashboard moderna
@@ -557,7 +558,7 @@ with tab3:
             st.success(f"Scansione terminata! Inviati {segnali_trovati} segnali bilanciati.")
 
 # ==========================================
-# --- TAB 4: ANALISI GARCH ---
+# --- NUOVO TAB 4: ANALISI GARCH ---
 # ==========================================
 with tab4:
     st.subheader("📈 Studio ed Analisi Quantitativa della Volatilità (GARCH)")
@@ -582,6 +583,7 @@ with tab4:
         if df_g is not None and len(df_g) > 100:
             df_g.columns = [str(c).strip() for c in df_g.columns]
             
+            # Calcolo dei rendimenti logaritmici percentuali
             df_g['Returns'] = 100 * np.log(df_g['Close'].astype(float) / df_g['Close'].astype(float).shift(1))
             df_g = df_g.dropna()
             
@@ -590,8 +592,10 @@ with tab4:
                     mod = arch_model(df_g['Returns'], p=param_p, q=param_q, vol=mappa_modelli[mod_type], dist='normal')
                     res_garch = mod.fit(disp='off')
                     
+                    # Estrazione e annualizzazione della volatilità condizionale condizionata (base 252 giorni trading)
                     cond_vol_annualizzata = res_garch.conditional_volatility * np.sqrt(252)
                     
+                    # Layout grafico a due colonne indipendenti
                     g_plot1, g_plot2 = st.columns(2)
                     
                     with g_plot1:
