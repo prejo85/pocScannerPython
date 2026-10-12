@@ -406,71 +406,216 @@ with tab1:
                     else: 
                         st.warning(f"Dati storici insufficienti per {ticker}.")
 
-# ==========================================
-# --- TAB 2: BACKTESTING ---
-# ==========================================
+# ==============================================================================
+# --- TAB 2: BACKTESTING (PARTE 1 - CONFIGURAZIONE E INIZIALIZZAZIONE) ---------
+# ==============================================================================
 with tab2:
-    st.subheader("⚙️ Motore di Simulazione Storica (Backtest)")
+    st.subheader(
+        "⚙️ Motore di Simulazione Storica (Volume Profile & Rounding Bottom)"
+    )
+    st.markdown(
+        "Questo modulo esegue il backtest della strategia individuata sul grafico giornaliero: "
+        "ingresso Long alla conferma dell'inversione ad arco (crossover EMA 9/21) dopo un test del supporto volumetrico (HVN)."
+    )
+
     b_col1, b_col2, b_col3 = st.columns(3)
     with b_col1:
-        bt_ticker = st.text_input("Inserisci un singolo Ticker da testare:", value="AAPL")
-        capitale_iniziale = st.number_input("Capitale iniziale ($):", min_value=100, value=10000, step=500)
+        bt_ticker = st.text_input(
+            "Inserisci un singolo Ticker da testare:", value="BTC-USD"
+        )
+        capitale_iniziale = st.number_input(
+            "Capitale iniziale ($):", min_value=100, value=10000, step=500
+        )
     with b_col2:
-        bt_periodo = st.selectbox("Orizzonte temporale dei dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"])
-        mappa_periodi = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
-        rischio_trade = st.slider("Rischio percentuale per operazione (%):", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
+        bt_periodo = st.selectbox(
+            "Orizzonte temporale dei dati:",
+            ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"],
+            index=1,
+        )
+        mappa_periodi = {
+            "1 Anno": "1y",
+            "3 Anni": "3y",
+            "5 Anni": "5y",
+            "Storico Massimo": "max",
+        }
+        rischio_trade = st.slider(
+            "Rischio percentuale per operazione (%):",
+            min_value=0.5,
+            max_value=5.0,
+            value=2.0,
+            step=0.5,
+        )
     with b_col3:
-        comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5)
+        comun_fee = st.number_input(
+            "Commissioni per singolo eseguito ($):",
+            min_value=0.0,
+            value=1.0,
+            step=0.5,
+        )
 
     if st.button("🚀 Esegui Backtest Strategia", type="primary"):
-        st.info(f"Elaborazione per {bt_ticker}...")
-        df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
-        if df_bt is not None and len(df_bt) > 60:
-            capitale, in_posizione, prezzo_ingresso = capitale_iniziale, False, 0
-            equity_curve, date_curve, trade_history = [capitale_iniziale], [df_bt.index], []
+        st.info(f"Elaborazione dati storici per {bt_ticker}...")
 
+        # Download dello storico giornaliero (1D come da grafico)
+        df_bt = yf.download(
+            tickers=bt_ticker,
+            period=mappa_periodi[bt_periodo],
+            interval="1d",
+            auto_adjust=False,
+            multi_level_index=False,
+            progress=False,
+        )
+
+        if df_bt is not None and len(df_bt) > 60:
+            df_bt.columns = [str(c).strip() for c in df_bt.columns]
+
+            # Calcolo degli indicatori per la conferma dell'arco di inversione
+            df_bt["EMA_9"] = (
+                df_bt["Close"].astype(float).ewm(span=9, adjust=False).mean()
+            )
+            df_bt["EMA_21"] = (
+                df_bt["Close"].astype(float).ewm(span=21, adjust=False).mean()
+            )
+
+            # Inizializzazione variabili del motore di portafoglio
+            capitale = capitale_iniziale
+            in_posizione = False
+            prezzo_ingresso, livello_sl, livello_tp, size_contratti = 0, 0, 0, 0
+
+            equity_curve = [capitale_iniziale]
+            date_curve = [df_bt.index]
+            trade_history = []
+      
             for i in range(50, len(df_bt)):
                 df_storico_finora = df_bt.iloc[:i]
                 riga_attuale = df_bt.iloc[i]
                 prezzo_corrente = float(riga_attuale["Close"])
                 data_corrente = df_bt.index[i]
 
+                # 1. LOGICA DI INGRESSO (ENTRY POINT)
                 if not in_posizione:
-                    p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora)
-                    if p_poc is None: continue
-                    posizione_tipo = "LONG" if prezzo_corrente >= p_poc else "SHORT"
-                    prezzo_ingresso = prezzo_corrente
-                    livello_sl, livello_tp = (p_vl * 0.985, p_vh) if posizione_tipo == "LONG" else (p_vh * 1.015, p_vl)
+                    p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora, div=50)
+                    if p_poc is None:
+                        continue
 
-                    if livello_sl > 0 and abs(prezzo_ingresso - livello_sl) > 0:
+                    hvn_supporto = p_poc
+                    df_finestra = df_storico_finora.tail(20)
+
+                    # Controllo se il prezzo ha testato l'HVN negli ultimi 20 giorni (tolleranza 5%)
+                    testato_supporto = (
+                        (df_finestra["Close"].astype(float) - hvn_supporto).abs()
+                        / hvn_supporto
+                        < 0.05
+                    ).any()
+
+                    # Trigger di inversione ad arco: Crossover rialzista EMA 9 > EMA 21
+                    ema9_prec = float(df_bt["EMA_9"].iloc[i - 1])
+                    ema21_prec = float(df_bt["EMA_21"].iloc[i - 1])
+                    ema9_corr = float(riga_attuale["EMA_9"])
+                    ema21_corr = float(riga_attuale["EMA_21"])
+                    crossover_rialzista = (ema9_prec <= ema21_prec) and (
+                        ema9_corr > ema21_corr
+                    )
+
+                    if testato_supporto and crossover_rialzista:
                         in_posizione = True
-                        size_contratti = (capitale * (rischio_trade / 100)) / abs(prezzo_ingresso - livello_sl)
+                        prezzo_ingresso = prezzo_corrente
+                        livello_sl = float(df_finestra["Low"].min())
+                        livello_tp = max(prezzo_ingresso * 1.20, p_vh)
+
+                        distanza_sl = abs(prezzo_ingresso - livello_sl)
+                        if Blackbox := (distanza_sl > 0):
+                            rischio_monetario = capitale * (rischio_trade / 100)
+                            size_contratti = rischio_monetario / distanza_sl
+                        else:
+                            in_posizione = False
+
+                # 2. GESTIONE DELLA POSIZIONE (MONITORAGGIO SL / TP)
                 else:
-                    high_g, low_g = float(riga_attuale["High"]), float(riga_attuale["Low"])
-                    uscito, p_chiusura = False, 0
-                    if posizione_tipo == "LONG":
-                        if low_g <= livello_sl: uscito, p_chiusura = True, livello_sl
-                        elif high_g >= livello_tp: uscito, p_chiusura = True, livello_tp
-                    elif posizione_tipo == "SHORT":
-                        if high_g >= livello_sl: uscito, p_chiusura = True, livello_sl
-                        elif low_g <= livello_tp: uscito, p_chiusura = True, livello_tp
+                    high_g = float(riga_attuale["High"])
+                    low_g = float(riga_attuale["Low"])
+                    uscito = False
+                    p_chiusura, esito_trade = 0, ""
+
+                    if low_g <= livello_sl:
+                        uscito, p_chiusura, esito_trade = True, livello_sl, "SL 🔴"
+                    elif high_g >= livello_tp:
+                        uscito, p_chiusura, esito_trade = True, livello_tp, "TP 🟢"
 
                     if uscito:
-                        pnl = ((p_chiusura - prezzo_ingresso) if posizione_tipo == "LONG" else (prezzo_ingresso - p_chiusura)) * size_contratti - (comun_fee * 2)
-                        capitale += pnl
-                        trade_history.append({"Data": data_corrente.strftime("%d/%m/%Y"), "Tipo": posizione_tipo, "PnL ($)": round(pnl, 2), "Capitale": round(capitale, 2)})
+                        pnl_netto = (
+                            (p_chiusura - prezzo_ingresso) * size_contratti
+                        ) - (comun_fee * 2)
+                        capitale += pnl_netto
+
+                        trade_history.append(
+                            {
+                                "Data": data_corrente.strftime("%d/%m/%Y"),
+                                "Asset": bt_ticker,
+                                "Tipo": "LONG",
+                                "Esito": esito_trade,
+                                "Ingresso ($)": round(prezzo_ingresso, 2),
+                                "Chiusura ($)": round(p_chiusura, 2),
+                                "PnL Netto ($)": round(pnl_netto, 2),
+                                "Capitale Residuo ($)": round(capitale, 2),
+                            }
+                        )
                         equity_curve.append(capitale)
                         date_curve.append(data_corrente)
                         in_posizione = False
 
-            st.subheader("📊 Statistiche di Performance Log")
+            # 3. INTERFACCIA GRAFICA DI RESOCONTO
+            st.subheader("📊 Resoconto Performance della Strategia")
             if trade_history:
                 df_trades = pd.DataFrame(trade_history)
-                win_rate = round((len(df_trades[df_trades["PnL ($)"] > 0]) / len(df_trades)) * 100, 2)
-                st.columns(2).metric("Ritorno Totale", f"{round(((capitale - capitale_iniziale) / capitale_iniziale) * 100, 2)} %")
+                operazioni_totali = len(df_trades)
+                operazioni_vincenti = len(df_trades[df_trades["PnL Netto ($)"] > 0])
+                win_rate = round((operazioni_vincenti / operazioni_totali) * 100, 2)
+                ritorno_totale = round(
+                    ((capitale - capitale_iniziale) / capitale_iniziale) * 100,
+                    2,
+                )
+
+                m_col1, m_col2, m_col3 = st.columns(3)
+                with m_col1:
+                    st.metric("Ritorno Totale Percentuale", f"{ritorno_totale} %")
+                with m_col2:
+                    st.metric("Percentuale di Win Rate", f"{win_rate} %")
+                with m_col3:
+                    st.metric("Operazioni Totali Chiuse", f"{operazioni_totali}")
+
+                st.markdown("### 🗂️ Registro Analitico Eseguiti")
                 st.dataframe(df_trades, use_container_width=True)
+
+                fig_eq = grp.Figure()
+                fig_eq.add_trace(
+                    grp.Scatter(
+                        x=date_curve,
+                        y=equity_curve,
+                        mode="lines+markers",
+                        name="Portafoglio ($)",
+                        line=dict(color="#38bdf8", width=2.5),
+                    )
+                )
+                fig_eq.update_layout(
+                    title=f"Andamento della Curva di Equity per {bt_ticker} ($)",
+                    template="plotly_dark",
+                    height=450,
+                    xaxis_title="Data Esecuzione",
+                    yaxis_title="Bilancio Capitale",
+                )
+                st.plotly_chart(fig_eq, use_container_width=True)
             else:
-                st.warning("Nessuna operazione eseguita nel periodo selezionato.")
+                st.warning(
+                    "⚠️ Nessun Entry Point rilevato per i filtri impostati sull'orizzonte temporale scelto."
+                )
+        else:
+            st.error(
+                "❌ Dati storici estratti da Yahoo Finance insufficienti per elaborare la strategia."
+            )
+
+
+
 # ==========================================
 # --- TAB 3: LIVE ALERTS STRATEGICI ---
 # ==========================================
