@@ -548,8 +548,7 @@ with tab3:
                                 f"🗂️ <b>Profilo Volume:</b> {nome_profilo}\n"
                                 f"⚡ <b>Setup Operativo:</b> {direzione}\n\n"
                                 f"📊 <b>Prezzo Attuale:</b> {round(p_attuale, dec)} USD\n"
-                                f"🟠 <b>Stop Loss (1.5 ATR):</b> {round(stop_l, dec)}
-"
+                                f"🟠 <b>Stop Loss (1.5 ATR):</b> {round(stop_l, dec)}\n"
                                 f"🔵 <b>Take Profit (3.0 ATR):</b> {round(take_p, dec)}\n\n"
                                 f"🔗 <a href='{url_stringa_pura}'>APRI IL GRAFICO SU TRADINGVIEW</a>"
                             )
