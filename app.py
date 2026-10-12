@@ -502,7 +502,7 @@ with tab2:
                     # Trigger d'ingresso sulla resistenza strutturale
                     if (
                         prezzo_su_area_volume
-                        and (p_chiusura > resistencia_pattern)
+                        and (p_chiusura > resistenza_pattern)
                         and is_candela_piena
                         and senza_reiezione
                     ):
