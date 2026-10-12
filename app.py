@@ -565,9 +565,9 @@ with tab4:
     
     g_col1, g_col2, g_col3 = st.columns(3)
     with g_col1:
-        garch_ticker = st.text_input("Inserisci Ticker da analizzare (es. AAPL, BTC-USD, ^GSPC):", value="AAPL", key="garch_tk_input")
-        garch_periodo = st.selectbox("Orizzonte storico dati:", ["1 Anno", "3 Anni", "5 Anni", "10 Anni"], index=1, key="garch_per_sel")
-        mappa_periodi_garch = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "10 Anni": "10y"}
+        garch_ticker = st.text_input("Inserisci Ticker da analizzare (es. AAPL, BTC-USD, ^GSPC):", value="^GSPC", key="garch_tk_input")
+        garch_periodo = st.selectbox("Orizzonte storico dati:", ["1 Anno", "3 Anni", "5 Anni", "10 Anni", "Storico Massimo"], index=1, key="garch_per_sel")
+        mappa_periodi_garch = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "10 Anni": "10y", "Storico Massimo": "max"}
     with g_col2:
         param_p = st.slider("Ordine Autoregressivo - Residui Quadrati (p):", min_value=1, max_value=5, value=1, key="garch_p")
         param_q = st.slider("Ordine Media Mobile - Volatilità Storica (q):", min_value=1, max_value=5, value=1, key="garch_q")
@@ -585,7 +585,27 @@ with tab4:
             # Calcolo dei rendimenti logaritmici percentuali
             df_g['Returns'] = 100 * np.log(df_g['Close'].astype(float) / df_g['Close'].astype(float).shift(1))
             df_g = df_g.dropna()
-            
+                        # --- NUOVO: Grafico del Prezzo dell'Azione (Plotly Dark) ---
+            st.markdown(f"##### 📈 Andamento Prezzo di Chiusura — {garch_ticker}")
+            fig_price = grp.Figure()
+            fig_price.add_trace(grp.Scatter(
+                x=df_g.index, 
+                y=df_g['Close'].astype(float), 
+                mode='lines', 
+                name='Prezzo Chiusura', 
+                line=dict(color='#38bdf8', width=2)
+            ))
+            fig_price.update_layout(
+                template="plotly_dark",
+                height=350,
+                margin=dict(l=20, r=20, t=20, b=20),
+                xaxis_rangeslider_visible=False,
+                xaxis=dict(gridcolor='rgba(51, 65, 85, 0.3)'),
+                yaxis=dict(gridcolor='rgba(51, 65, 85, 0.3)')
+            )
+            st.plotly_chart(fig_price, use_container_width=True, key="garch_price_chart")
+            st.markdown("---")
+
             with st.spinner("Calcolo dei coefficienti di eteroschedasticità..."):
                 try:
                     mod = arch_model(df_g['Returns'], p=param_p, q=param_q, vol=mappa_modelli[mod_type], dist='normal')
@@ -628,7 +648,8 @@ with tab4:
                         
                     with res_col2:
                         st.markdown("##### 📝 Tabella di Sintesi Statistica Completa")
-                        st.text(str(res_garch.summary()))
+                        # L'uso di st.code mantiene l'allineamento fisso delle colonne del report
+                        st.code(str(res_garch.summary()), language="text")
                         
                 except Exception as ex:
                     st.error(f"Errore durante la convergenza del modello GARCH: {ex}")
