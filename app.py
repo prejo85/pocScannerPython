@@ -578,25 +578,31 @@ with tab4:
     # --- BLOCCO INFORMATIVO DINAMICO IN BASE ALLA VARIANTE SELEZIONATA ---
     st.markdown("---")
     if mod_type == "Standard GARCH":
-        st.info("""
-        ℹ️ **Significato del Modello: Standard GARCH (Simmetrico)**
+        st.info(f"""
+        ℹ️ **Significato del Modello: Standard GARCH ({param_p}, {param_q}) [Simmetrico]**
         * **Natura:** È il modello base simmetrico. Assume che la volatilità futura dipenda solo dall'*intensità* degli shock passati e non dal loro segno (+ o -).
-        * **Funzionamento:** Elevando i residui al quadrato, un rialzo del +5% e un crollo del -5% hanno lo stesso identico impatto sulla volatilità di domani.
-        * **Target Ideale:** Valute (Forex), materie prime (Commodities) o asset stabili in cui non è marcato l'effetto panico causato dai ribassi.
+        * **A cosa servono i parametri scelti:**
+            * **p = {param_p} (Residui Quadrati):** Il modello analizza gli ultimi {param_p} giorni di shock/notizie di mercato per calcolare la reattività immediata della volatilità.
+            * **q = {param_q} (Volatilità Storica):** Il modello analizza gli ultimi {param_q} giorni di volatilità passata per determinare la persistenza a lungo termine della stessa.
+        * **Funzionamento:** Un rialzo del +5% e un crollo del -5% hanno lo stesso identico impatto sulla volatilità di domani.
         """)
     elif mod_type == "GJR-GARCH (Asimmetrico)":
-        st.info("""
-        ℹ️ **Significato del Modello: GJR-GARCH (Asimmetrico a Soglia)**
+        st.info(f"""
+        ℹ️ **Significato del Modello: GJR-GARCH ({param_p}, {param_q}) [Asimmetrico a Soglia]**
         * **Natura:** È un modello asimmetrico che cattura l'**effetto leva** (*leverage effect*). Nei mercati finanziari, i crolli generano molto più panico e volatilità rispetto ai rialzi.
-        * **Funzionamento:** Attiva un parametro aggiuntivo (*Gamma*) *solo* quando i rendimenti del giorno precedente sono negativi. Se il mercato crolla, l'impatto sulla volatilità si somma.
-        * **Target Ideale:** Mercati azionari (singoli titoli o indici come S&P 500 e FTSE MIB), dove le asimmetrie tra venditori e compratori sono strutturali.
+        * **A cosa servono i parametri scelti:**
+            * **p = {param_p} (Residui Quadrati):** Determina per quanti giorni di borsa passati ({param_p}) gli shock di prezzo continuano a influenzare la varianza.
+            * **q = {param_q} (Volatilità Storica):** Gestisce la memoria storica della volatilità per {param_q} periodi, modellando la tendenza dei mercati a raggruppare i periodi di forte turbolenza.
+        * **Funzionamento:** Attiva un parametro aggiuntivo (*Gamma*) *solo* quando i rendimenti passati sono negativi. Se il mercato crolla, l'impatto si somma rendendo il picco di volatilità molto più ripido.
         """)
     elif mod_type == "EGARCH":
-        st.info("""
-        ℹ️ **Significato del Modello: EGARCH (Exponential GARCH)**
+        st.info(f"""
+        ℹ️ **Significato del Modello: EGARCH ({param_p}, {param_q}) [Exponential GARCH]**
         * **Natura:** Modella il *logaritmo naturale* della volatilità condizionale. È una variante asimmetrica esponenziale altamente flessibile.
-        * **Funzionamento:** Esprime l'asimmetria senza soglie rigide e, grazie alla forma logaritmica, garantisce matematicamente che la volatilità stimata sia sempre positiva, evitando fallimenti di calcolo.
-        * **Target Ideale:** Criptovalute, titoli tecnologici speculativi ed asset iper-volatili caratterizzati da forti anomalie grafiche, oscillazioni estreme e code grasse.
+        * **A cosa servono i parametri scelti:**
+            * **p = {param_p} (Residui Quadrati):** Definisce l'ampiezza della finestra temporale ({param_p} giorni) in cui l'asimmetria delle notizie (buone o cattive) modella la curva logaritmica.
+            * **q = {param_q} (Volatilità Storica):** Regola la velocità di decadimento o persistenza della memoria della volatilità passata per gli ultimi {param_q} giorni.
+        * **Funzionamento:** Esprime l'asimmetria senza soglie rigide e, grazie alla forma logaritmica, garantisce matematicamente che la volatilità stimata sia sempre positiva, evitando fallimenti di calcolo su asset estremi.
         """)
     st.markdown("---")
 
