@@ -561,52 +561,50 @@ with tab3:
 # ==========================================
 with tab4:
     st.subheader("📈 Studio ed Analisi Quantitativa della Volatilità (GARCH)")
-    st.markdown("Modello statistico ottimizzato GARCH(1,1) per l'analisi dei cluster di volatilità sui rendimenti logaritmici.")
+    st.markdown("Configura i parametri sottostanti per modellare i cluster di volatilità sui rendimenti finanziari logaritmici.")
     
-    g_col1, g_col2 = st.columns(2)
+    g_col1, g_col2, g_col3 = st.columns(3)
     with g_col1:
         garch_ticker = st.text_input("Inserisci Ticker da analizzare (es. AAPL, BTC-USD, ^GSPC):", value="AAPL", key="garch_tk_input")
         garch_periodo = st.selectbox("Orizzonte storico dati:", ["1 Anno", "3 Anni", "5 Anni", "10 Anni", "Storico Massimo"], index=1, key="garch_per_sel")
         mappa_periodi_garch = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "10 Anni": "10y", "Storico Massimo": "max"}
     with g_col2:
+        # Cursori per la gestione dei giorni di deviazione e ritardo ripristinati
+        param_p = st.slider("Ordine Autoregressivo - Residui Quadrati (p):", min_value=1, max_value=5, value=1, key="garch_p")
+        param_q = st.slider("Ordine Media Mobile - Volatilità Storica (q):", min_value=1, max_value=5, value=1, key="garch_q")
+    with g_col3:
         mod_type = st.selectbox("Variante Modello GARCH:", ["Standard GARCH", "GJR-GARCH (Asimmetrico)", "EGARCH"], index=0, key="garch_type")
         mappa_modelli = {"Standard GARCH": "Garch", "GJR-GARCH (Asimmetrico)": "GJR", "EGARCH": "EGARCH"}
-
-    # --- Blocco pre-impostato internamente a GARCH(1,1) ---
-    param_p = 1
-    param_q = 1
-
     # --- BLOCCO INFORMATIVO DINAMICO IN BASE ALLA VARIANTE SELEZIONATA ---
     st.markdown("---")
     if mod_type == "Standard GARCH":
         st.info(f"""
-        ℹ️ **Significato del Modello: Standard GARCH(1,1) [Simmetrico]**
-        * **Natura:** È il modello base simmetrico ottimizzato. Assume che la volatilità futura dipenda solo dall'*intensità* degli shock passati e non dal loro segno (+ o -).
-        * **Configurazione di Calcolo:**
-            * **p = 1 (Shock Recente):** Il modello analizza l'ultimo giorno di shock/notizie di mercato per calcolare la reattività immediata della volatilità.
-            * **q = 1 (Persistenza Storica):** Il modello analizza la volatilità del giorno precedente per determinare la stabilità a lungo termine della stessa.
+        ℹ️ **Significato del Modello: Standard GARCH ({param_p}, {param_q}) [Simmetrico]**
+        * **Natura:** È il modello base simmetrico. Assume che la volatilità futura dipenda solo dall'*intensità* degli shock passati e non dal loro segno (+ o -).
+        * **A cosa servono i parametri scelti:**
+            * **p = {param_p} (Residui Quadrati):** Il modello analizza gli ultimi {param_p} giorni di shock/notizie di mercato per calcolare la reattività immediata della volatilità.
+            * **q = {param_q} (Volatilità Storica):** Il modello analizza gli ultimi {param_q} giorni di volatilità passata per determinare la persistenza a lungo termine della stessa.
         * **Funzionamento:** Un rialzo del +5% e un crollo del -5% hanno lo stesso identico impatto sulla volatilità di domani.
         """)
     elif mod_type == "GJR-GARCH (Asimmetrico)":
         st.info(f"""
-        ℹ️ **Significato del Modello: GJR-GARCH(1,1) [Asimmetrico a Soglia]**
+        ℹ️ **Significato del Modello: GJR-GARCH ({param_p}, {param_q}) [Asimmetrico a Soglia]**
         * **Natura:** È un modello asimmetrico che cattura l'**effetto leva** (*leverage effect*). Nei mercati finanziari, i crolli generano molto più panico e volatilità rispetto ai rialzi.
-        * **Configurazione di Calcolo:**
-            * **p = 1 (Shock Recente):** Determina l'impatto immediato degli shock di prezzo del giorno precedente sulla varianza attuale.
-            * **q = 1 (Persistenza Storica):** Gestisce la memoria storica della volatilità, modellando la tendenza dei mercati a raggruppare i periodi di forte turbolenza.
-        * **Funzionamento:** Attiva un parametro aggiuntivo (*Gamma*) *solo* quando i rendimenti passati sono negativi. Se il mercato crolla, l'impatto si somma rendendo il picco di volatilità molto più ripido.
+        * **A cosa servono i parametri scelti:**
+            * **p = {param_p} (Residui Quadrati):** Determina per quanti giorni di borsa passati ({param_p}) gli shock di prezzo continuano a influenzare la varianza.
+            * **q = {param_q} (Volatilità Storica):** Gestisce la memoria storica della volatilità per {param_q} periodi, modellando la tendenza dei mercati a raggruppare i periodi di forte turbolenza.
+        * **Funzionamento:** Attiva un paramero aggiuntivo (*Gamma*) *solo* quando i rendimenti passati sono negativi. Se il mercato crolla, l'impatto si somma rendendo il picco di volatilità molto più ripido.
         """)
     elif mod_type == "EGARCH":
         st.info(f"""
-        ℹ️ **Significato del Modello: EGARCH(1,1) [Exponential GARCH]**
+        ℹ️ **Significato del Modello: EGARCH ({param_p}, {param_q}) [Exponential GARCH]**
         * **Natura:** Modella il *logaritmo naturale* della volatilità condizionale. È una variante asimmetrica esponenziale altamente flessibile.
-        * **Configurazione di Calcolo:**
-            * **p = 1 (Shock Recente):** Definisce l'ampiezza della finestra in cui l'asimmetria delle notizie del giorno precedente modella la curva logaritmica.
-            * **q = 1 (Persistenza Storica):** Regola la velocità di decadimento o persistenza della memoria della volatilità passata.
+        * **A cosa servono i parametri scelti:**
+            * **p = {param_p} (Residui Quadrati):** Definisce l'ampiezza della finestra temporale ({param_p} giorni) in cui l'asimmetria delle notizie (buone o cattive) modella la curva logaritmica.
+            * **q = {param_q} (Volatilità Storica):** Regola la velocità di decadimento o persistenza della memoria della volatilità passata per gli ultimi {param_q} giorni.
         * **Funzionamento:** Esprime l'asimmetria senza soglie rigide e, grazie alla forma logaritmica, garantisce matematicamente che la volatilità stimata sia sempre positiva, evitando fallimenti di calcolo su asset estremi.
         """)
     st.markdown("---")
-
     if st.button("📊 Elabora Modello Volatilità", type="primary", key="garch_btn_start"):
         st.info(f"Recupero dati storici in corso per {garch_ticker}...")
         df_g = yf.download(tickers=garch_ticker, period=mappa_periodi_garch[garch_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
@@ -630,8 +628,6 @@ with tab4:
                     st.markdown(f"##### 📊 Analisi di Correlazione: Prezzo di Chiusura vs Volatilità Condizionale GARCH")
                     
                     fig_combined = grp.Figure()
-                    
-                    # Asse Y Sinistro: Prezzo dell'Azione
                     fig_combined.add_trace(grp.Scatter(
                         x=df_g.index, 
                         y=df_g['Close'].astype(float), 
@@ -639,8 +635,6 @@ with tab4:
                         name=f'Prezzo Chiusura ({garch_ticker})', 
                         line=dict(color='#38bdf8', width=2)
                     ))
-                    
-                    # Asse Y Destro: Volatilità Condizionale Annualizzata GARCH
                     fig_combined.add_trace(grp.Scatter(
                         x=df_g.index, 
                         y=cond_vol_annualizzata, 
@@ -650,7 +644,6 @@ with tab4:
                         yaxis='y2'
                     ))
                     
-                    # Layout doppio asse Y con sintassi corretta
                     fig_combined.update_layout(
                         template="plotly_dark",
                         height=450,
@@ -722,38 +715,10 @@ with tab4:
                     
                     3. 📐 **Perché si usano i rendimenti "Logaritmici" invece di quelli semplici?**
                        In econometria finanziaria si preferisce calcolare il rendimento come $100 \\times \\ln(Prezzo_t / Prezzo_{{t-1}})$ per due motivi fondamentali:
-                       * **Stazionarietà:** I prezzi nel lungo periodo possono passare da valori molto bassi a cifre importanti. Se analizzassimo le variazioni in dollari o in unità assolute, i movimenti recenti sembrerebbero enormi e quelli passati invisibili. Il rendimento logaritmico rende i dati confrontabili nel tempo: una variazione percentuale registrata all'inizio dello storico ha lo stesso peso e la stessa rilevanza statistica di una registrata oggi.
+                       * **Stazionarietà:** I prezzi nel lungo periodo possono passare da valori molto bassi a cifre importanti. Se analizzassimo las variazioni in dollari o in unità assolute, i movimenti recenti sembrerebbero enormi e quelli passati invisibili. Il rendimento logaritmico rende i dati confrontabili nel tempo: una variazione percentuale registrata all'inizio dello storico ha lo stesso peso e la stessa rilevanza statistica di una registrata oggi.
                        * **Simmetria e Additività:** Se un titolo perde il 50% e poi guadagna il 50%, con il calcolo semplice ti ritroveresti a -25% dal prezzo iniziale. Con i rendimenti logaritmici, le variazioni sono simmetriche e perfettamente sommabili nel tempo, il che permette al modello GARCH di non subire distorsioni matematiche durante il calcolo della varianza condizionale.
                     """)
                     
-                    st.markdown("---")
-                    
-                    # ==============================================================================
-                    # --- GUIDA ALL'INTERPRETAZIONE DEI PARAMETRI STIMATI ---
-                    # ==============================================================================
-                    st.markdown("### 📊 Guida all'Interpretazione dei Coefficienti")
-                    st.markdown("""
-                    I coefficienti sottostanti mostrano matematicamente come il titolo reagisce e conserva la volatilità nel tempo. Ecco cosa indicano i singoli parametri stimati dal modello:
-                    *   **mu ($\mu$):** Rappresenta il rendimento medio giornaliero atteso del titolo (la costante dell'equazione della media).
-                    *   **omega ($\omega$):** È la costante di base della varianza. È il livello minimo di volatilità a cui il titolo tende a tornare nel lunghissimo periodo quando non ci sono shock.
-                    *   **alpha ($\alpha$):** Rappresenta la reattività del titolo nel breve termine. Misura l'impatto immediato dei residui quadrati (gli shock o le notizie inaspettate dei giorni precedenti). Più i valori di *alpha* sono alti, più la linea rossa del grafico superiore mostrerà picchi ripidi e reazioni nervose subito dopo un forte movimento dei prezzi.
-                    *   **beta ($\beta$):** Rappresenta la memoria o persistenza della volatilità a lungo termine. Misura quanto la volatilità passata influenzi quella odierna. Valori di *beta* elevati indicano che una volta scoppiata la turbolenza sul mercato, questa farà fatica a riassorbirsi, creando ampi cumuli (*cluster*) sul grafico.
-                    
-                    💡 *Nota Statistica:* In un modello stabile e stazionario (come lo Standard GARCH 1,1), la somma dei parametri ($\alpha_1 + \beta_1$) deve essere inferiore a $1$. Se la somma è molto vicina a $1$ (es. $0.98$), significa che la volatilità è estremamente persistente e richiede molto tempo prima di ritornare al suo valore medio di base ($\omega$).
-                    """)
-                    
-                    st.markdown("---")
-                    # --- RIGHE REGOLE DI RENDERING OUTPUT ---
-                    res_col1, res_col2 = st.columns(2)
-                    
-                    with res_col1:
-                        st.markdown("##### 📁 Parametri Stimati")
-                        st.dataframe(res_garch.params.to_frame(name="Coefficiente"), use_container_width=True)
-                        
-                    with res_col2:
-                        st.markdown("##### 📝 Tabella di Sintesi Statistica Completa")
-                        st.code(str(res_garch.summary()), language="text")
-                        
                 except Exception as ex:
                     st.error(f"Errore durante la convergenza del modello GARCH: {ex}")
         else:
