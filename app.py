@@ -574,7 +574,6 @@ with tab4:
     with g_col3:
         mod_type = st.selectbox("Variante Modello GARCH:", ["Standard GARCH", "GJR-GARCH (Asimmetrico)", "EGARCH"], index=0, key="garch_type")
         mappa_modelli = {"Standard GARCH": "Garch", "GJR-GARCH (Asimmetrico)": "GJR", "EGARCH": "EGARCH"}
-
     # --- BLOCCO INFORMATIVO DINAMICO IN BASE ALLA VARIANTE SELEZIONATA ---
     st.markdown("---")
     if mod_type == "Standard GARCH":
@@ -605,7 +604,6 @@ with tab4:
         * **Funzionamento:** Esprime l'asimmetria senza soglie rigide e, grazie alla forma logaritmica, garantisce matematicamente che la volatilità stimata sia sempre positiva, evitando fallimenti di calcolo su asset estremi.
         """)
     st.markdown("---")
-
     if st.button("📊 Elabora Modello Volatilità", type="primary", key="garch_btn_start"):
         st.info(f"Recupero dati storici in corso per {garch_ticker}...")
         df_g = yf.download(tickers=garch_ticker, period=mappa_periodi_garch[garch_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
@@ -649,7 +647,7 @@ with tab4:
                         yaxis='y2'
                     ))
                     
-                    # Layout doppio asse Y
+                    # Layout doppio asse Y con sintassi corretta
                     fig_combined.update_layout(
                         template="plotly_dark",
                         height=450,
@@ -659,18 +657,12 @@ with tab4:
                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                         xaxis=dict(gridcolor='rgba(51, 65, 85, 0.25)'),
                         yaxis=dict(
-                            title=dict(
-                                text=f"Prezzo {garch_ticker} (USD)",
-                                font=dict(color="#38bdf8")
-                            ),
+                            title=dict(text=f"Prezzo {garch_ticker} (USD)", font=dict(color="#38bdf8")),
                             tickfont=dict(color="#38bdf8"),
                             gridcolor='rgba(51, 65, 85, 0.25)'
                         ),
                         yaxis2=dict(
-                            title=dict(
-                                text="Volatilità Condizionale GARCH (%)",
-                                font=dict(color="#f43f5e")
-                            ),
+                            title=dict(text="Volatilità Condizionale GARCH (%)", font=dict(color="#f43f5e")),
                             tickfont=dict(color="#f43f5e"),
                             anchor="x",
                             overlaying="y",
@@ -681,7 +673,6 @@ with tab4:
                     st.plotly_chart(fig_combined, use_container_width=True, key="garch_combined_chart")
                     
                     st.markdown("---")
-                    
                     # --- GRAFICO 2: RENDIMENTI LOGARITMICI A TOTALE ESTENSIONE ORIZZONTALE ---
                     st.markdown("##### 📉 Rendimenti Logaritmici Giornalieri (%)")
                     
@@ -709,11 +700,35 @@ with tab4:
                     st.plotly_chart(fig_returns, use_container_width=True, key="garch_returns_chart")
                     
                     st.markdown("---")
+                    # ==============================================================================
+                    # --- GUIDA ALL'INTERPRETAZIONE DEI GRAFICI E DEI RENDIMENTI (DINAMICA PER TICKER) ---
+                    # ==============================================================================
+                    st.markdown(f"### 📋 Funzione dei Rendimenti Logaritmici su {garch_ticker}")
+                    st.markdown(f"""
+                    Avere il grafico dei **Rendimenti Logaritmici Giornalieri (%)** posizionato sotto quello della volatilità condizionale è fondamentale. Questo grafico serve a **isolare e misurare la pura variazione percentuale giornaliera del prezzo**, depurandola dall'effetto della crescita di lungo periodo (trend).
+                    
+                    Analizzando il grafico generato sul titolo **{garch_ticker}**, la sua funzione si esprime in tre concetti operativi e statistici chiave:
+                    
+                    1. 🔍 **Visualizzazione immediata dei "Cluster di Volatilità"**
+                       Se guardi l'asse temporale in modo verticale, noterai una corrispondenza millimetrica: ogni volta che nel grafico inferiore i rendimenti logaritmici subiscono delle oscillazioni violentissime verso l'alto o verso il basso, nel grafico superiore la linea rossa del GARCH schizza istantaneamente verso l'alto. Il grafico dei rendimenti mostra visivamente il fenomeno per cui *la forte volatilità tende a seguire altra forte volatilità*, mentre i periodi di calma tendono a raggrupparsi insieme.
+                    
+                    2. ⚡ **Identificazione visiva delle Anomalie (Shock di Mercato)**
+                       Il prezzo di un asset non si muove in modo lineare. Il grafico dei rendimenti logaritmici stabilisce una *"linea dello zero"* ideale:
+                       * I movimenti ordinari oscillano costantemente in una fascia stretta (solitamente tra il -5% e il +5%).
+                       * Le anomalie statistiche (i cosiddetti *"cigni neri"* o shock da trimestrali/crisi macroeconomiche) si muovono come fulmini isolati che tagliano bruscamente il grafico. Il modello GARCH utilizza esattamente l'ampiezza al quadrato di questi "fulmini" (i residui) per calcolare quanta energia e panico si stanno accumulando sul titolo.
+                    
+                    3. 📐 **Perché si usano i rendimenti "Logaritmici" invece di quelli semplici?**
+                       In econometria finanziaria si preferisce calcolare il rendimento come $100 \\times \\ln(Prezzo_t / Prezzo_{{t-1}})$ per due motivi fondamentali:
+                       * **Stazionarietà:** I prezzi nel lungo periodo possono passare da valori molto bassi a cifre importanti. Se analizzassimo le variazioni in dollari o in unità assolute, i movimenti recenti sembrerebbero enormi e quelli passati invisibili. Il rendimento logaritmico rende i dati confrontabili nel tempo: una variazione percentuale registrata all'inizio dello storico ha lo stesso peso e la stessa rilevanza statistica di una registrata oggi.
+                       * **Simmetria e Additività:** Se un titolo perde il 50% e poi guadagna il 50%, con il calcolo semplice ti ritroveresti a -25% dal prezzo iniziale. Con i rendimenti logaritmici, le variazioni sono simmetriche e perfettamente sommabili nel tempo, il che permette al modello GARCH di non subire distorsioni matematiche durante il calcolo della varianza condizionale.
+                    """)
+                    
+                    st.markdown("---")
                     
                     # ==============================================================================
-                    # --- NUOVA SEZIONE: GUIDA ALLA LETTURA DEI PARAMETRI STIMATI ---
+                    # --- GUIDA ALL'INTERPRETAZIONE DEI PARAMETRI STIMATI ---
                     # ==============================================================================
-                    st.markdown("### 📋 Guida all'Interpretazione dei Risultati")
+                    st.markdown("### 📊 Guida all'Interpretazione dei Coefficienti")
                     st.markdown("""
                     I coefficienti sottostanti mostrano matematicamente come il titolo reagisce e conserva la volatilità nel tempo. Ecco cosa indicano i singoli parametri stimati dal modello:
                     *   **mu ($\mu$):** Rappresenta il rendimento medio giornaliero atteso del titolo (la costante dell'equazione della media).
@@ -725,8 +740,7 @@ with tab4:
                     """)
                     
                     st.markdown("---")
-                    
-                    # --- RIGHE REGOLE DI RENDERING OUTPUT (COLONNE COMPATTE) ---
+                    # --- RIGHE REGOLE DI RENDERING OUTPUT ---
                     res_col1, res_col2 = st.columns(2)
                     
                     with res_col1:
