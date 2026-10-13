@@ -435,6 +435,9 @@ with tab2:
     # Spazio di separazione prima del pulsante di esecuzione grafico
     st.markdown("")
     
+    # ==============================================================================
+# PARTE 2 & 4 REGOLATE: FILTRO POC SIMILI E OTTIMIZZAZIONE GRAFICA INDICATORE
+# ==============================================================================
     if st.button("📐 Genera Struttura Geometrica POC", type="primary", key="geo_btn_start"):
         st.info(f"Elaborazione matriciale e calcolo profili per {geo_ticker}...")
         df_g = yf.download(tickers=geo_ticker, period=mappa_periodi_geo[geo_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
@@ -471,8 +474,8 @@ with tab2:
             df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             df_g["Accelerazione_Geometrica"] = np.where(df_g["Z_Score"] >= geo_soglia, 1, 0)
             
-            # Individuazione dei punti e calcolo dei Volume Profile continui fino a oggi
-            linee_poc_geometriche = []
+            # Individuazione temporanea di tutti i POC potenziali
+            poc_grezzi = []
             stato_precedente = 0
             
             for i in range(geo_finestra, n_punti):
@@ -482,11 +485,28 @@ with tab2:
                     df_da_mom_a_oggi = df_g.iloc[start_idx:]
                     p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
                     if p_poc is not None:
-                        linee_poc_geometriche.append((df_g.index[start_idx], p_poc))
+                        poc_grezzi.append((df_g.index[start_idx], float(p_poc)))
                 stato_precedente = stato_attuale
+            
+            # --- LOGICA DI FILTRAGGIO E ACCORPAMENTO DEI POC SIMILI (Tolleranza 1.0%) ---
+            linee_poc_geometriche = []
+            tolleranza_filtro = 0.01  # 1.0% di tolleranza sul prezzo
+            
+            for data_start, valore_poc in poc_grezzi:
+                trovato_duplicato = False
+                for i, (dt_saved, val_saved) in enumerate(linee_poc_geometriche):
+                    # Se lo scostamento percentuale tra il nuovo POC e uno già salvato è inferiore alla tolleranza
+                    if abs(valore_poc - val_saved) / val_saved <= tolleranza_filtro:
+                        trovato_duplicato = True
+                        # Aggiorniamo il POC mantenendo la data più recente per catturare l'impulso fresco
+                        if data_start > dt_saved:
+                            linee_poc_geometriche[i] = (data_start, valore_poc)
+                        break
+                if not trovato_duplicato:
+                    linee_poc_geometriche.append((data_start, valore_poc))
                 
-            # Disegno del Grafico Prezzi + POC Linee Arancioni Continuati
-            st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Livelli POC Statici")
+            # --- RENDER DEL GRAFICO PRINCIPALE PREZZI ---
+            st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Livelli POC Statici Filtrati")
             fig_geo = grp.Figure()
             fig_geo.add_trace(grp.Candlestick(
                 x=df_g.index, open=df_g["Open"].astype(float), high=df_g["High"].astype(float),
@@ -505,18 +525,39 @@ with tab2:
                     font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
                     bgcolor="rgba(15, 23, 42, 0.85)"
                 )
-            fig_geo.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=550)
+            fig_geo.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=500, margin=dict(l=20, r=20, t=10, b=10))
             st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
             
-            # Subplot dello Z-Score inferiore
+            # --- NUOVA SEZIONE: SUBPLOT DEL DETECTOR INFERIORE CORRETTO ---
+            st.markdown("##### 📉 Oscillatore Quantitativo: Z-Score dei Residui della Regressione")
+            
             fig_zg = grp.Figure()
-            fig_zg.add_trace(grp.Scatter(x=df_g.index, y=df_g["Z_Score"], mode="lines", name="Z-Score", line=dict(color="#38bdf8", width=1.5)))
+            fig_zg.add_trace(grp.Scatter(
+                x=df_g.index, y=df_g["Z_Score"], mode="lines", 
+                name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
+            ))
+            # Linea della soglia utente per visualizzare l'anomalia balistica
             fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
-            fig_zg.update_layout(template="plotly_dark", height=180, margin=dict(l=20, r=20, t=10, b=20))
+            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
+            
+            fig_zg.update_layout(
+                template="plotly_dark", height=200, 
+                margin=dict(l=20, r=20, t=10, b=20),
+                yaxis=dict(title="Deviazioni Std (Z)")
+            )
             st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
-            st.success("📐 Mappatura geometrica dei volumi completata. In attesa dei tuoi prossimi comandi strategici per questo tab...")
+            
+            # Box informativo di spiegazione matematica dell'oscillatore inferiore
+            st.info(f"""
+            ℹ️ **Significato dell'Indicatore Inferiore: Z-Score dei Residui Geometrici**
+            * **Cosa misura:** Rappresenta quante deviazioni standard il prezzo attuale si trova al di sopra o al di sotto della retta di regressione lineare calcolata negli ultimi **{geo_finestra} giorni** (il trend centrale equilibrato).
+            * **Significato operativo delle linee:** Quando la linea azzurra rompe la soglia critica rossa tratteggiata a **+{geo_soglia}**, l'asset sta registrando un'accelerazione di prezzo statisticamente anomala (Momento Balistico). Il sistema intercetta quel punto esatto per avviare il calcolo del Volume Profile continuato fino a oggi.
+            """)
+            
+            st.success("📐 Mappatura geometrica dei volumi completata con eliminazione dei cluster ridondanti. In attesa dei tuoi comandi...")
         else:
             st.error("Dati storici non sufficienti per calcolare la regressione rolling.")
+
 
 # ==============================================================================
 # --- TAB 3: BREAKOUT TREND-FOLLOWING (MOTORE DI BACKTEST STRATEGICO CON GEO-Z) ---
