@@ -710,7 +710,23 @@ with tab4:
                     
                     st.markdown("---")
                     
-                    # --- TABELLE REGOLE DI RENDERING OUTPUT ---
+                    # ==============================================================================
+                    # --- NUOVA SEZIONE: GUIDA ALLA LETTURA DEI PARAMETRI STIMATI ---
+                    # ==============================================================================
+                    st.markdown("### 📋 Guida all'Interpretazione dei Risultati")
+                    st.markdown("""
+                    I coefficienti sottostanti mostrano matematicamente come il titolo reagisce e conserva la volatilità nel tempo. Ecco cosa indicano i singoli parametri stimati dal modello:
+                    *   **mu ($\mu$):** Rappresenta il rendimento medio giornaliero atteso del titolo (la costante dell'equazione della media).
+                    *   **omega ($\omega$):** È la costante di base della varianza. È il livello minimo di volatilità a cui il titolo tende a tornare nel lunghissimo periodo quando non ci sono shock.
+                    *   **alpha ($\alpha$):** Rappresenta la reattività del titolo nel breve termine. Misura l'impatto immediato dei residui quadrati (gli shock o le notizie inaspettate dei giorni precedenti). Più i valori di *alpha* sono alti, più la linea rossa del grafico superiore mostrerà picchi ripidi e reazioni nervose subito dopo un forte movimento dei prezzi.
+                    *   **beta ($\beta$):** Rappresenta la memoria o persistenza della volatilità a lungo termine. Misura quanto la volatilità passata influenzi quella odierna. Valori di *beta* elevati indicano che una volta scoppiata la turbolenza sul mercato, questa farà fatica a riassorbirsi, creando ampi cumuli (*cluster*) sul grafico.
+                    
+                    💡 *Nota Statistica:* In un modello stabile e stazionario (come lo Standard GARCH 1,1), la somma dei parametri ($\alpha_1 + \beta_1$) deve essere inferiore a $1$. Se la somma è molto vicina a $1$ (es. $0.98$), significa che la volatilità è estremamente persistente e richiede molto tempo prima di ritornare al suo valore medio di base ($\omega$).
+                    """)
+                    
+                    st.markdown("---")
+                    
+                    # --- RIGHE REGOLE DI RENDERING OUTPUT (COLONNE COMPATTE) ---
                     res_col1, res_col2 = st.columns(2)
                     
                     with res_col1:
