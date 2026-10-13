@@ -148,7 +148,13 @@ def calc_vp(df, div=200):
         else: idx_a += 1; v_current += v_p
     return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
 
-tab1, tab2, tab3, tab4 = st.tabs(["Analisi Triple-POC", "Backtesting", "Alert Telegram", "Analisi GARCH"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "Analisi Triple-POC", 
+    "Analisi Geometrica POC", 
+    "Breakout Trend-Following", 
+    "Alert Telegram", 
+    "Analisi GARCH"
+])
 
 # ==========================================
 # --- TAB 1: TRE POC SCANNER ---
@@ -398,13 +404,112 @@ with tab1:
                         st.plotly_chart(fig, width="stretch", key=f"chart_{ticker}")
                     else: 
                         st.warning(f"Dati storici insufficienti per {ticker}.")
-
 # ==============================================================================
-# PARTE 1: INTERFACCIA UTENTE E INPUT PARAMETRI (TAB 2)
+# --- TAB 2: ANALISI GEOMETRICA POC (SOLO TRACCIAMENTO GEO-POC FINO A OGGI) ---
 # ==============================================================================
 with tab2:
-    st.subheader("⚙️ Analisi Geometrica Avanzata: Orizzonti POC Continuati fino a Oggi")
-    st.markdown("Rileva il cambio di momentum con il distacco balistico dello Z-Score e calcola il Volume Profile da quel punto esatto fino a oggi.")
+    st.subheader("📐 Laboratorio Geometrico: Tracciamento POC su Impulso Continuato")
+    st.markdown("Rileva il cambio di momentum tramite il distacco dello Z-Score dalla regressione ed estende i profili volumetrici da quel punto fino a oggi.")
+    
+    g_col1, g_col2, g_col3 = st.columns(3)
+    with g_col1:
+        geo_ticker = st.text_input("Inserisci Ticker da scansionare:", value="AAPL", key="geo_tk_input")
+    with g_col2:
+        geo_periodo = st.selectbox("Orizzonte storico dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], index=0, key="geo_per_sel")
+        mappa_periodi_geo = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
+    with g_col3:
+        geo_finestra = st.slider("Finestra Regressione Lineare (Giorni base):", min_value=20, max_value=100, value=50, step=5, key="geo_win_sl")
+        geo_soglia = st.slider("Soglia Z-Score per Cambio Momentum:", min_value=1.5, max_value=3.5, value=2.0, step=0.1, key="geo_z_sl")
+
+    if st.button("📐 Genera Struttura Geometrica POC", type="primary", key="geo_btn_start"):
+        st.info(f"Elaborazione matriciale e calcolo profili per {geo_ticker}...")
+        df_g = yf.download(tickers=geo_ticker, period=mappa_periodi_geo[geo_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
+        
+        if df_g is not None and len(df_g) > geo_finestra:
+            df_g.columns = [str(c).strip() for c in df_g.columns]
+            close_series = pd.Series(df_g["Close"].values.flatten(), index=df_g.index).astype(float)
+            n_punti = len(df_g)
+            
+            # Algoritmo Vettorizzato per la Regressione e lo Z-Score
+            n = geo_finestra
+            x = np.arange(n)
+            sum_x, sum_x2 = x.sum(), (x**2).sum()
+            denominatore = n * sum_x2 - (sum_x**2)
+            
+            sum_y = close_series.rolling(window=n).sum()
+            sum_y2 = (close_series**2).rolling(window=n).sum()
+            
+            xy_conv = np.convolve(close_series.values, x[::-1], mode='valid')
+            sum_xy = pd.Series(np.nan, index=close_series.index)
+            sum_xy.iloc[n-1:] = xy_conv
+            
+            m_series = (n * sum_xy - sum_x * sum_y) / denominatore
+            q_series = (sum_x2 * sum_y - sum_x * sum_xy) / denominatore
+            prezzi_teorici_series = m_series * n + q_series
+            
+            mean_x, var_x = sum_x / n, sum_x2 / n - ((sum_x / n)**2)
+            mean_y, var_y = sum_y / n, sum_y2 / n - ((sum_y / n)**2)
+            cov_xy = sum_xy / n - (mean_x * mean_y)
+            
+            var_residui = var_y - (2 * m_series * cov_xy) + (m_series**2 * var_x)
+            std_residui_series = np.sqrt(np.clip(var_residui, 0.00001, None))
+            
+            df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
+            df_g["Accelerazione_Geometrica"] = np.where(df_g["Z_Score"] >= geo_soglia, 1, 0)
+            
+            # Individuazione dei punti e calcolo dei Volume Profile continui fino a oggi
+            linee_poc_geometriche = []
+            stato_precedente = 0
+            
+            for i in range(geo_finestra, n_punti):
+                stato_attuale = df_g["Accelerazione_Geometrica"].iloc[i]
+                if stato_attuale == 1 and stato_precedente == 0:
+                    start_idx = i
+                    df_da_mom_a_oggi = df_g.iloc[start_idx:]
+                    p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
+                    if p_poc is not None:
+                        linee_poc_geometriche.append((df_g.index[start_idx], p_poc))
+                stato_precedente = stato_attuale
+                
+            # Disegno del Grafico Prezzi + POC Linee Arancioni Continuati
+            st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Livelli POC Statici")
+            fig_geo = grp.Figure()
+            fig_geo.add_trace(grp.Candlestick(
+                x=df_g.index, open=df_g["Open"].astype(float), high=df_g["High"].astype(float),
+                low=df_g["Low"].astype(float), close=df_g["Close"].astype(float), name=geo_ticker
+            ))
+            
+            data_oggi = df_g.index[-1]
+            for idx, (data_start, valore_poc) in enumerate(linee_poc_geometriche):
+                fig_geo.add_trace(grp.Scatter(
+                    x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
+                    showlegend=False, line=dict(color="#f29e1f", width=2.5, dash="solid")
+                ))
+                fig_geo.add_annotation(
+                    x=data_start, y=valore_poc, text=f"POC {round(valore_poc, 2)}",
+                    showarrow=False, yshift=8, xanchor="left",
+                    font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
+                    bgcolor="rgba(15, 23, 42, 0.85)"
+                )
+            fig_geo.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=550)
+            st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
+            
+            # Subplot dello Z-Score inferiore
+            fig_zg = grp.Figure()
+            fig_zg.add_trace(grp.Scatter(x=df_g.index, y=df_g["Z_Score"], mode="lines", name="Z-Score", line=dict(color="#38bdf8", width=1.5)))
+            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
+            fig_zg.update_layout(template="plotly_dark", height=180, margin=dict(l=20, r=20, t=10, b=20))
+            st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
+            st.success("📐 Mappatura geometrica dei volumi completata. In attesa dei tuoi prossimi comandi strategici per questo tab...")
+        else:
+            st.error("Dati storici non sufficienti per calcolare la regressione rolling.")
+
+# ==============================================================================
+# --- TAB 3: BREAKOUT TREND-FOLLOWING (MOTORE DI BACKTEST STRATEGICO CON GEO-Z) ---
+# ==============================================================================
+with tab3:
+    st.subheader("⚙️ Simulatore Quantitativo: Breakout Trend-Following")
+    st.markdown("Esegue il backtest della strategia algoritmica entrando sui breakout balistici dello Z-Score ed uscendo sui target o all'esaurimento della spinta.")
     
     b_col1, b_col2, b_col3 = st.columns(3)
     with b_col1:
@@ -413,91 +518,62 @@ with tab2:
     with b_col2:
         bt_periodo = st.selectbox("Orizzonte temporale dei dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], key="bt_per_in")
         mappa_periodi = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
-        finestra_regressione = st.slider("Finestra della Regressione Lineare (Giorni di base):", min_value=20, max_value=100, value=50, step=5)
+        finestra_regressione = st.slider("Finestra della Regressione Lineare (Giorni di base):", min_value=20, max_value=100, value=50, step=5, key="bt_win_sl")
     with b_col3:
-        soglia_zscore = st.slider("Soglia Z-Score per Accelerazione (Distacco Balistico):", min_value=1.5, max_value=3.5, value=2.0, step=0.1)
+        soglia_zscore = st.slider("Soglia Z-Score per Accelerazione (Distacco Balistico):", min_value=1.5, max_value=3.5, value=2.0, step=0.1, key="bt_z_sl")
         comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5, key="bt_fee_in")
         rischio_trade = 1.0  # Rischio fisso percentuale per trade
-# ==============================================================================
-# PARTE 2: MOTORE DI CALCOLO GEOMETRICO E POC DA QUERY A OGGI (ULTRA-VELOCE VETTORIZZATO)
-# ==============================================================================
-    if st.button("🚀 Calcola Distacco Geometrico e Disegna POC", type="primary", key="bt_btn_start"):
-        st.info(f"Calcolo regressione lineare mobile e vettori Z-Score per {bt_ticker}...")
+
+    if st.button("🚀 Avvia Backtest Algoritmico", type="primary", key="bt_btn_start"):
+        st.info(f"Calcolo vettoriale veloce ed esecuzione ordini storici per {bt_ticker}...")
         df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
         
         if df_bt is not None and len(df_bt) > finestra_regressione:
-            # Pulisce i nomi delle colonne
             df_bt.columns = [str(c).strip() for c in df_bt.columns]
-            
-            # Estrazione della colonna Close come Serie Pandas pulita
             close_series = pd.Series(df_bt["Close"].values.flatten(), index=df_bt.index).astype(float)
             n_punti = len(df_bt)
             
-            # --- FORMULA MATEMATICA VETTORIZZATA DELLA REGRESSIONE MOBILE (SENZA CICLI FOR) ---
+            # Formula vettorizzata veloce per lo Z-Score
             n = finestra_regressione
             x = np.arange(n)
-            sum_x = x.sum()
-            sum_x2 = (x**2).sum()
+            sum_x, sum_x2 = x.sum(), (x**2).sum()
             denominatore = n * sum_x2 - (sum_x**2)
             
-            # Calcolo delle somme mobili necessarie per la regressione lineare dei minimi quadrati
             sum_y = close_series.rolling(window=n).sum()
             sum_y2 = (close_series**2).rolling(window=n).sum()
             
-            # Creiamo una serie per x * y mobile usando una convoluzione lineare veloce di NumPy
             xy_conv = np.convolve(close_series.values, x[::-1], mode='valid')
-            # Allineiamo i dati mancanti iniziali generati dalla convoluzione
             sum_xy = pd.Series(np.nan, index=close_series.index)
             sum_xy.iloc[n-1:] = xy_conv
             
-            # Coefficienti mobili della retta (y = mx + q) calcolati istantaneamente per l'intero dataset
             m_series = (n * sum_xy - sum_x * sum_y) / denominatore
             q_series = (sum_x2 * sum_y - sum_x * sum_xy) / denominatore
-            
-            # Il valore teorico nel punto corrente (i) corrisponde alla proiezione all'indice n (fine finestra)
             prezzi_teorici_series = m_series * n + q_series
             
-            # Formula matematica vettorizzata per la Deviazione Standard dei residui all'interno della finestra mobile
-            # Var(Residui) = Var(Y) - 2*m*Cov(X,Y) + m^2*Var(X) (Sviluppo algebrico dei minimi quadrati)
-            mean_x = sum_x / n
-            var_x = sum_x2 / n - (mean_x**2)
-            mean_y = sum_y / n
-            var_y = sum_y2 / n - (mean_y**2)
+            mean_x, var_x = sum_x / n, sum_x2 / n - ((sum_x / n)**2)
+            mean_y, var_y = sum_y / n, sum_y2 / n - ((sum_y / n)**2)
             cov_xy = sum_xy / n - (mean_x * mean_y)
             
             var_residui = var_y - (2 * m_series * cov_xy) + (m_series**2 * var_x)
-            # Clip di sicurezza per evitare radici quadrate di numeri negativi dovute ad approssimazioni macchina
             std_residui_series = np.sqrt(np.clip(var_residui, 0.00001, None))
             
-            # Calcolo finale dello Z-Score geometrico istantaneo
-            z_scores_series = (close_series - prezzi_teorici_series) / std_residui_series
-            
-            # Assegnazione al DataFrame principale pulendo i valori NaN iniziali della finestra mobile
-            df_bt["Z_Score"] = z_scores_series.fillna(0)
-            df_bt["Prezzo_Teorico"] = prezzi_teorici_series.fillna(close_series)
+            df_bt["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             df_bt["Accelerazione_Geometrica"] = np.where(df_bt["Z_Score"] >= soglia_zscore, 1, 0)
             
-            # --- RILEVAMENTO DEI PUNTI DI CAMBIO MOMENTUM E CALCOLO DEL VP DA QUEL PUNTO A OGGI ---
+            # Calcolo dei POC estratti da ogni segnale fino a oggi
             linee_poc_momentum = []
             stato_precedente = 0
-            
             for i in range(finestra_regressione, n_punti):
                 stato_attuale = df_bt["Accelerazione_Geometrica"].iloc[i]
-                
                 if stato_attuale == 1 and stato_precedente == 0:
                     start_idx = i
-                    # Il profilo volume prende i dati da start_idx fino alla fine dello storico (Oggi)
                     df_da_momentum_a_oggi = df_bt.iloc[start_idx:]
                     p_poc, _, _, _, _ = calc_vp(df_da_momentum_a_oggi)
-                    
                     if p_poc is not None:
-                        data_cambio_momentum = df_bt.index[start_idx]
-                        linee_poc_momentum.append((data_cambio_momentum, p_poc))
-                        
+                        linee_poc_momentum.append((df_bt.index[start_idx], p_poc))
                 stato_precedente = stato_attuale
-# ==============================================================================
-# PARTE 3: SIMULATORE DI BACKTEST STRATEGICO
-# ==============================================================================
+
+            # Simulatore dei Trade Storici
             capitale = capitale_iniziale
             in_posizione = False
             prezzo_ingresso = 0
@@ -529,70 +605,40 @@ with tab2:
                     uscito, p_chiusura = False, 0
                     z_attuale = df_bt["Z_Score"].iloc[i]
                     
-                    if low_g <= livello_sl: 
-                        uscito, p_chiusura = True, livello_sl
-                    elif high_g >= livello_tp: 
-                        uscito, p_chiusura = True, livello_tp
-                    elif z_attuale < 0:  
-                        uscito, p_chiusura = True, prezzo_corrente
+                    if low_g <= livello_sl: uscito, p_chiusura = True, livello_sl
+                    elif high_g >= livello_tp: uscito, p_chiusura = True, livello_tp
+                    elif z_attuale < 0: uscito, p_chiusura = True, prezzo_corrente
 
                     if uscito:
                         pnl = (p_chiusura - prezzo_ingresso) * size_contratti - (comun_fee * 2)
                         capitale += pnl
                         trade_history.append({"Data": data_corrente.strftime("%d/%m/%Y"), "Tipo": "GEO LONG", "PnL ($)": round(pnl, 2), "Capitale": round(capitale, 2)})
                         in_posizione = False
-# ==============================================================================
-# PARTE 4: RENDERING GRAFICI PLOTLY CON ETICHETTE SEMPLIFICATE E LOG STATISTICHE
-# ==============================================================================
-            st.markdown(f"##### 📊 Grafico dei Prezzi & Tracciamento Volumetrico dei Livelli POC Geometrici")
-            
+
+            # Rendering del Grafico di Backtest
+            st.markdown(f"##### 📊 Grafico di Backtest & Livelli POC Semplificati")
             fig_bt = grp.Figure()
-            # Candele dei prezzi
             fig_bt.add_trace(grp.Candlestick(
-                x=df_bt.index, 
-                open=df_bt["Open"].astype(float), high=df_bt["High"].astype(float), 
-                low=df_bt["Low"].astype(float), close=df_bt["Close"].astype(float), 
-                name=bt_ticker
+                x=df_bt.index, open=df_bt["Open"].astype(float), high=df_bt["High"].astype(float),
+                low=df_bt["Low"].astype(float), close=df_bt["Close"].astype(float), name=bt_ticker
             ))
             
-            # Tracciamento linee POC arancioni da Inizio a Oggi + Scrittura etichette semplificate
             data_oggi = df_bt.index[-1]
             for idx, (data_start, valore_poc) in enumerate(linee_poc_momentum):
-                # 1. Disegna la linea retta arancione continuata fino a oggi
                 fig_bt.add_trace(grp.Scatter(
-                    x=[data_start, data_oggi],
-                    y=[valore_poc, valore_poc],
-                    mode="lines",
-                    name="Geometric POC Barrier" if idx == 0 else "",
-                    showlegend=True if idx == 0 else False,
-                    line=dict(color="#f29e1f", width=2.5, dash="solid")
+                    x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
+                    showlegend=False, line=dict(color="#f29e1f", width=2.5, dash="solid")
                 ))
-                
-                # 2. Aggiunge l'etichetta semplificata (Es: "POC 154.20") direttamente sopra la linea
                 fig_bt.add_annotation(
-                    x=data_start,
-                    y=valore_poc,
-                    text=f"POC {round(valore_poc, 2)}",
-                    showarrow=False,
-                    yshift=8,          # Sposta il testo leggermente sopra la retta arancione
-                    xanchor="left",    # Allinea la stringa a sinistra sul punto di partenza
+                    x=data_start, y=valore_poc, text=f"POC {round(valore_poc, 2)}",
+                    showarrow=False, yshift=8, xanchor="left",
                     font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
-                    bgcolor="rgba(15, 23, 42, 0.85)" # Sfondo scuro anti-clutter per le candele
+                    bgcolor="rgba(15, 23, 42, 0.85)"
                 )
+            fig_bt.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=550)
+            st.plotly_chart(fig_bt, use_container_width=True, key="bt_strat_chart")
             
-            fig_bt.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=600, margin=dict(l=20, r=20, t=10, b=20))
-            st.plotly_chart(fig_bt, use_container_width=True, key="bt_geometric_chart")
-            
-            # Subplot dello Z-Score Geometrico inferiore per ispezionare i distacchi
-            st.markdown("##### 📉 Tracciato dei Residui Standardizzati (Z-Score Geometrico)")
-            fig_z = grp.Figure()
-            fig_z.add_trace(grp.Scatter(x=df_bt.index, y=df_bt["Z_Score"], mode="lines", name="Z-Score", line=dict(color="#38bdf8", width=1.5)))
-            fig_z.add_shape(type="line", x0=df_bt.index[0], x1=data_oggi, y0=soglia_zscore, y1=soglia_zscore, line=dict(color="#ef4444", width=1.5, dash="dot"))
-            fig_z.add_shape(type="line", x0=df_bt.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.3)", width=1, dash="dash"))
-            fig_z.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=20, t=10, b=20))
-            st.plotly_chart(fig_z, use_container_width=True, key="bt_zscore_chart")
-
-            # Log delle performance e metriche finali
+            # Statistiche e log finale delle performance
             st.subheader("📊 Performance Engine Geometrico")
             if trade_history:
                 df_trades = pd.DataFrame(trade_history)
@@ -604,12 +650,14 @@ with tab2:
                 c3.metric("Capitale Finale", f"$ {round(capitale, 2)}")
                 st.dataframe(df_trades, use_container_width=True)
             else:
-                st.warning("Nessuna anomalia geometrica rilevata. Prova a diminuire la Soglia Z-Score o ad aumentare lo storico.")
+                st.warning("Nessun trade registrato. Modifica la tolleranza dello Z-Score.")
+        else:
+            st.error("Dati storici insufficienti.")
 
 # ==========================================
-# --- TAB 3: LIVE ALERTS STRATEGICI ---
+# --- TAB 4: LIVE ALERTS STRATEGICI ---
 # ==========================================
-with tab3:
+with tab4:
     st.subheader("🔔 Canale Notifiche Quantitative in Tempo Reale via Telegram")
     st.success("✅ Algoritmo di Strategia Bilanciata Integrato.")
     
@@ -698,9 +746,9 @@ with tab3:
             st.success(f"Scansione terminata! Inviati {segnali_trovati} segnali bilanciati.")
 
 # ==========================================
-# --- NUOVO TAB 4: ANALISI GARCH ---
+# TAB 5: ANALISI GARCH ---
 # ==========================================
-with tab4:
+with tab5:
     st.subheader("📈 Studio ed Analisi Quantitativa della Volatilità (GARCH)")
     st.markdown("Configura i parametri sottostanti per modellare i cluster di volatilità sui rendimenti finanziari logaritmici.")
     
