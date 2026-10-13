@@ -561,49 +561,52 @@ with tab3:
 # ==========================================
 with tab4:
     st.subheader("📈 Studio ed Analisi Quantitativa della Volatilità (GARCH)")
-    st.markdown("Configura i parametri sottostanti per modellare i cluster di volatilità sui rendimenti finanziari logaritmici.")
+    st.markdown("Modello statistico ottimizzato GARCH(1,1) per l'analisi dei cluster di volatilità sui rendimenti logaritmici.")
     
-    g_col1, g_col2, g_col3 = st.columns(3)
+    g_col1, g_col2 = st.columns(2)
     with g_col1:
         garch_ticker = st.text_input("Inserisci Ticker da analizzare (es. AAPL, BTC-USD, ^GSPC):", value="AAPL", key="garch_tk_input")
         garch_periodo = st.selectbox("Orizzonte storico dati:", ["1 Anno", "3 Anni", "5 Anni", "10 Anni", "Storico Massimo"], index=1, key="garch_per_sel")
         mappa_periodi_garch = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "10 Anni": "10y", "Storico Massimo": "max"}
     with g_col2:
-        param_p = st.slider("Ordine Autoregressivo - Residui Quadrati (p):", min_value=1, max_value=5, value=1, key="garch_p")
-        param_q = st.slider("Ordine Media Mobile - Volatilità Storica (q):", min_value=1, max_value=5, value=1, key="garch_q")
-    with g_col3:
         mod_type = st.selectbox("Variante Modello GARCH:", ["Standard GARCH", "GJR-GARCH (Asimmetrico)", "EGARCH"], index=0, key="garch_type")
         mappa_modelli = {"Standard GARCH": "Garch", "GJR-GARCH (Asimmetrico)": "GJR", "EGARCH": "EGARCH"}
+
+    # --- Blocco pre-impostato internamente a GARCH(1,1) ---
+    param_p = 1
+    param_q = 1
+
     # --- BLOCCO INFORMATIVO DINAMICO IN BASE ALLA VARIANTE SELEZIONATA ---
     st.markdown("---")
     if mod_type == "Standard GARCH":
         st.info(f"""
-        ℹ️ **Significato del Modello: Standard GARCH ({param_p}, {param_q}) [Simmetrico]**
-        * **Natura:** È il modello base simmetrico. Assume che la volatilità futura dipenda solo dall'*intensità* degli shock passati e non dal loro segno (+ o -).
-        * **A cosa servono i parametri scelti:**
-            * **p = {param_p} (Residui Quadrati):** Il modello analizza gli ultimi {param_p} giorni di shock/notizie di mercato per calcolare la reattività immediata della volatilità.
-            * **q = {param_q} (Volatilità Storica):** Il modello analizza gli ultimi {param_q} giorni di volatilità passata per determinare la persistenza a lungo termine della stessa.
+        ℹ️ **Significato del Modello: Standard GARCH(1,1) [Simmetrico]**
+        * **Natura:** È il modello base simmetrico ottimizzato. Assume che la volatilità futura dipenda solo dall'*intensità* degli shock passati e non dal loro segno (+ o -).
+        * **Configurazione di Calcolo:**
+            * **p = 1 (Shock Recente):** Il modello analizza l'ultimo giorno di shock/notizie di mercato per calcolare la reattività immediata della volatilità.
+            * **q = 1 (Persistenza Storica):** Il modello analizza la volatilità del giorno precedente per determinare la stabilità a lungo termine della stessa.
         * **Funzionamento:** Un rialzo del +5% e un crollo del -5% hanno lo stesso identico impatto sulla volatilità di domani.
         """)
     elif mod_type == "GJR-GARCH (Asimmetrico)":
         st.info(f"""
-        ℹ️ **Significato del Modello: GJR-GARCH ({param_p}, {param_q}) [Asimmetrico a Soglia]**
+        ℹ️ **Significato del Modello: GJR-GARCH(1,1) [Asimmetrico a Soglia]**
         * **Natura:** È un modello asimmetrico che cattura l'**effetto leva** (*leverage effect*). Nei mercati finanziari, i crolli generano molto più panico e volatilità rispetto ai rialzi.
-        * **A cosa servono i parametri scelti:**
-            * **p = {param_p} (Residui Quadrati):** Determina per quanti giorni di borsa passati ({param_p}) gli shock di prezzo continuano a influenzare la varianza.
-            * **q = {param_q} (Volatilità Storica):** Gestisce la memoria storica della volatilità per {param_q} periodi, modellando la tendenza dei mercati a raggruppare i periodi di forte turbolenza.
+        * **Configurazione di Calcolo:**
+            * **p = 1 (Shock Recente):** Determina l'impatto immediato degli shock di prezzo del giorno precedente sulla varianza attuale.
+            * **q = 1 (Persistenza Storica):** Gestisce la memoria storica della volatilità, modellando la tendenza dei mercati a raggruppare i periodi di forte turbolenza.
         * **Funzionamento:** Attiva un parametro aggiuntivo (*Gamma*) *solo* quando i rendimenti passati sono negativi. Se il mercato crolla, l'impatto si somma rendendo il picco di volatilità molto più ripido.
         """)
     elif mod_type == "EGARCH":
         st.info(f"""
-        ℹ️ **Significato del Modello: EGARCH ({param_p}, {param_q}) [Exponential GARCH]**
+        ℹ️ **Significato del Modello: EGARCH(1,1) [Exponential GARCH]**
         * **Natura:** Modella il *logaritmo naturale* della volatilità condizionale. È una variante asimmetrica esponenziale altamente flessibile.
-        * **A cosa servono i parametri scelti:**
-            * **p = {param_p} (Residui Quadrati):** Definisce l'ampiezza della finestra temporale ({param_p} giorni) in cui l'asimmetria delle notizie (buone o cattive) modella la curva logaritmica.
-            * **q = {param_q} (Volatilità Storica):** Regola la velocità di decadimento o persistenza della memoria della volatilità passata per gli ultimi {param_q} giorni.
+        * **Configurazione di Calcolo:**
+            * **p = 1 (Shock Recente):** Definisce l'ampiezza della finestra in cui l'asimmetria delle notizie del giorno precedente modella la curva logaritmica.
+            * **q = 1 (Persistenza Storica):** Regola la velocità di decadimento o persistenza della memoria della volatilità passata.
         * **Funzionamento:** Esprime l'asimmetria senza soglie rigide e, grazie alla forma logaritmica, garantisce matematicamente che la volatilità stimata sia sempre positiva, evitando fallimenti di calcolo su asset estremi.
         """)
     st.markdown("---")
+
     if st.button("📊 Elabora Modello Volatilità", type="primary", key="garch_btn_start"):
         st.info(f"Recupero dati storici in corso per {garch_ticker}...")
         df_g = yf.download(tickers=garch_ticker, period=mappa_periodi_garch[garch_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
