@@ -574,7 +574,7 @@ with tab4:
         param_q = st.slider("Ordine Media Mobile - Volatilità Storica (q):", min_value=1, max_value=5, value=1, key="garch_q")
     with g_col3:
         mod_type = st.selectbox("Variante Modello GARCH:", ["Standard GARCH", "GJR-GARCH (Asimmetrico)", "EGARCH"], index=0, key="garch_type")
-        mappa_modelli = {"Standard GARCH": "garch", "GJR-GARCH (Asimmetrico)": "gjrgarch", "EGARCH": "egarch"}
+        mappa_modelli = {"Standard GARCH": "GARCH", "GJR-GARCH (Asimmetrico)": "GJR-GARCH", "EGARCH": "EGARCH"}
     # --- BLOCCO INFORMATIVO DINAMICO IN BASE ALLA VARIANTE SELEZIONATA ---
     st.markdown("---")
     if mod_type == "Standard GARCH":
