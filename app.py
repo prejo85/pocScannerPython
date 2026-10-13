@@ -411,6 +411,7 @@ with tab2:
     st.subheader("📐 Laboratorio Geometrico: Tracciamento POC su Impulso Continuato")
     st.markdown("Rileva il cambio di momentum tramite il distacco dello Z-Score dalla regressione ed estende i profili volumetrici da quel punto fino a oggi.")
     
+    # RIGA 1: Parametri di scansione dell'asset e dello storico
     g_col1, g_col2, g_col3 = st.columns(3)
     with g_col1:
         geo_ticker = st.text_input("Inserisci Ticker da scansionare:", value="AAPL", key="geo_tk_input")
@@ -419,8 +420,21 @@ with tab2:
         mappa_periodi_geo = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
     with g_col3:
         geo_finestra = st.slider("Finestra Regressione Lineare (Giorni base):", min_value=20, max_value=100, value=50, step=5, key="geo_win_sl")
-        geo_soglia = st.slider("Soglia Z-Score per Cambio Momentum:", min_value=1.5, max_value=3.5, value=2.0, step=0.1, key="geo_z_sl")
 
+    # RIGA 2: Soglia Z-Score e Nuovi controlli di Risk Management inseriti
+    g_col4, g_col5, g_col6 = st.columns(3)
+    with g_col4:
+        geo_soglia = st.slider("Soglia Z-Score per Cambio Momentum:", min_value=1.5, max_value=3.5, value=2.0, step=0.1, key="geo_z_sl")
+    with g_col5:
+        # Input del capitale operativo del laboratorio
+        geo_capitale = st.number_input("Capitale Operativo ($):", min_value=100, value=10000, step=500, key="geo_cap_input")
+    with g_col6:
+        # Slider per impostare il rischio percentuale per singola idea operativa
+        geo_rischio_pct = st.slider("Rischio scelto per Trade (%):", min_value=0.2, max_value=5.0, value=1.0, step=0.1, key="geo_risk_sl")
+
+    # Spazio di separazione prima del pulsante di esecuzione grafico
+    st.markdown("")
+    
     if st.button("📐 Genera Struttura Geometrica POC", type="primary", key="geo_btn_start"):
         st.info(f"Elaborazione matriciale e calcolo profili per {geo_ticker}...")
         df_g = yf.download(tickers=geo_ticker, period=mappa_periodi_geo[geo_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
