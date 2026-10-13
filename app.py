@@ -419,23 +419,24 @@ with tab2:
         comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5, key="bt_fee_in")
         rischio_trade = 1.0  # Rischio fisso percentuale per trade
 # ==============================================================================
-# PARTE 2: MOTORE DI CALCOLO GEOMETRICO E POC DA QUERY A OGGI (CORRETTA)
+# PARTE 2: MOTORE DI CALCOLO GEOMETRICO E POC DA QUERY A OGGI (RIVISTO E SICURO)
 # ==============================================================================
     if st.button("🚀 Calcola Distacco Geometrico e Disegna POC", type="primary", key="bt_btn_start"):
         st.info(f"Calcolo regressione lineare mobile e vettori Z-Score per {bt_ticker}...")
         df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
         
         if df_bt is not None and len(df_bt) > finestra_regressione:
+            # Pulisce i nomi delle colonne da eventuali MultiIndex o spazi bianchi
             df_bt.columns = [str(c).strip() for c in df_bt.columns]
             
-            # Forziamo il vettore dei prezzi a essere un array 1D piatto per evitare errori di dimensionalità
-            close_series = df_bt["Close"].astype(float).ravel()
+            # Estrazione sicura della colonna Close convertendola subito in serie 1D Flat di float
+            close_series = pd.Series(df_bt["Close"].values.flatten()).astype(float).to_numpy()
             n_punti = len(df_bt)
             
             z_scores = np.zeros(n_punti)
             prezzi_teorici = np.zeros(n_punti)
             
-            # Preparazione della matrice A per i minimi quadrati
+            # Preparazione della matrice A per i minimi quadrati (x_reg, Intercetta)
             x_reg = np.arange(finestra_regressione)
             A = np.vstack([x_reg, np.ones(len(x_reg))]).T
             
@@ -443,16 +444,17 @@ with tab2:
             for i in range(finestra_regressione, n_punti):
                 y_reg = close_series[i - finestra_regressione : i]
                 
-                # Risoluzione corretta: prendiamo solo il primo elemento [0] dei 4 restituiti da lstsq
-                soluzione = np.linalg.lstsq(A, y_reg, rcond=None)[0]
-                m = soluzione[0]
-                q = soluzione[1]
+                # numpy.linalg.lstsq restituisce una tupla di 4 elementi: (coefficienti, residui, rango, singolari)
+                # Estraiamo l'array dei coefficienti [0] e scompattiamo in m (pendenza) e q (intercetta)
+                coefficienti = np.linalg.lstsq(A, y_reg, rcond=None)[0]
+                m = float(coefficienti[0])
+                q = float(coefficienti[1])
                 
-                # Calcolo del valore teorico alla fine della finestra
+                # Calcolo del valore teorico proiettato alla fine della finestra corrente
                 valore_teorico = m * finestra_regressione + q
                 prezzi_teorici[i] = valore_teorico
                 
-                # Calcolo deviazione standard dei residui per lo Z-Score
+                # Calcolo deviazione standard dei residui per generare lo Z-Score
                 residui = y_reg - (m * x_reg + q)
                 std_residui = np.std(residui)
                 if std_residui == 0: std_residui = 0.00001
@@ -472,6 +474,7 @@ with tab2:
                 
                 if stato_attuale == 1 and stato_precedente == 0:
                     start_idx = i
+                    # Il profilo volume prende i dati da start_idx fino alla fine del dataframe (Oggi)
                     df_da_momentum_a_oggi = df_bt.iloc[start_idx:]
                     p_poc, _, _, _, _ = calc_vp(df_da_momentum_a_oggi)
                     
