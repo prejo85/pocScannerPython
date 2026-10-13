@@ -419,53 +419,65 @@ with tab2:
         comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5, key="bt_fee_in")
         rischio_trade = 1.0  # Rischio fisso percentuale per trade
 # ==============================================================================
-# PARTE 2: MOTORE DI CALCOLO GEOMETRICO E POC DA QUERY A OGGI (RIVISTO E SICURO)
+# PARTE 2: MOTORE DI CALCOLO GEOMETRICO E POC DA QUERY A OGGI (ULTRA-VELOCE VETTORIZZATO)
 # ==============================================================================
     if st.button("🚀 Calcola Distacco Geometrico e Disegna POC", type="primary", key="bt_btn_start"):
         st.info(f"Calcolo regressione lineare mobile e vettori Z-Score per {bt_ticker}...")
         df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
         
         if df_bt is not None and len(df_bt) > finestra_regressione:
-            # Pulisce i nomi delle colonne da eventuali MultiIndex o spazi bianchi
+            # Pulisce i nomi delle colonne
             df_bt.columns = [str(c).strip() for c in df_bt.columns]
             
-            # Estrazione sicura della colonna Close convertendola subito in serie 1D Flat di float
-            close_series = pd.Series(df_bt["Close"].values.flatten()).astype(float).to_numpy()
+            # Estrazione della colonna Close come Serie Pandas pulita
+            close_series = pd.Series(df_bt["Close"].values.flatten(), index=df_bt.index).astype(float)
             n_punti = len(df_bt)
             
-            z_scores = np.zeros(n_punti)
-            prezzi_teorici = np.zeros(n_punti)
+            # --- FORMULA MATEMATICA VETTORIZZATA DELLA REGRESSIONE MOBILE (SENZA CICLI FOR) ---
+            n = finestra_regressione
+            x = np.arange(n)
+            sum_x = x.sum()
+            sum_x2 = (x**2).sum()
+            denominatore = n * sum_x2 - (sum_x**2)
             
-            # Preparazione della matrice A per i minimi quadrati (x_reg, Intercetta)
-            x_reg = np.arange(finestra_regressione)
-            A = np.vstack([x_reg, np.ones(len(x_reg))]).T
+            # Calcolo delle somme mobili necessarie per la regressione lineare dei minimi quadrati
+            sum_y = close_series.rolling(window=n).sum()
+            sum_y2 = (close_series**2).rolling(window=n).sum()
             
-            # Calcolo rolling della retta di regressione (y = mx + q)
-            for i in range(finestra_regressione, n_punti):
-                y_reg = close_series[i - finestra_regressione : i]
-                
-                # numpy.linalg.lstsq restituisce una tupla di 4 elementi: (coefficienti, residui, rango, singolari)
-                # Estraiamo l'array dei coefficienti [0] e scompattiamo in m (pendenza) e q (intercetta)
-                coefficienti = np.linalg.lstsq(A, y_reg, rcond=None)[0]
-                m = float(coefficienti[0])
-                q = float(coefficienti[1])
-                
-                # Calcolo del valore teorico proiettato alla fine della finestra corrente
-                valore_teorico = m * finestra_regressione + q
-                prezzi_teorici[i] = valore_teorico
-                
-                # Calcolo deviazione standard dei residui per generare lo Z-Score
-                residui = y_reg - (m * x_reg + q)
-                std_residui = np.std(residui)
-                if std_residui == 0: std_residui = 0.00001
-                
-                z_scores[i] = (close_series[i] - valore_teorico) / std_residui
-                
-            df_bt["Z_Score"] = z_scores
-            df_bt["Prezzo_Teorico"] = prezzi_teorici
+            # Creiamo una serie per x * y mobile usando una convoluzione lineare veloce di NumPy
+            xy_conv = np.convolve(close_series.values, x[::-1], mode='valid')
+            # Allineiamo i dati mancanti iniziali generati dalla convoluzione
+            sum_xy = pd.Series(np.nan, index=close_series.index)
+            sum_xy.iloc[n-1:] = xy_conv
+            
+            # Coefficienti mobili della retta (y = mx + q) calcolati istantaneamente per l'intero dataset
+            m_series = (n * sum_xy - sum_x * sum_y) / denominatore
+            q_series = (sum_x2 * sum_y - sum_x * sum_xy) / denominatore
+            
+            # Il valore teorico nel punto corrente (i) corrisponde alla proiezione all'indice n (fine finestra)
+            prezzi_teorici_series = m_series * n + q_series
+            
+            # Formula matematica vettorizzata per la Deviazione Standard dei residui all'interno della finestra mobile
+            # Var(Residui) = Var(Y) - 2*m*Cov(X,Y) + m^2*Var(X) (Sviluppo algebrico dei minimi quadrati)
+            mean_x = sum_x / n
+            var_x = sum_x2 / n - (mean_x**2)
+            mean_y = sum_y / n
+            var_y = sum_y2 / n - (mean_y**2)
+            cov_xy = sum_xy / n - (mean_x * mean_y)
+            
+            var_residui = var_y - (2 * m_series * cov_xy) + (m_series**2 * var_x)
+            # Clip di sicurezza per evitare radici quadrate di numeri negativi dovute ad approssimazioni macchina
+            std_residui_series = np.sqrt(np.clip(var_residui, 0.00001, None))
+            
+            # Calcolo finale dello Z-Score geometrico istantaneo
+            z_scores_series = (close_series - prezzi_teorici_series) / std_residui_series
+            
+            # Assegnazione al DataFrame principale pulendo i valori NaN iniziali della finestra mobile
+            df_bt["Z_Score"] = z_scores_series.fillna(0)
+            df_bt["Prezzo_Teorico"] = prezzi_teorici_series.fillna(close_series)
             df_bt["Accelerazione_Geometrica"] = np.where(df_bt["Z_Score"] >= soglia_zscore, 1, 0)
             
-            # Rilevamento dei cambi di momentum (Ingressi dei trigger)
+            # --- RILEVAMENTO DEI PUNTI DI CAMBIO MOMENTUM E CALCOLO DEL VP DA QUEL PUNTO A OGGI ---
             linee_poc_momentum = []
             stato_precedente = 0
             
@@ -474,7 +486,7 @@ with tab2:
                 
                 if stato_attuale == 1 and stato_precedente == 0:
                     start_idx = i
-                    # Il profilo volume prende i dati da start_idx fino alla fine del dataframe (Oggi)
+                    # Il profilo volume prende i dati da start_idx fino alla fine dello storico (Oggi)
                     df_da_momentum_a_oggi = df_bt.iloc[start_idx:]
                     p_poc, _, _, _, _ = calc_vp(df_da_momentum_a_oggi)
                     
@@ -483,7 +495,6 @@ with tab2:
                         linee_poc_momentum.append((data_cambio_momentum, p_poc))
                         
                 stato_precedente = stato_attuale
-
 # ==============================================================================
 # PARTE 3: SIMULATORE DI BACKTEST STRATEGICO
 # ==============================================================================
