@@ -419,7 +419,7 @@ with tab2:
         comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5, key="bt_fee_in")
         rischio_trade = 1.0  # Rischio fisso percentuale per trade
 # ==============================================================================
-# PARTE 2: MOTORE DI CALCOLO GEOMETRICO E POC DA QUERY A OGGI
+# PARTE 2: MOTORE DI CALCOLO GEOMETRICO E POC DA QUERY A OGGI (CORRETTA)
 # ==============================================================================
     if st.button("🚀 Calcola Distacco Geometrico e Disegna POC", type="primary", key="bt_btn_start"):
         st.info(f"Calcolo regressione lineare mobile e vettori Z-Score per {bt_ticker}...")
@@ -427,22 +427,32 @@ with tab2:
         
         if df_bt is not None and len(df_bt) > finestra_regressione:
             df_bt.columns = [str(c).strip() for c in df_bt.columns]
-            close_series = df_bt["Close"].astype(float).values
+            
+            # Forziamo il vettore dei prezzi a essere un array 1D piatto per evitare errori di dimensionalità
+            close_series = df_bt["Close"].astype(float).ravel()
             n_punti = len(df_bt)
             
             z_scores = np.zeros(n_punti)
             prezzi_teorici = np.zeros(n_punti)
             
-            # Calcolo rolling della retta di regressione (y = mx + q)
+            # Preparazione della matrice A per i minimi quadrati
             x_reg = np.arange(finestra_regressione)
+            A = np.vstack([x_reg, np.ones(len(x_reg))]).T
+            
+            # Calcolo rolling della retta di regressione (y = mx + q)
             for i in range(finestra_regressione, n_punti):
                 y_reg = close_series[i - finestra_regressione : i]
-                A = np.vstack([x_reg, np.ones(len(x_reg))]).T
-                m, q = np.linalg.lstsq(A, y_reg, rcond=None)
                 
+                # Risoluzione corretta: prendiamo solo il primo elemento [0] dei 4 restituiti da lstsq
+                soluzione = np.linalg.lstsq(A, y_reg, rcond=None)[0]
+                m = soluzione[0]
+                q = soluzione[1]
+                
+                # Calcolo del valore teorico alla fine della finestra
                 valore_teorico = m * finestra_regressione + q
                 prezzi_teorici[i] = valore_teorico
                 
+                # Calcolo deviazione standard dei residui per lo Z-Score
                 residui = y_reg - (m * x_reg + q)
                 std_residui = np.std(residui)
                 if std_residui == 0: std_residui = 0.00001
@@ -460,10 +470,8 @@ with tab2:
             for i in range(finestra_regressione, n_punti):
                 stato_attuale = df_bt["Accelerazione_Geometrica"].iloc[i]
                 
-                # Quando lo Z-Score incrocia al rialzo la soglia stabilita
                 if stato_attuale == 1 and stato_precedente == 0:
                     start_idx = i
-                    # CALCOLO MODIFICATO: Il profilo volume prende i dati da start_idx fino alla fine del dataframe (Oggi)
                     df_da_momentum_a_oggi = df_bt.iloc[start_idx:]
                     p_poc, _, _, _, _ = calc_vp(df_da_momentum_a_oggi)
                     
@@ -472,6 +480,7 @@ with tab2:
                         linee_poc_momentum.append((data_cambio_momentum, p_poc))
                         
                 stato_precedente = stato_attuale
+
 # ==============================================================================
 # PARTE 3: SIMULATORE DI BACKTEST STRATEGICO
 # ==============================================================================
