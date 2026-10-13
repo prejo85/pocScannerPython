@@ -542,7 +542,7 @@ with tab2:
                         trade_history.append({"Data": data_corrente.strftime("%d/%m/%Y"), "Tipo": "GEO LONG", "PnL ($)": round(pnl, 2), "Capitale": round(capitale, 2)})
                         in_posizione = False
 # ==============================================================================
-# PARTE 4: RENDERING GRAFICI PLOTLY CON ETICHETTE E LOG STATISTICHE
+# PARTE 4: RENDERING GRAFICI PLOTLY CON ETICHETTE SEMPLIFICATE E LOG STATISTICHE
 # ==============================================================================
             st.markdown(f"##### 📊 Grafico dei Prezzi & Tracciamento Volumetrico dei Livelli POC Geometrici")
             
@@ -555,10 +555,10 @@ with tab2:
                 name=bt_ticker
             ))
             
-            # Tracciamento linee POC arancioni da Inizio a Oggi + Scrittura etichette
+            # Tracciamento linee POC arancioni da Inizio a Oggi + Scrittura etichette semplificate
             data_oggi = df_bt.index[-1]
             for idx, (data_start, valore_poc) in enumerate(linee_poc_momentum):
-                # 1. Disegna la linea retta arancione
+                # 1. Disegna la linea retta arancione continuata fino a oggi
                 fig_bt.add_trace(grp.Scatter(
                     x=[data_start, data_oggi],
                     y=[valore_poc, valore_poc],
@@ -568,16 +568,16 @@ with tab2:
                     line=dict(color="#f29e1f", width=2.5, dash="solid")
                 ))
                 
-                # 2. Aggiunge l'etichetta testuale descrittiva direttamente sopra la linea
+                # 2. Aggiunge l'etichetta semplificata (Es: "POC 154.20") direttamente sopra la linea
                 fig_bt.add_annotation(
                     x=data_start,
                     y=valore_poc,
-                    text=f"POC Mom {idx+1}: {round(valore_poc, 2)}",
+                    text=f"POC {round(valore_poc, 2)}",
                     showarrow=False,
                     yshift=8,          # Sposta il testo leggermente sopra la retta arancione
                     xanchor="left",    # Allinea la stringa a sinistra sul punto di partenza
                     font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
-                    bgcolor="rgba(15, 23, 42, 0.85)" # Sfondo scuro per garantire massima leggibilità sulle candele
+                    bgcolor="rgba(15, 23, 42, 0.85)" # Sfondo scuro anti-clutter per le candele
                 )
             
             fig_bt.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=600, margin=dict(l=20, r=20, t=10, b=20))
@@ -605,9 +605,6 @@ with tab2:
                 st.dataframe(df_trades, use_container_width=True)
             else:
                 st.warning("Nessuna anomalia geometrica rilevata. Prova a diminuire la Soglia Z-Score o ad aumentare lo storico.")
-        else:
-            st.error("Dati storici insufficienti rispetto alla finestra di regressione lineare inserita.")
-
 
 # ==========================================
 # --- TAB 3: LIVE ALERTS STRATEGICI ---
