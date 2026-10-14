@@ -432,7 +432,7 @@ with tab2:
 
     st.markdown("")
 # ==============================================================================
-# --- TAB 2: PARTE 2 - CORE ENGINE QUANTITATIVO E FILTRAGGIO CLUSTER ---
+# --- TAB 2: PARTE 2 - CORE ENGINE MARUBOZU BREAKOUT & TREND DIRECTION ---
 # ==============================================================================
     if st.button("📐 Genera Struttura Geometrica POC", type="primary", key="geo_btn_start"):
         st.info(f"Elaborazione matriciale e calcolo profili per {geo_ticker}...")
@@ -441,9 +441,12 @@ with tab2:
         if df_g is not None and len(df_g) > geo_finestra:
             df_g.columns = [str(c).strip() for c in df_g.columns]
             close_series = pd.Series(df_g["Close"].values.flatten(), index=df_g.index).astype(float)
+            high_series = pd.Series(df_g["High"].values.flatten(), index=df_g.index).astype(float)
+            low_series = pd.Series(df_g["Low"].values.flatten(), index=df_g.index).astype(float)
+            open_series = pd.Series(df_g["Open"].values.flatten(), index=df_g.index).astype(float)
             n_punti = len(df_g)
             
-            # Algoritmo Vettorizzato per la Regressione e lo Z-Score dei Residui
+            # 1. Calcolo Vettorizzato dello Z-Score dei Residui
             n = geo_finestra
             x = np.arange(n)
             sum_x, sum_x2 = x.sum(), (x**2).sum()
@@ -468,36 +471,91 @@ with tab2:
             std_residui_series = np.sqrt(np.clip(var_residui, 0.00001, None))
             
             df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
-            df_g["Accelerazione_Geometrica"] = np.where(df_g["Z_Score"] >= geo_soglia, 1, 0)
             
-            # Individuazione temporanea di tutti i POC potenziali sui breakout dello Z-Score
-            poc_grezzi = []
+            # 2. Identificazione candele Marubozu (Corpo >= 75% del range totale della candela)
+            corpo = (close_series - open_series).abs()
+            range_totale = high_series - low_series
+            # Evita divisioni per zero se la candela non ha range
+            range_totale = np.where(range_totale == 0, 0.00001, range_totale)
+            df_g["Marubozu"] = (corpo / range_totale) >= 0.75
+            
+            # 3. Scanner Strutturale: Caccia ai Breakout di Momentum (Long / Short)
+            linee_orizzontali_strutturali = [] # Salva le linee tratteggiate dal massimo/minimo alla Marubozu
+            linee_poc_geometriche = []         # Salva i POC calcolati dal momento del breakout a oggi
+            
             stato_precedente = 0
+            indice_inizio_impulso = None
+            direzione_trend = None # "LONG" o "SHORT"
             
             for i in range(geo_finestra, n_punti):
-                stato_attuale = df_g["Accelerazione_Geometrica"].iloc[i]
-                if stato_attuale == 1 and stato_precedente == 0:
-                    start_idx = i
-                    df_da_mom_a_oggi = df_g.iloc[start_idx:]
-                    p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
-                    if p_poc is not None:
-                        poc_grezzi.append((df_g.index[start_idx], float(p_poc)))
-                stato_precedente = stato_attuale
-            
-            # Logica di accorpamento e pulizia dei POC sovrapposti (Tolleranza 1.0%)
-            linee_poc_geometriche = []
-            tolleranza_filtro = 0.01  
-            
-            for data_start, valore_poc in poc_grezzi:
-                trovato_duplicato = False
-                for i, (dt_saved, val_saved) in enumerate(linee_poc_geometriche):
-                    if abs(valore_poc - val_saved) / val_saved <= tolleranza_filtro:
-                        trovato_duplicato = True
-                        if data_start > dt_saved:
-                            linee_poc_geometriche[i] = (data_start, valore_poc)
-                        break
-                if not trovato_duplicato:
-                    linee_poc_geometriche.append((data_start, valore_poc))
+                z_corrente = df_g["Z_Score"].iloc[i]
+                
+                # Rilevamento Cambio Momentum (Inizio dell'Anomalia Balistica)
+                if stato_precedente == 0:
+                    if z_corrente >= geo_soglia:
+                        stato_precedente = 1
+                        indice_inizio_impulso = i
+                        direzione_trend = "LONG"
+                    elif z_corrente <= -geo_soglia:
+                        stato_precedente = -1
+                        indice_inizio_impulso = i
+                        direzione_trend = "SHORT"
+                        
+                # Monitoraggio dell'impulso attivo per trovare il Pivot Estremo (Massimo o Minimo)
+                elif stato_precedente != 0:
+                    # L'impulso si considera concluso o riassorbito se lo Z-Score torna verso lo zero
+                    if (direzione_trend == "LONG" and z_corrente < 0) or (direzione_trend == "SHORT" and z_corrente > 0):
+                        indice_fine_impulso = i
+                        df_impulso = df_g.iloc[indice_inizio_impulso:indice_fine_impulso]
+                        
+                        if not df_impulso.empty:
+                            if direzione_trend == "LONG":
+                                # Registriamo la candela che fa il massimo nel cluster di momentum
+                                data_pivot = df_impulso["High"].idxmax()
+                                livello_pivot = float(df_impulso["High"].max())
+                                idx_pivot = df_g.index.get_loc(data_pivot)
+                                
+                                # Cerchiamo la successiva candela Marubozu che rompe al rialzo questo massimo
+                                data_breakout = None
+                                for j in range(idx_pivot + 1, n_punti):
+                                    if df_g["Marubozu"].iloc[j] and df_g["Close"].iloc[j] > livello_pivot:
+                                        data_breakout = df_g.index[j]
+                                        break
+                                        
+                                if data_breakout is not None:
+                                    linee_orizzontali_strutturali.append((data_pivot, data_breakout, livello_pivot, "LONG"))
+                                    # Calcoliamo il POC volumetrico dal breakout della Marubozu fino a oggi
+                                    df_post_breakout = df_g.loc[data_breakout:]
+                                    p_poc, _, _, _, _ = calc_vp(df_post_breakout)
+                                    if p_poc is not None:
+                                        linee_poc_geometriche.append((data_breakout, float(p_poc), "LONG"))
+                                        
+                            elif direzione_trend == "SHORT":
+                                # Registriamo la candela che fa il minimo nel cluster di momentum
+                                data_pivot = df_impulso["Low"].idxmin()
+                                livello_pivot = float(df_impulso["Low"].min())
+                                idx_pivot = df_g.index.get_loc(data_pivot)
+                                
+                                # Cerchiamo la successiva candela Marubozu che rompe al ribasso questo minimo
+                                data_breakout = None
+                                for j in range(idx_pivot + 1, n_punti):
+                                    if df_g["Marubozu"].iloc[j] and df_g["Close"].iloc[j] < livello_pivot:
+                                        data_breakout = df_g.index[j]
+                                        break
+                                        
+                                if data_breakout is not None:
+                                    linee_orizzontali_strutturali.append((data_pivot, data_breakout, livello_pivot, "SHORT"))
+                                    # Calcoliamo il POC volumetrico dal breakout della Marubozu fino a oggi
+                                    df_post_breakout = df_g.loc[data_breakout:]
+                                    p_poc, _, _, _, _ = calc_vp(df_post_breakout)
+                                    if p_poc is not None:
+                                        linee_poc_geometriche.append((data_breakout, float(p_poc), "SHORT"))
+                        
+                        # Resettiamo lo stato per intercettare il prossimo cambio di momentum nello storico
+                        stato_precedente = 0
+                        indice_inizio_impulso = None
+                        direzione_trend = None
+
 # ==============================================================================
 # --- TAB 2: PARTE 3 - RENDERING GRAFICI PLOTLY & METRICHE POSITION SIZING ---
 # ==============================================================================
