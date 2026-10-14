@@ -557,11 +557,23 @@ with tab2:
                         direzione_trend = None
 
 # ==============================================================================
-# --- TAB 2: PARTE 3 - RENDERING GRAFICI PLOTLY & METRICHE POSITION SIZING ---
+# --- TAB 2: PARTE 3 - RENDERING GRAFICI CON STRUTTURA MARUBOZU & RISK MANAGEMENT ---
 # ==============================================================================
-            # Rendering del grafico dei prezzi
-            st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Livelli POC Statici Filtrati")
+            # Calcolo automatico delle soglie operative prima del rendering grafico
+            riga_finale = df_g.iloc[-1]
+            intervallo_prezzo = float(riga_finale["High"] - riga_finale["Low"])
+            if intervallo_prezzo == 0: 
+                intervallo_prezzo = p_attuale * 0.01
+            
+            # Formulazione dei livelli di Target (Rapporto Rischio/Rendimento 1:3 basato su range finale)
+            stop_tecnico = p_attuale - (1.5 * intervallo_prezzo)
+            distanza_stop = max(0.01, p_attuale - stop_tecnico)
+            take_profit_tecnico = p_attuale + (3.0 * distanza_stop)
+
+            st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Struttura Marubozu & Livelli POC")
             fig_geo = grp.Figure()
+            
+            # 1. Tracciamento candele giapponesi principali
             fig_geo.add_trace(grp.Candlestick(
                 x=df_g.index, open=df_g["Open"].astype(float), high=df_g["High"].astype(float),
                 low=df_g["Low"].astype(float), close=df_g["Close"].astype(float), name=geo_ticker
@@ -570,17 +582,69 @@ with tab2:
             data_oggi = df_g.index[-1]
             p_attuale = float(close_series.iloc[-1])
             
-            for idx, (data_start, valore_poc) in enumerate(linee_poc_geometriche):
+            # Definizione dell'estensione visiva per le aree colorate di target (ultime 15 candele)
+            finestra_visiva_target = df_g.index[-min(15, len(df_g)):]
+            data_inizio_target = finestra_visiva_target[0]
+
+            # 2. Aree di Target e Risk/Reward proiettate a destra
+            fig_geo.add_shape(type="rect",
+                x0=data_inizio_target, x1=data_oggi, y0=p_attuale, y1=take_profit_tecnico,
+                fillcolor="rgba(34, 197, 94, 0.07)", line=dict(width=0)
+            )
+            fig_geo.add_shape(type="rect",
+                x0=data_inizio_target, x1=data_oggi, y0=stop_tecnico, y1=p_attuale,
+                fillcolor="rgba(239, 68, 68, 0.07)", line=dict(width=0)
+            )
+            fig_geo.add_shape(type="line",
+                x0=data_inizio_target, x1=data_oggi, y0=take_profit_tecnico, y1=take_profit_tecnico,
+                line=dict(color="#06b6d4", width=2, dash="solid")
+            )
+            fig_geo.add_shape(type="line",
+                x0=data_inizio_target, x1=data_oggi, y0=stop_tecnico, y1=stop_tecnico,
+                line=dict(color="#f59e0b", width=2, dash="dash")
+            )
+            
+            fig_geo.add_annotation(
+                x=data_oggi, y=take_profit_tecnico, text=f"🎯 Target TP: {round(take_profit_tecnico, 2)}",
+                showarrow=False, xanchor="right", yshift=10,
+                font=dict(color="#06b6d4", size=10, family="Plus Jakarta Sans", weight="bold"),
+                bgcolor="rgba(15, 23, 42, 0.85)"
+            )
+            fig_geo.add_annotation(
+                x=data_oggi, y=stop_tecnico, text=f"🛑 Stop SL: {round(stop_tecnico, 2)}",
+                showarrow=False, xanchor="right", yshift=-10,
+                font=dict(color="#f59e0b", size=10, family="Plus Jakarta Sans", weight="bold"),
+                bgcolor="rgba(15, 23, 42, 0.85)"
+            )
+
+            # 3. TRACCIAMENTO LINEE TRATTEGGIATE PIVOT -> MARUBOZU BREAKOUT
+            for d_pivot, d_break, liv_pivot, dir_trend in linee_orizzontali_strutturali:
+                colore_linea = "#22c55e" if dir_trend == "LONG" else "#ef4444"
                 fig_geo.add_trace(grp.Scatter(
-                    x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
-                    showlegend=False, line=dict(color="#f29e1f", width=2.5, dash="solid")
+                    x=[d_pivot, d_break], y=[liv_pivot, liv_pivot], mode="lines",
+                    showlegend=False, line=dict(color=colore_linea, width=2, dash="dot")
                 ))
                 fig_geo.add_annotation(
-                    x=data_start, y=valore_poc, text=f"GEO-POC {round(valore_poc, 2)}",
+                    x=d_pivot, y=liv_pivot, text=f"Pivot {dir_trend}",
                     showarrow=False, yshift=8, xanchor="left",
-                    font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
+                    font=dict(color=colore_linea, size=9, family="Plus Jakarta Sans"),
                     bgcolor="rgba(15, 23, 42, 0.85)"
                 )
+
+            # 4. TRACCIAMENTO LIVELLI GEO-POC CORRETTO (Risolve il ValueError dello spacchettamento a 3 variabili)
+            for idx, (data_start, valore_poc, dir_trend) in enumerate(linee_poc_geometriche):
+                colore_poc = "#f29e1f" if dir_trend == "LONG" else "#eab308"
+                fig_geo.add_trace(grp.Scatter(
+                    x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
+                    showlegend=False, line=dict(color=colore_poc, width=2.5, dash="solid")
+                ))
+                fig_geo.add_annotation(
+                    x=data_start, y=valore_poc, text=f"GEO-POC ({dir_trend}) {round(valore_poc, 2)}",
+                    showarrow=False, yshift=8, xanchor="left",
+                    font=dict(color=colore_poc, size=10, family="Plus Jakarta Sans", weight="bold"),
+                    bgcolor="rgba(15, 23, 42, 0.85)"
+                )
+                
             fig_geo.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=500, margin=dict(l=20, r=20, t=10, b=10))
             st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
             
@@ -591,7 +655,8 @@ with tab2:
                 x=df_g.index, y=df_g["Z_Score"], mode="lines", 
                 name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ))
-            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
+            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#22c55e", width=1.5, dash="dot"))
+            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=-geo_soglia, y1=-geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
             fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
             
             fig_zg.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=20, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)"))
@@ -600,20 +665,12 @@ with tab2:
             st.info(f"""
             ℹ️ **Significato dell'Indicatore Inferiore: Z-Score dei Residui Geometrici**
             * **Cosa misura:** Indica quante deviazioni standard il prezzo si scosta dalla sua retta centrale calcolata a **{geo_finestra} giorni**.
-            * **Significato operativo:** La rottura della linea tratteggiata a **+{geo_soglia}** segnala un'anomalia balistica (forte momentum). In quel punto esatto si avvia il calcolo del Volume Profile continuato fino a oggi.
+            * **Significato operativo:** La rottura della linea verde tratteggiata (`+{geo_soglia}`) indica un impulso Long, mentre la rottura della linea rossa (`-{geo_soglia}`) indica un impulso Short. Al breakout confermato dalla candela Marubozu viene agganciato il calcolo del Volume Profile fino a oggi.
             """)
 
-            # Calcolo automatico della taglia della posizione (Position Sizing)
+            # Calcolo automatico del Position Sizing monetario
             st.markdown("### 🎯 Matrice Operativa & Dimensionamento della Posizione")
             if linee_poc_geometriche:
-                riga_finale = df_g.iloc[-1]
-                intervallo_prezzo = float(riga_finale["High"] - riga_finale["Low"])
-                if intervallo_prezzo == 0: 
-                    intervallo_prezzo = p_attuale * 0.01
-                
-                stop_tecnico = p_attuale - (1.5 * intervallo_prezzo)
-                distanza_stop = max(0.01, p_attuale - stop_tecnico)
-                
                 rischio_monetario = float(geo_capitale * (geo_rischio_pct / 100))
                 size_contratti_ideale = rischio_monetario / distanza_stop
                 controvalore_posizione = size_contratti_ideale * p_attuale
@@ -621,32 +678,31 @@ with tab2:
                 
                 rm_col1, rm_col2, rm_col3 = st.columns(3)
                 with rm_col1:
-                    st.metric("Rischio Allocato ($)", f"$ {round(rischio_monetario, 2)}", f"{geo_rischio_pct} % del Capitale")
+                    st.metric("Rischio Allocato (\$)", f"\$ {round(rischio_monetario, 2)}", f"{geo_rischio_pct} % del Capitale")
                 with rm_col2:
-                    st.metric("Size Contratti Calcolata", f"{round(size_contratti_ideale, 2)} Pz", f"Controvalore: $ {round(controvalore_posizione, 2)}")
+                    st.metric("Size Contratti Calcolata", f"{round(size_contratti_ideale, 2)} Pz", f"Controvalore: \$ {round(controvalore_posizione, 2)}")
                 with rm_col3:
                     st.metric("Leva Finanziaria Richiesta", f"{round(leva_operativa, 2)} x", "Rapporto Esposizione / Capitale")
                 
-                # Tabella riassuntiva dello stato dei nodi statici
+                # Tabella riassuntiva dei nodi statici attivi
                 st.markdown("##### 📋 Stato dei Livelli di Supporto/Resistenza Geometrici Rilevati")
                 dati_tabella_geo = []
-                for dt_p, val_p in linee_poc_geometriche:
+                for dt_p, val_p, dir_trend in linee_poc_geometriche:
                     dist_pct = ((p_attuale - val_p) / val_p) * 100
-                    stato_nodo = "🟢 SOPRA (Supporto)" if dist_pct >= 0 else "🔴 SOTTO (Resistenza)"
+                    stato_nodo = f"🟢 SOPRA ({dir_trend} Supporto)" if dist_pct >= 0 else f"🔴 SOTTO ({dir_trend} Resistenza)"
                     dati_tabella_geo.append({
-                        "Data Rilevazione Segnale": dt_p.strftime("%d/%m/%Y"),
-                        "Prezzo del GEO-POC": f"$ {round(val_p, 2)}",
+                        "Data Breakout Marubozu": dt_p.strftime("%d/%m/%Y"),
+                        "Prezzo del GEO-POC": f"\$ {round(val_p, 2)}",
                         "Distanza Percentuale Corrente": f"{round(dist_pct, 2)} %",
                         "Stato Strutturale": stato_nodo
                     })
                 st.dataframe(pd.DataFrame(dati_tabella_geo), use_container_width=True)
             else:
-                st.warning("⚠️ Nessun impulso balistico rilevato con l'attuale combinazione di filtri. Riduci la soglia o amplia l'orizzonte dati.")
+                st.warning("⚠️ Nessun impulso confermato da una Marubozu con l'attuale configurazione. Prova a diminuire la rigidità del filtro o a estendere lo storico.")
                 
             st.success("📐 Mappatura geometrica dei volumi e calcolo del dimensionamento completati con successo. In attesa di nuovi comandi...")
         else:
             st.error("Dati storici non sufficienti per calcolare la regressione rolling.")
-
 
 # ==============================================================================
 # --- TAB 3: BREAKOUT TREND-FOLLOWING (MOTORE DI BACKTEST STRATEGICO CON GEO-Z) ---
