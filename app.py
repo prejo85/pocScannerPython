@@ -432,7 +432,7 @@ with tab2:
 
     st.markdown("")
 # ==============================================================================
-# --- TAB 2: PARTE 2 (CORRETTA) - ENGINE MOMENTUM, PIVOT BIANCO & POC CONTINUATI ---
+# --- TAB 2: PARTE 2 (CORRETTA) - LOGICA PURE-POC & BREAKOUT MARUBOZU DAL PICCO ---
 # ==============================================================================
     if st.button("📐 Genera Struttura Geometrica POC", type="primary", key="geo_btn_start"):
         st.info(f"Elaborazione matriciale e calcolo profili per {geo_ticker}...")
@@ -472,149 +472,163 @@ with tab2:
             
             df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             
-            # Identificazione candele Marubozu (Corpo >= 75% del range totale)
+            # Definizione candela Marubozu (corpo esteso >= 75% del range totale)
             corpo = (close_series - open_series).abs()
             range_totale = high_series - low_series
             range_totale = np.where(range_totale == 0, 0.00001, range_totale)
             df_g["Marubozu"] = (corpo / range_totale) >= 0.75
             
-            # Strutture dati per i tracciamenti grafici
-            linee_orizzontali_strutturali = [] 
-            linee_poc_geometriche = []         
+            linee_orizzontali_strutturali = [] # Linee tratteggiate bianche dai massimi/minimi dello swing
+            linee_poc_geometriche = []         # Unici POC estratti al cambio di momentum
             
             stato_precedente = 0
+            indice_inizio_impulso = None
+            tipo_impulso = None # "LONG_MOM" o "SHORT_MOM"
             
             for i in range(geo_finestra, n_punti):
                 z_corrente = df_g["Z_Score"].iloc[i]
                 
-                # Intercettiamo il cambio di momentum esatto (Incrocio Soglia)
+                # 1. Rilevamento Cambio di Momentum dell'oscillatore
                 if stato_precedente == 0:
                     if z_corrente >= geo_soglia:
                         stato_precedente = 1
-                        data_cambio_momentum = df_g.index[i]
+                        indice_inizio_impulso = i
+                        tipo_impulso = "LONG_MOM"
                         
-                        # Il Pivot di massimo parte ESATTAMENTE sulla candela del cambio momentum
-                        livello_pivot = float(high_series.iloc[i])
-                        
-                        # Calcoliamo IMMEDIATAMENTE il POC dal momento del cambio di momentum fino a oggi
-                        df_da_momentum_a_oggi = df_g.iloc[i:]
-                        p_poc, _, _, _, _ = calc_vp(df_da_momentum_a_oggi)
+                        # Salviamo subito il POC continuo dall'inizio del segnale a oggi
+                        df_da_mom_a_oggi = df_g.iloc[i:]
+                        p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
                         if p_poc is not None:
-                            linee_poc_geometriche.append((data_cambio_momentum, float(p_poc), "LONG"))
-                        
-                        # Cerchiamo la successiva Marubozu che rompe il massimo di questa candela di attivazione
-                        data_breakout = None
-                        for j in range(i + 1, n_punti):
-                            if df_g["Marubozu"].iloc[j] and close_series.iloc[j] > livello_pivot:
-                                data_breakout = df_g.index[j]
-                                break
-                        
-                        if data_breakout is not None:
-                            linee_orizzontali_strutturali.append((data_cambio_momentum, data_breakout, livello_pivot, "LONG"))
+                            linee_poc_geometriche.append((df_g.index[i], float(p_poc)))
                             
                     elif z_corrente <= -geo_soglia:
                         stato_precedente = -1
-                        data_cambio_momentum = df_g.index[i]
+                        indice_inizio_impulso = i
+                        tipo_impulso = "SHORT_MOM"
                         
-                        # Il Pivot di minimo parte ESATTAMENTE sulla candela del cambio momentum
-                        livello_pivot = float(low_series.iloc[i])
-                        
-                        # Calcoliamo IMMEDIATAMENTE il POC dal momento del cambio di momentum fino a oggi
-                        df_da_momentum_a_oggi = df_g.iloc[i:]
-                        p_poc, _, _, _, _ = calc_vp(df_da_momentum_a_oggi)
+                        # Salviamo subito il POC continuo dall'inizio del segnale a oggi
+                        df_da_mom_a_oggi = df_g.iloc[i:]
+                        p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
                         if p_poc is not None:
-                            linee_poc_geometriche.append((data_cambio_momentum, float(p_poc), "SHORT"))
-                        
-                        # Cerchiamo la successiva Marubozu che rompe il minimo di questa candela di attivazione
-                        data_breakout = None
-                        for j in range(i + 1, n_punti):
-                            if df_g["Marubozu"].iloc[j] and close_series.iloc[j] < livello_pivot:
-                                data_breakout = df_g.index[j]
-                                break
-                        
-                        if data_breakout is not None:
-                            linee_orizzontali_strutturali.append((data_cambio_momentum, data_breakout, livello_pivot, "SHORT"))
+                            linee_poc_geometriche.append((df_g.index[i], float(p_poc)))
                 
-                # Resettiamo lo stato se lo Z-Score rientra verso l'equilibrio per intercettare il prossimo impulso
-                elif stato_precedente == 1 and z_corrente < 0:
-                    stato_precedente = 0
-                elif stato_precedente == -1 and z_corrente > 0:
-                    stato_precedente = 0
+                # 2. Identificazione della fine dell'impulso ed estrazione dello Swing High/Low
+                elif stato_precedente != 0:
+                    if (tipo_impulso == "LONG_MOM" and z_corrente < 0) or (tipo_impulso == "SHORT_MOM" and z_corrente > 0):
+                        indice_fine_impulso = i
+                        df_swing = df_g.iloc[indice_inizio_impulso:indice_fine_impulso]
+                        
+                        if not df_swing.empty:
+                            if tipo_impulso == "LONG_MOM":
+                                # Troviamo la candela che fa il MASSIMO assoluto durante lo swing di partenza
+                                data_picco_swing = df_swing["High"].idxmax()
+                                livello_pivot = float(df_swing["High"].max())
+                                idx_picco = df_g.index.get_loc(data_picco_swing)
+                                
+                                # Il tratteggio parte ESATTAMENTE dalla candela del massimo fino alla Marubozu che lo rompe
+                                data_breakout = None
+                                for j in range(idx_picco + 1, n_punti):
+                                    if df_g["Marubozu"].iloc[j] and close_series.iloc[j] > livello_pivot:
+                                        data_breakout = df_g.index[j]
+                                        break
+                                        
+                                if data_breakout is not None:
+                                    linee_orizzontali_strutturali.append((data_picco_swing, data_breakout, livello_pivot))
+                                    
+                            elif tipo_impulso == "SHORT_MOM":
+                                # Troviamo la candela che fa il MINIMO assoluto durante lo swing di partenza
+                                data_picco_swing = df_swing["Low"].idxmin()
+                                livello_pivot = float(df_swing["Low"].min())
+                                idx_picco = df_g.index.get_loc(data_picco_swing)
+                                
+                                # Il tratteggio parte ESATTAMENTE dalla candela del minimo fino alla Marubozu che lo rompe
+                                data_breakout = None
+                                for j in range(idx_picco + 1, n_punti):
+                                    if df_g["Marubozu"].iloc[j] and close_series.iloc[j] < livello_pivot:
+                                        data_breakout = df_g.index[j]
+                                        break
+                                        
+                                if data_breakout is not None:
+                                    linee_orizzontali_strutturali.append((data_picco_swing, data_breakout, livello_pivot))
+                                    
+                        # Reset degli stati per l'impulso successivo
+                        stato_precedente = 0
+                        indice_inizio_impulso = None
+                        tipo_impulso = None
 # ==============================================================================
-# --- TAB 2: PARTE 3 (CORRETTA) - RENDERING GRAFICO PULITO E REALE ---
+# --- TAB 2: PARTE 3 (CORRETTA) - RENDERING PULITO CON LIVELLI PURI ---
 # ==============================================================================
             p_attuale = float(close_series.iloc[-1])
             data_oggi = df_g.index[-1]
             
-            st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Linee Pivot & Livelli POC")
+            st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Nodi Geometrici POC & Pivot")
             fig_geo = grp.Figure()
             
-            # 1. Tracciamento candele giapponesi principali
+            # Candele Giapponesi
             fig_geo.add_trace(grp.Candlestick(
                 x=df_g.index, open=df_g["Open"].astype(float), high=df_g["High"].astype(float),
                 low=df_g["Low"].astype(float), close=df_g["Close"].astype(float), name=geo_ticker
             ))
             
-            # 2. TRACCIAMENTO LINEE BIANCHE TRATTEGGIATE (Pivot -> Marubozu Breakout)
-            for d_pivot, d_break, liv_pivot, dir_trend in linee_orizzontali_strutturali:
+            # TRACCIAMENTO LINEE BIANCHE TRATTEGGIATE (Dal Massimo/Minimo del picco dello swing alla rottura Marubozu)
+            for d_picco, d_break, liv_pivot in linee_orizzontali_strutturali:
                 fig_geo.add_trace(grp.Scatter(
-                    x=[d_pivot, d_break], y=[liv_pivot, liv_pivot], mode="lines",
+                    x=[d_picco, d_break], y=[liv_pivot, liv_pivot], mode="lines",
                     showlegend=False, line=dict(color="#ffffff", width=2, dash="dash")
                 ))
                 fig_geo.add_annotation(
-                    x=d_pivot, y=liv_pivot, text=f"Pivot {dir_trend}",
+                    x=d_picco, y=liv_pivot, text=f"Pivot Max/Min: {round(liv_pivot, 2)}",
                     showarrow=False, yshift=10, xanchor="left",
                     font=dict(color="#ffffff", size=9, family="Plus Jakarta Sans"),
                     bgcolor="rgba(15, 23, 42, 0.85)"
                 )
 
-            # 3. TRACCIAMENTO LIVELLI GEO-POC CONTINUATI (Linee Gialle/Arancioni dal Cambio Momentum)
-            for idx, (data_start, valore_poc, dir_trend) in enumerate(linee_poc_geometriche):
-                colore_poc = "#f29e1f" if dir_trend == "LONG" else "#eab308"
+            # TRACCIAMENTO UNICI LIVELLI POC REALI (Linee Giallo-Arancio dal Cambio Momentum fino a oggi)
+            for idx, (data_start, valore_poc) in enumerate(linee_poc_geometriche):
                 fig_geo.add_trace(grp.Scatter(
                     x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
-                    showlegend=False, line=dict(color=colore_poc, width=2.5, dash="solid")
+                    showlegend=False, line=dict(color="#f29e1f", width=2.5, dash="solid")
                 ))
                 fig_geo.add_annotation(
-                    x=data_start, y=valore_poc, text=f"GEO-POC ({dir_trend}) {round(valore_poc, 2)}",
-                    showarrow=False, yshift=8, xanchor="left",
-                    font=dict(color=colore_poc, size=10, family="Plus Jakarta Sans", weight="bold"),
+                    x=data_start, y=valore_poc, text=f"POC {round(valore_poc, 2)}",
+                    showarrow=False, yshift=-10, xanchor="left",
+                    font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
                     bgcolor="rgba(15, 23, 42, 0.85)"
                 )
                 
             fig_geo.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=550, margin=dict(l=20, r=20, t=10, b=10))
             st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
             
-            # Sotto-grafico dell'oscillatore Z-Score
-            st.markdown("##### 📉 Oscillatore Quantitative: Z-Score dei Residui della Regressione")
+            # Sotto-grafico dell'oscillatore Z-Score dei Residui
+            st.markdown("##### 📉 Oscillatore Quantitativo: Z-Score dei Residui della Regressione")
             fig_zg = grp.Figure()
             fig_zg.add_trace(grp.Scatter(
                 x=df_g.index, y=df_g["Z_Score"], mode="lines", 
                 name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ))
-            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#22c55e", width=1.5, dash="dot"))
+            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
             fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=-geo_soglia, y1=-geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
             fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
             
             fig_zg.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=20, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)"))
             st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
             
-            # Tabella informativa sui nodi statici attivi
+            # Tabella riassuntiva dei nodi statici attivi
             if linee_poc_geometriche:
-                st.markdown("##### 📋 Stato dei Livelli di Supporto/Resistenza Geometrici Rilevati")
+                st.markdown("##### 📋 Registro dei Livelli POC Statici Rilevati dall'Impulso")
                 dati_tabella_geo = []
-                for dt_p, val_p, dir_trend in linee_poc_geometriche:
+                for dt_p, val_p in linee_poc_geometriche:
                     dist_pct = ((p_attuale - val_p) / val_p) * 100
-                    stato_nodo = f"🟢 SOPRA ({dir_trend} Supporto)" if dist_pct >= 0 else f"🔴 SOTTO ({dir_trend} Resistenza)"
+                    stato_nodo = "🟢 SOPRA (Supporto)" if dist_pct >= 0 else "🔴 SOTTO (Resistenza)"
                     dati_tabella_geo.append({
-                        "Inizio Impulso Volumi": dt_p.strftime("%d/%m/%Y"),
-                        "Prezzo del GEO-POC": f"$ {round(val_p, 2)}",
+                        "Data Attivazione Impulso": dt_p.strftime("%d/%m/%Y"),
+                        "Prezzo del POC": f"$ {round(val_p, 2)}",
                         "Distanza Percentuale Corrente": f"{round(dist_pct, 2)} %",
-                        "Stato Strutturale": stato_nodo
+                        "Stato Finanziario": stato_nodo
                     })
                 st.dataframe(pd.DataFrame(dati_tabella_geo), use_container_width=True)
                 
-            st.success("📐 Struttura geometrica dei volumi riallineata correttamente. In attesa dei tuoi comandi...")
+            st.success("📐 Struttura geometrica originale ripristinata con successo. In attesa di nuovi comandi...")
         else:
             st.error("Dati storici non sufficienti per calcolare la regressione rolling.")
 
