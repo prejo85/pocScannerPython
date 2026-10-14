@@ -559,7 +559,10 @@ with tab2:
 # ==============================================================================
 # --- TAB 2: PARTE 3 - RENDERING GRAFICI CON STRUTTURA MARUBOZU & RISK MANAGEMENT ---
 # ==============================================================================
-            # Calcolo automatico delle soglie operative prima del rendering grafico
+            # 1. Estrazione immediata dei prezzi correnti per evitare NameError
+            p_attuale = float(close_series.iloc[-1])
+            data_oggi = df_g.index[-1]
+            
             riga_finale = df_g.iloc[-1]
             intervallo_prezzo = float(riga_finale["High"] - riga_finale["Low"])
             if intervallo_prezzo == 0: 
@@ -573,34 +576,30 @@ with tab2:
             st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Struttura Marubozu & Livelli POC")
             fig_geo = grp.Figure()
             
-            # 1. Tracciamento candele giapponesi principali
+            # Tracciamento candele giapponesi principali
             fig_geo.add_trace(grp.Candlestick(
                 x=df_g.index, open=df_g["Open"].astype(float), high=df_g["High"].astype(float),
                 low=df_g["Low"].astype(float), close=df_g["Close"].astype(float), name=geo_ticker
             ))
             
-            data_oggi = df_g.index[-1]
-            p_attuale = float(close_series.iloc[-1])
-            
             # Definizione dell'estensione visiva per le aree colorate di target (ultime 15 candele)
             finestra_visiva_target = df_g.index[-min(15, len(df_g)):]
-            data_inizio_target = finestra_visiva_target[0]
-
+            
             # 2. Aree di Target e Risk/Reward proiettate a destra
             fig_geo.add_shape(type="rect",
-                x0=data_inizio_target, x1=data_oggi, y0=p_attuale, y1=take_profit_tecnico,
+                x0=finestra_visiva_target[0], x1=data_oggi, y0=p_attuale, y1=take_profit_tecnico,
                 fillcolor="rgba(34, 197, 94, 0.07)", line=dict(width=0)
             )
             fig_geo.add_shape(type="rect",
-                x0=data_inizio_target, x1=data_oggi, y0=stop_tecnico, y1=p_attuale,
+                x0=finestra_visiva_target[0], x1=data_oggi, y0=stop_tecnico, y1=p_attuale,
                 fillcolor="rgba(239, 68, 68, 0.07)", line=dict(width=0)
             )
             fig_geo.add_shape(type="line",
-                x0=data_inizio_target, x1=data_oggi, y0=take_profit_tecnico, y1=take_profit_tecnico,
+                x0=finestra_visiva_target[0], x1=data_oggi, y0=take_profit_tecnico, y1=take_profit_tecnico,
                 line=dict(color="#06b6d4", width=2, dash="solid")
             )
             fig_geo.add_shape(type="line",
-                x0=data_inizio_target, x1=data_oggi, y0=stop_tecnico, y1=stop_tecnico,
+                x0=finestra_visiva_target[0], x1=data_oggi, y0=stop_tecnico, y1=stop_tecnico,
                 line=dict(color="#f59e0b", width=2, dash="dash")
             )
             
@@ -631,7 +630,7 @@ with tab2:
                     bgcolor="rgba(15, 23, 42, 0.85)"
                 )
 
-            # 4. TRACCIAMENTO LIVELLI GEO-POC CORRETTO (Risolve il ValueError dello spacchettamento a 3 variabili)
+            # 4. TRACCIAMENTO LIVELLI GEO-POC CORRETTO
             for idx, (data_start, valore_poc, dir_trend) in enumerate(linee_poc_geometriche):
                 colore_poc = "#f29e1f" if dir_trend == "LONG" else "#eab308"
                 fig_geo.add_trace(grp.Scatter(
@@ -684,7 +683,7 @@ with tab2:
                 with rm_col3:
                     st.metric("Leva Finanziaria Richiesta", f"{round(leva_operativa, 2)} x", "Rapporto Esposizione / Capitale")
                 
-                # Tabella riassuntiva dei nodi statici attivi
+                # Tabella riassuntiva dello stato dei nodi statici
                 st.markdown("##### 📋 Stato dei Livelli di Supporto/Resistenza Geometrici Rilevati")
                 dati_tabella_geo = []
                 for dt_p, val_p, dir_trend in linee_poc_geometriche:
@@ -698,7 +697,7 @@ with tab2:
                     })
                 st.dataframe(pd.DataFrame(dati_tabella_geo), use_container_width=True)
             else:
-                st.warning("⚠️ Nessun impulso confermato da una Marubozu con l'attuale configurazione. Prova a diminuire la rigidità del filtro o a estendere lo storico.")
+                st.warning("⚠️ Nessun impulso confermato da una Marubozu con l'attuale configurazione. Prova a diminuire la rigidità del filtro (es. abbassando la soglia Z-Score) o a estendere l'orizzonte dati storico.")
                 
             st.success("📐 Mappatura geometrica dei volumi e calcolo del dimensionamento completati con successo. In attesa di nuovi comandi...")
         else:
