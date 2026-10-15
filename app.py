@@ -404,8 +404,12 @@ with tab1:
                         st.plotly_chart(fig, width="stretch", key=f"chart_{ticker}")
                     else: 
                         st.warning(f"Dati storici insufficienti per {ticker}.")
-    st.subheader("📐 Laboratorio Geometrico: Rilevamento Tazza e Rounding sul POC")
-    st.markdown("Identifica la resistenza locale generata sul POC e traccia la linea tratteggiata di breakout in cerca della candela Marubozu.")
+# ==============================================================================
+# --- TAB 2: ANALISI GEOMETRICA POC (SOLO TRACCIAMENTO GEO-POC FINO A OGGI) ---
+# ==============================================================================
+with tab2:
+    st.subheader("📐 Laboratorio Geometrico: Tracciamento POC su Impulso Continuato")
+    st.markdown("Rileva il cambio di momentum tramite il distacco dello Z-Score dalla regressione ed estende i profili volumetrici da quel punto fino a oggi.")
     
     # RIGA 1: Parametri di scansione dell'asset e dello storico
     g_col1, g_col2, g_col3 = st.columns(3)
@@ -417,17 +421,23 @@ with tab1:
     with g_col3:
         geo_finestra = st.slider("Finestra Regressione Lineare (Giorni base):", min_value=20, max_value=100, value=50, step=5, key="geo_win_sl")
 
-    # RIGA 2: Soglia Z-Score, Capitale e Risk Management
+    # RIGA 2: Soglia Z-Score e Nuovi controlli di Risk Management inseriti
     g_col4, g_col5, g_col6 = st.columns(3)
     with g_col4:
         geo_soglia = st.slider("Soglia Z-Score per Cambio Momentum:", min_value=1.5, max_value=3.5, value=2.0, step=0.1, key="geo_z_sl")
     with g_col5:
+        # Input del capitale operativo del laboratorio
         geo_capitale = st.number_input("Capitale Operativo ($):", min_value=100, value=10000, step=500, key="geo_cap_input")
     with g_col6:
+        # Slider per impostare il rischio percentuale per singola idea operativa
         geo_rischio_pct = st.slider("Rischio scelto per Trade (%):", min_value=0.2, max_value=5.0, value=1.0, step=0.1, key="geo_risk_sl")
 
+    # Spazio di separazione prima del pulsante di esecuzione grafico
     st.markdown("")
     
+    # ==============================================================================
+# PARTE 2 & 4 REGOLATE: FILTRO POC SIMILI E OTTIMIZZAZIONE GRAFICA INDICATORE
+# ==============================================================================
     if st.button("📐 Genera Struttura Geometrica POC", type="primary", key="geo_btn_start"):
         st.info(f"Elaborazione matriciale e calcolo profili per {geo_ticker}...")
         df_g = yf.download(tickers=geo_ticker, period=mappa_periodi_geo[geo_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
@@ -435,9 +445,6 @@ with tab1:
         if df_g is not None and len(df_g) > geo_finestra:
             df_g.columns = [str(c).strip() for c in df_g.columns]
             close_series = pd.Series(df_g["Close"].values.flatten(), index=df_g.index).astype(float)
-            high_series = pd.Series(df_g["High"].values.flatten(), index=df_g.index).astype(float)
-            low_series = pd.Series(df_g["Low"].values.flatten(), index=df_g.index).astype(float)
-            open_series = pd.Series(df_g["Open"].values.flatten(), index=df_g.index).astype(float)
             n_punti = len(df_g)
             
             # Algoritmo Vettorizzato per la Regressione e lo Z-Score
@@ -466,9 +473,11 @@ with tab1:
             
             df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             df_g["Accelerazione_Geometrica"] = np.where(df_g["Z_Score"] >= geo_soglia, 1, 0)
-            # Individuazione dei POC potenziali
+            
+            # Individuazione temporanea di tutti i POC potenziali
             poc_grezzi = []
             stato_precedente = 0
+            
             for i in range(geo_finestra, n_punti):
                 stato_attuale = df_g["Accelerazione_Geometrica"].iloc[i]
                 if stato_attuale == 1 and stato_precedente == 0:
@@ -476,137 +485,79 @@ with tab1:
                     df_da_mom_a_oggi = df_g.iloc[start_idx:]
                     p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
                     if p_poc is not None:
-                        poc_grezzi.append((df_g.index[start_idx], float(p_poc), start_idx))
+                        poc_grezzi.append((df_g.index[start_idx], float(p_poc)))
                 stato_precedente = stato_attuale
             
-            # Filtraggio dei Cluster POC Simili (Tolleranza 1.5%)
+            # --- LOGICA DI FILTRAGGIO E ACCORPAMENTO DEI POC SIMILI (Tolleranza 1.0%) ---
             linee_poc_geometriche = []
-            tolleranza_filtro = 0.015
-            for data_start, valore_poc, s_idx in poc_grezzi:
+            tolleranza_filtro = 0.01  # 1.0% di tolleranza sul prezzo
+            
+            for data_start, valore_poc in poc_grezzi:
                 trovato_duplicato = False
-                for i, (dt_saved, val_saved, _) in enumerate(linee_poc_geometriche):
+                for i, (dt_saved, val_saved) in enumerate(linee_poc_geometriche):
+                    # Se lo scostamento percentuale tra il nuovo POC e uno già salvato è inferiore alla tolleranza
                     if abs(valore_poc - val_saved) / val_saved <= tolleranza_filtro:
                         trovato_duplicato = True
+                        # Aggiorniamo il POC mantenendo la data più recente per catturare l'impulso fresco
                         if data_start > dt_saved:
-                            linee_poc_geometriche[i] = (data_start, valore_poc, s_idx)
+                            linee_poc_geometriche[i] = (data_start, valore_poc)
                         break
                 if not trovato_duplicato:
-                    linee_poc_geometriche.append((data_start, valore_poc, s_idx))
-            
+                    linee_poc_geometriche.append((data_start, valore_poc))
+                
             # --- RENDER DEL GRAFICO PRINCIPALE PREZZI ---
-            st.markdown(f"##### 📊 Grafico Strutturale Price Action: Livelli di Resistenza e Tazza sul POC")
+            st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Livelli POC Statici Filtrati")
             fig_geo = grp.Figure()
             fig_geo.add_trace(grp.Candlestick(
-                x=df_g.index, open=open_series, high=high_series,
-                low=low_series, close=close_series, name=geo_ticker
+                x=df_g.index, open=df_g["Open"].astype(float), high=df_g["High"].astype(float),
+                low=df_g["Low"].astype(float), close=df_g["Close"].astype(float), name=geo_ticker
             ))
             
             data_oggi = df_g.index[-1]
-            
-            # Algoritmo per individuare il Massimo, tracciare la linea tratteggiata e cercare la Marubozu
-            for data_start, valore_poc, s_idx in linee_poc_geometriche:
-                finestra_massimo = df_g.iloc[max(0, s_idx-2) : min(s_idx+5, n_punti)]
-                massimo_generato = float(finestra_massimo["High"].max())
-                finestra_ricerca_breakout = df_g.iloc[s_idx : min(s_idx + 40, n_punti)]
-                marubozu_idx = None
-                
-                for idx_m, riga in finestra_ricerca_breakout.iterrows():
-                    corpo = riga["Close"] - riga["Open"]
-                    range_totale = riga["High"] - riga["Low"]
-                    if range_totale == 0: continue
-                    if corpo > 0 and (corpo / range_totale) >= 0.75:
-                        if riga["Close"] > massimo_generato:
-                            marubozu_idx = idx_m
-                            break
-                
-                if marubozu_idx is not None:
-                    fig_geo.add_trace(grp.Scatter(
-                        x=[data_start, marubozu_idx], y=[massimo_generato, massimo_generato],
-                        mode="lines", showlegend=False, 
-                        line=dict(color="#38bdf8", width=2, dash="dash")
-                    ))
-                    subset_tazza = df_g.loc[data_start:marubozu_idx]
-                    if len(subset_tazza) >= 3:
-                        linea_rounding = subset_tazza["Low"].rolling(window=max(2, len(subset_tazza)//3), min_periods=1).mean()
-                        fig_geo.add_trace(grp.Scatter(
-                            x=subset_tazza.index, y=linea_rounding.values, mode="lines",
-                            showlegend=False, line=dict(color="rgba(34, 197, 94, 0.85)", width=2, dash="dot")
-                        ))
-                    fig_geo.add_annotation(
-                        x=marubozu_idx, y=close_series.loc[marubozu_idx],
-                        text="💥 TAZZA VALIDATA: MARUBOZU",
-                        showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2, arrowcolor="#22c55e",
-                        ax=-60, ay=-40,
-                        font=dict(color="white", size=9, family="Plus Jakarta Sans", weight="bold"),
-                        bgcolor="#22c55e", bordercolor="white", borderwidth=1
-                    )
-                else:
-                    fig_geo.add_trace(grp.Scatter(
-                        x=[data_start, data_oggi], y=[massimo_generato, massimo_generato],
-                        mode="lines", showlegend=False, 
-                        line=dict(color="rgba(248, 250, 252, 0.3)", width=1.5, dash="dash")
-                    ))
-                    fig_geo.add_annotation(
-                        x=data_start, y=massimo_generato, text=f"Resistenza Tazza: {round(massimo_generato, 2)}",
-                        showarrow=False, yshift=10, xanchor="left",
-                        font=dict(color="#64748b", size=9, family="Plus Jakarta Sans"),
-                        bgcolor="rgba(15, 23, 42, 0.8)"
-                    )
-                
+            for idx, (data_start, valore_poc) in enumerate(linee_poc_geometriche):
                 fig_geo.add_trace(grp.Scatter(
                     x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
-                    showlegend=False, line=dict(color="rgba(242, 158, 31, 0.4)", width=1.5)
+                    showlegend=False, line=dict(color="#f29e1f", width=2.5, dash="solid")
                 ))
-            
-            fig_geo.update_layout(
-                template="plotly_dark", xaxis_rangeslider_visible=False, height=550, 
-                margin=dict(l=20, r=20, t=10, b=10),
-                xaxis=dict(gridcolor="rgba(51, 65, 85, 0.1)"),
-                yaxis=dict(gridcolor="rgba(51, 65, 85, 0.1)")
-            )
+                fig_geo.add_annotation(
+                    x=data_start, y=valore_poc, text=f"POC {round(valore_poc, 2)}",
+                    showarrow=False, yshift=8, xanchor="left",
+                    font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
+                    bgcolor="rgba(15, 23, 42, 0.85)"
+                )
+            fig_geo.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=500, margin=dict(l=20, r=20, t=10, b=10))
             st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
-            # --- SUBPLOT DEL DETECTOR INFERIORE DELLO Z-SCORE ---
-            st.markdown("##### 📉 Oscillatore Quantitative: Z-Score dei Residui della Regressione")
+            
+            # --- NUOVA SEZIONE: SUBPLOT DEL DETECTOR INFERIORE CORRETTO ---
+            st.markdown("##### 📉 Oscillatore Quantitativo: Z-Score dei Residui della Regressione")
+            
             fig_zg = grp.Figure()
             fig_zg.add_trace(grp.Scatter(
                 x=df_g.index, y=df_g["Z_Score"], mode="lines", 
                 name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ))
+            # Linea della soglia utente per visualizzare l'anomalia balistica
             fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
             fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
             
-            fig_zg.update_layout(template="plotly_dark", height=180, margin=dict(l=20, r=20, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)"))
+            fig_zg.update_layout(
+                template="plotly_dark", height=200, 
+                margin=dict(l=20, r=20, t=10, b=20),
+                yaxis=dict(title="Deviazioni Std (Z)")
+            )
             st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
             
-            # --- INTEGRAZIONE DEI TRE PILASTRI DELLA MICROSTRUTTURA SUL POC ---
-            st.markdown("---")
-            with st.expander("📚 Logica Quantitativa e Microstruttura del Mercato sul POC (Analisi del Pattern)", expanded=True):
-                st.markdown("""
-                La scelta di cercare ed attendere la conferma di questo pattern esclusivamente in corrispondenza del **POC (Point of Control)** e non in altre zone casuali del grafico è dettata da una logica quantitativa e di microstruttura del mercato estremamente profonda. 
-                Il motivo si riassume in **tre pilastri fondamentali** basati sul *Volume Profile*:
-                
-                ##### 🧲 1. Massima Concentrazione di Liquidità (La "Calamita" del Prezzo)
-                Il POC rappresenta il livello di prezzo in cui è stato scambiato il maggior volume di contratti in assoluto. Non è una linea geometrica astratta o una media mobile; è la zona in cui le istituzioni, i grandi fondi e gli algoritmi hanno trovato il massimo accordo sul valore dell'asset.
-                * Quando il prezzo ritorna sul POC ed inizia a formare una tazza (*rounding bottom*) o una tazza rovesciata, significa che il mercato sta **testando la zona di massimo equilibrio**.
-                * Se verifichi il pattern fuori dal POC, ti trovi in zone a basso volume (**Low Volume Nodes**), dove i movimenti sono fluidi, erratici e privi di una vera controparte istituzionale a supportare il breakout.
-                
-                ##### ⚖️ 2. Validazione dell'Inversione Istituzionale (Rifiuto o Accettazione)
-                La formazione di una tazza o tazza rovesciata sul POC è la traccia visiva di una battaglia macroeconomica:
-                * **Fase di rallentamento:** Il prezzo si avvicina al POC e la compressione del momentum (Z-Score che tocca la soglia critica) ti dice che la spinta precedente si sta esaurendo proprio dove risiede la liquidità storica.
-                * **Fase di accumulazione/distribuzione (La curva della tazza):** Sul POC il prezzo non rimbalza istantaneamente, ma spende tempo a scambiare contratti, disegnando la classica curvatura ad **"U"**. È l'operatore istituzionale che sta accumulando o distribuendo posizioni senza far scappare il prezzo.
-                * **Il Breakout con Marubozu:** Quando compare la **Marubozu** che rompe il bordo geometrico della tazza, hai la certezza statistica che una delle due fazioni (buyer o seller) ha vinto la battaglia sul POC, decidendo di iniettare una quantità massiccia di ordini per avviare un trend direzionale esplosivo.
-                
-                ##### 📐 3. Asimmetria Matematica del Rischio (Risk/Reward Ottimale)
-                Operare sui breakout in prossimità del POC ti garantisce un vantaggio matematico nel *Position Sizing*:
-                * Se entri su una Marubozu che rompe un pivot nato lontano dal POC, rischi di comprare i massimi o vendere i minimi di un movimento esteso (estremamente esposto a finti breakout).
-                * Entrando sulla rottura di una tazza formatasi attorno al POC, lo **Stop Loss può essere posizionato in modo chirurgico** appena sotto/sopra il POC stesso o alla base della tazza. Poiché il POC funge da barriera volumetrica insormontabile senza forti volumi, il tuo rischio monetario è ridotto al minimo, mentre il target verso le zone prive di volumi storici è estremamente ampio.
-                
-                *In sintesi, cercare il pattern sul POC trasforma una figura grafica di price action in un setup quantitativo volumetrico ad altissima probabilità di successo, assicurandoti che dietro quel movimento ci siano capitali reali e non rumore di fondo del mercato.*
-                """)
+            # Box informativo di spiegazione matematica dell'oscillatore inferiore
+            st.info(f"""
+            ℹ️ **Significato dell'Indicatore Inferiore: Z-Score dei Residui Geometrici**
+            * **Cosa misura:** Rappresenta quante deviazioni standard il prezzo attuale si trova al di sopra o al di sotto della retta di regressione lineare calcolata negli ultimi **{geo_finestra} giorni** (il trend centrale equilibrato).
+            * **Significato operativo delle linee:** Quando la linea azzurra rompe la soglia critica rossa tratteggiata a **+{geo_soglia}**, l'asset sta registrando un'accelerazione di prezzo statisticamente anomala (Momento Balistico). Il sistema intercetta quel punto esatto per avviare il calcolo del Volume Profile continuato fino a oggi.
+            """)
             
-            st.success("📐 Algoritmo di tracciamento completato. Linee tratteggiate di resistenza e identificazione Marubozu attive.")
+            st.success("📐 Mappatura geometrica dei volumi completata con eliminazione dei cluster ridondanti. In attesa dei tuoi comandi...")
         else:
-            st.error("Dati storici non sufficienti per calcolare la regressione rolling nel modulo geometrico.")
+            st.error("Dati storici non sufficienti per calcolare la regressione rolling.")
+
 
 # ==============================================================================
 # --- TAB 3: BREAKOUT TREND-FOLLOWING (MOTORE DI BACKTEST STRATEGICO CON GEO-Z) ---
