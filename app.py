@@ -431,8 +431,9 @@ with tab2:
         geo_rischio_pct = st.slider("Rischio scelto per Trade (%):", min_value=0.2, max_value=5.0, value=1.0, step=0.1, key="geo_risk_sl")
 
     st.markdown("")
+
 # ==============================================================================
-# --- TAB 2: PARTE 2 (AGGIORNATA) - CORE ENGINE BIDIREZIONALE LONG & SHORT ---
+# --- TAB 2: PARTE 2 - CORE ENGINE QUANTITATIVO CON FILTRO DI PROSSIMITÀ POC ---
 # ==============================================================================
     if st.button("📐 Genera Struttura Geometrica POC", type="primary", key="geo_btn_start"):
         st.info(f"Elaborazione matriciale e calcolo profili per {geo_ticker}...")
@@ -446,7 +447,7 @@ with tab2:
             open_series = pd.Series(df_g["Open"].values.flatten(), index=df_g.index).astype(float)
             n_punti = len(df_g)
             
-            # Calcolo Vettorizzato dello Z-Score dei Residui
+            # 1. Calcolo Vettorizzato dello Z-Score dei Residui della Regressione
             n = geo_finestra
             x = np.arange(n)
             sum_x, sum_x2 = x.sum(), (x**2).sum()
@@ -472,125 +473,133 @@ with tab2:
             
             df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             
-            # Definizione candela Marubozu (corpo esteso >= 75% del range totale della candela)
+            # 2. Definizione candela Marubozu (corpo esteso >= 75% del range totale)
             corpo = (close_series - open_series).abs()
             range_totale = high_series - low_series
             range_totale = np.where(range_totale == 0, 0.00001, range_totale)
             df_g["Marubozu"] = (corpo / range_totale) >= 0.75
             
-            linee_orizzontali_strutturali = [] # Tratteggi bianchi dai bordi delle tazze (Long o Short)
-            linee_poc_geometriche = []         # Unici POC estratti al cambio di momentum
-            
+            # Strutture dati ed impostazione filtri quantitativi di compressione
+            linee_orizzontali_strutturali = [] 
+            linee_poc_geometriche = []         
             stato_precedente = 0
-            tolleranza_filtro = 0.01  # Accorpamento cluster POC entro l'1% di scostamento
             
+            tolleranza_cluster_poc = 0.01  # Accorpa i POC entro l'1% di differenza
+            soglia_prossimita_poc = 0.02   # Valida il pattern SOLO se il Pivot è vicino al POC entro il 2%
+            
+            # 3. Core Loop: Caccia ai Pattern Rounding condizionata dalla vicinanza volumetrica al POC
             for i in range(geo_finestra, n_punti):
                 z_corrente = df_g["Z_Score"].iloc[i]
                 
-                # Rilevamento cambi di momentum stazionari
                 if stato_precedente == 0:
-                    # CASO 1: CAMBIO MOMENTUM RIBASSISTA -> FORMAZIONE TAZZA STANDARD (LONG BREAKOUT OUTCOME)
+                    # CASO LONG: Cambio Momentum Ribassista (Formazione fondo Tazza standard)
                     if z_corrente <= -geo_soglia:
-                        stato_precedente = -1
                         data_attivazione = df_g.index[i]
-                        livello_pivot = float(high_series.iloc[i]) # Massimo del bordo sinistro
+                        livello_pivot = float(high_series.iloc[i]) # Massimo del bordo tazza sinistro
                         
+                        # Calcolo del POC continuo da questo punto a oggi
                         df_da_mom_a_oggi = df_g.iloc[i:]
                         p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
-                        if p_poc is not None:
-                            duplicato = False
-                            for dt_s, val_s in linee_poc_geometriche:
-                                if abs(p_poc - val_s) / val_s <= tolleranza_filtro:
-                                    duplicato = True
-                                    break
-                            if not duplicato:
-                                linee_poc_geometriche.append((data_attivazione, float(p_poc)))
                         
-                        # Caccia al Breakout Marubozu Rialzista sul bordo superiore
-                        data_breakout = None
-                        for j in range(i + 5, n_punti):
-                            if df_g["Marubozu"].iloc[j] and close_series.iloc[j] > livello_pivot:
-                                data_breakout = df_g.index[j]
-                                break
-                        if data_breakout is not None:
-                            linee_orizzontali_strutturali.append((data_attivazione, data_breakout, livello_pivot, "Bordo Tazza (Long)"))
+                        if p_poc is not None:
+                            # Verifica vicinanza strutturale tra il livello del Pivot (Bordo) e la liquidità del POC
+                            distanza_dal_poc = abs(livello_pivot - p_poc) / p_poc
+                            if distanza_dal_poc <= soglia_prossimita_poc:
+                                stato_precedente = -1
+                                
+                                # Salvataggio del livello POC filtrando i doppioni ravvicinati
+                                duplicato = False
+                                for dt_s, val_s in linee_poc_geometriche:
+                                    if abs(p_poc - val_s) / val_s <= tolleranza_cluster_poc:
+                                        duplicato = True
+                                        break
+                                if not duplicato:
+                                    linee_poc_geometriche.append((data_attivazione, float(p_poc)))
+                                
+                                # Caccia al breakout della candela Marubozu rialzista sul bordo superiore
+                                for j in range(i + 5, n_punti):
+                                    if df_g["Marubozu"].iloc[j] and close_series.iloc[j] > livello_pivot:
+                                        linee_orizzontali_strutturali.append((data_attivazione, df_g.index[j], livello_pivot, "Tazza sul POC (Long)"))
+                                        break
                 
-                    # CASO 2: CAMBIO MOMENTUM RIALZISTA -> FORMAZIONE TAZZA ROVESCIATA (SHORT BREAKOUT OUTCOME)
+                    # CASO SHORT: Cambio Momentum Rialzista (Formazione soffitto Tazza Rovescio)
                     elif z_corrente >= geo_soglia:
-                        stato_precedente = 1
                         data_attivazione = df_g.index[i]
-                        livello_pivot = float(low_series.iloc[i]) # Minimo del bordo sinistro (supporto strutturale)
+                        livello_pivot = float(low_series.iloc[i]) # Minimo del bordo tazza rovesciata
                         
                         df_da_mom_a_oggi = df_g.iloc[i:]
                         p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
-                        if p_poc is not None:
-                            duplicato = False
-                            for dt_s, val_s in linee_poc_geometriche:
-                                if abs(p_poc - val_s) / val_s <= tolleranza_filtro:
-                                    duplicato = True
-                                    break
-                            if not duplicato:
-                                linee_poc_geometriche.append((data_attivazione, float(p_poc)))
                         
-                        # Caccia al Breakout Marubozu Ribassista che buca il pavimento della tazza rovesciata
-                        data_breakout = None
-                        for j in range(i + 5, n_punti):
-                            if df_g["Marubozu"].iloc[j] and close_series.iloc[j] < livello_pivot:
-                                data_breakout = df_g.index[j]
-                                break
-                        if data_breakout is not None:
-                            linee_orizzontali_strutturali.append((data_attivazione, data_breakout, livello_pivot, "Bordo Tazza Rovescio (Short)"))
+                        if p_poc is not None:
+                            # Verifica vicinanza strutturale
+                            distanza_dal_poc = abs(livello_pivot - p_poc) / p_poc
+                            if distanza_dal_poc <= soglia_prossimita_poc:
+                                stato_precedente = 1
+                                
+                                duplicato = False
+                                for dt_s, val_s in linee_poc_geometriche:
+                                    if abs(p_poc - val_s) / val_s <= tolleranza_cluster_poc:
+                                        duplicato = True
+                                        break
+                                if not duplicato:
+                                    linee_poc_geometriche.append((data_attivazione, float(p_poc)))
+                                
+                                # Caccia al breakout della candela Marubozu ribassista sul pavimento inferiore
+                                for j in range(i + 5, n_punti):
+                                    if df_g["Marubozu"].iloc[j] and close_series.iloc[j] < livello_pivot:
+                                        linee_orizzontali_strutturali.append((data_attivazione, df_g.index[j], livello_pivot, "Tazza Rovescio sul POC (Short)"))
+                                        break
                 
-                # Ripristino dello stato neutrale all'incrocio dello Z-Score con lo zero
+                # Ripristino dello stato neutrale all'incrocio dello Z-Score centrale
                 elif stato_precedente == -1 and z_corrente > 0:
                     stato_precedente = 0
                 elif stato_precedente == 1 and z_corrente < 0:
                     stato_precedente = 0
 # ==============================================================================
-# --- TAB 2: PARTE 3 (AGGIORNATA) - RENDERING GRAFICO LIVELLI BIDIREZIONALI ---
+# --- TAB 2: PARTE 3 - RENDERING GRAFICO E REGISTRO DATI DI LABORATORIO ---
 # ==============================================================================
             p_attuale = float(close_series.iloc[-1])
             data_oggi = df_g.index[-1]
             
-            st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Nodi Geometrici POC & Rounding Breakout")
+            st.markdown(f"##### 📊 Grafico di Laboratorio: Validazione dei Nodi Strutturali POC & Marubozu Breakout")
             fig_geo = grp.Figure()
             
-            # Candele Giapponesi
+            # Candele Giapponesi Principali
             fig_geo.add_trace(grp.Candlestick(
                 x=df_g.index, open=df_g["Open"].astype(float), high=df_g["High"].astype(float),
                 low=df_g["Low"].astype(float), close=df_g["Close"].astype(float), name=geo_ticker
             ))
             
-            # TRACCIAMENTO LINEE BIANCHE TRATTEGGIATE CON ETICHETTE ADATTIVE (Long / Short)
+            # Tracciamento Linee Tratteggiate Bianche (Solo per Pattern validati vicini al POC)
             for d_start, d_break, liv_pivot, etichetta_struttura in linee_orizzontali_strutturali:
                 fig_geo.add_trace(grp.Scatter(
                     x=[d_start, d_break], y=[liv_pivot, liv_pivot], mode="lines",
-                    showlegend=False, line=dict(color="#ffffff", width=2, dash="dash")
+                    showlegend=False, line=dict(color="#ffffff", width=2.5, dash="dash")
                 ))
                 fig_geo.add_annotation(
-                    x=d_start, y=liv_pivot, text=f"{etichetta_struttura}: {round(liv_pivot, 2)}",
-                    showarrow=False, yshift=10, xanchor="left",
-                    font=dict(color="#ffffff", size=9, family="Plus Jakarta Sans"),
-                    bgcolor="rgba(15, 23, 42, 0.85)"
+                    x=d_start, y=liv_pivot, text=f"⚠️ {etichetta_struttura}: {round(liv_pivot, 2)}",
+                    showarrow=False, yshift=12, xanchor="left",
+                    font=dict(color="#ffffff", size=9, family="Plus Jakarta Sans", weight="bold"),
+                    bgcolor="rgba(15, 23, 42, 0.90)", bordercolor="rgba(255,255,255,0.2)", borderwidth=1
                 )
 
-            # TRACCIAMENTO LIVELLI POC STATICI CONTINUI UNIQUEMENTE COMPRESSI
+            # Tracciamento Linee POC Istituzionali Uniche e Continue
             for idx, (data_start, valore_poc) in enumerate(linee_poc_geometriche):
                 fig_geo.add_trace(grp.Scatter(
                     x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
                     showlegend=False, line=dict(color="#f29e1f", width=2.5, dash="solid")
                 ))
                 fig_geo.add_annotation(
-                    x=data_start, y=valore_poc, text=f"POC {round(valore_poc, 2)}",
-                    showarrow=False, yshift=-10, xanchor="left",
+                    x=data_start, y=valore_poc, text=f"🎯 REGIONE POC: {round(valore_poc, 2)}",
+                    showarrow=False, yshift=-12, xanchor="left",
                     font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
-                    bgcolor="rgba(15, 23, 42, 0.85)"
+                    bgcolor="rgba(15, 23, 42, 0.90)", bordercolor="rgba(242,142,43,0.3)", borderwidth=1
                 )
                 
             fig_geo.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=550, margin=dict(l=20, r=20, t=10, b=10))
             st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
             
-            # Sotto-grafico dello Z-Score duale (Soglie simmetriche visibili)
+            # Sotto-grafico dell'Oscillatore Z-Score con bande simmetriche
             st.markdown("##### 📉 Oscillatore Quantitativo: Z-Score dei Residui della Regressione")
             fig_zg = grp.Figure()
             fig_zg.add_trace(grp.Scatter(
@@ -604,22 +613,24 @@ with tab2:
             fig_zg.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=20, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)"))
             st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
             
-            # Tabella riassuntiva dei nodi statici attivi rilevati nello storico
+            # Tabella di riepilogo finale dei livelli strutturali attivi
             if linee_poc_geometriche:
-                st.markdown("##### 📋 Registro dei Livelli POC Statici Rilevati")
+                st.markdown("##### 📋 Registro dei Livelli POC Strutturali Validati")
                 dati_tabella_geo = []
                 for dt_p, val_p in linee_poc_geometriche:
                     dist_pct = ((p_attuale - val_p) / val_p) * 100
                     stato_nodo = "🟢 SOPRA (Supporto)" if dist_pct >= 0 else "🔴 SOTTO (Resistenza)"
                     dati_tabella_geo.append({
-                        "Inizio Configurazione Pattern": dt_p.strftime("%d/%m/%Y"),
-                        "Prezzo del POC": f"$ {round(val_p, 2)}",
+                        "Data Generazione POC": dt_p.strftime("%d/%m/%Y"),
+                        "Prezzo Liquido del POC": f"$ {round(val_p, 2)}",
                         "Distanza Percentuale Corrente": f"{round(dist_pct, 2)} %",
-                        "Stato Finanziario Struttura": stato_nodo
+                        "Stato Finanziario Livello": stato_nodo
                     })
                 st.dataframe(pd.DataFrame(dati_tabella_geo), use_container_width=True)
+            else:
+                st.warning("⚠️ Nessun pattern strutturale validato in prossimità del POC con l'attuale configurazione di filtri.")
                 
-            st.success("📐 Configurazione dei pattern Rounding (Tazza e Tazza Rovescata) completata con pieno supporto bidirezionale.")
+            st.success("📐 Filtro di prossimità volumetrica applicato con successo. Visualizzazione grafica allineata.")
         else:
             st.error("Dati storici non sufficienti per calcolare la regressione rolling.")
 
