@@ -511,10 +511,10 @@ with tab2:
                 # Disegna la linea POC solida di base
                 fig_geo.add_trace(grp.Scatter(
                     x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
-                    showlegend=False, line=dict(color="rgba(242, 158, 31, 0.4)", width=2, dash="solid")
+                    showlegend=False, line=dict(color="rgba(242, 158, 31, 0.3)", width=2, dash="solid")
                 ))
                 
-                # Cerchiamo la Marubozu di breakout post-compressione nelle 30 candele successive
+                # Cerchiamo la Marubozu di breakout post-compressione nelle 35 candele successive
                 finestra_ricerca_tazza = df_g.iloc[s_idx : min(s_idx + 35, n_punti)]
                 marubozu_idx = None
                 is_long_cup = True
@@ -524,70 +524,69 @@ with tab2:
                     range_totale = riga["High"] - riga["Low"]
                     if range_totale == 0: continue
                     
-                    # Definizione quantitativa di Marubozu (corpo > 80% dell'escursione totale)
+                    # Definizione quantitativa di Marubozu (corpo >= 80% dell'escursione totale)
                     if corpo / range_totale >= 0.80 and range_totale > (close_series.rolling(14).mean().loc[idx_m] * 0.005):
                         marubozu_idx = idx_m
                         is_long_cup = riga["Close"] > riga["Open"]
                         break
                 
-                # Se troviamo una Marubozu di conferma tracciamo la parabola geometrica della tazza
+                # CORREZIONE: Generazione della curva agganciata direttamente all'indice temporale delle date
                 if marubozu_idx is not None:
                     idx_inizio_dt = pd.to_datetime(data_start)
                     idx_fine_dt = pd.to_datetime(marubozu_idx)
                     subset_tazza = df_g.loc[idx_inizio_dt:idx_fine_dt]
                     
                     if len(subset_tazza) >= 3:
-                        # Generazione di una parabola approssimata per rappresentare visivamente l'arrotondamento (Rounding)
-                        t_x = np.arange(len(subset_tazza))
-                        mid_t = len(t_x) / 2
+                        # Estraiamo i punti chiave basati sulle candele reali del grafico
+                        p_iniziale = valore_poc
+                        p_finale = float(subset_tazza["Close"].loc[marubozu_idx])
                         
-                        # Calcolo della profondità della curva rispetto al POC
-                        max_dev = (subset_tazza["Close"] - valore_poc).abs().max()
-                        if max_dev == 0: max_dev = valore_poc * 0.02
+                        # Trova il punto di massimo arrotondamento (minimo della tazza LONG o massimo della tazza SHORT)
+                        if is_long_cup:
+                            p_estremo = float(subset_tazza["Low"].min())
+                        else:
+                            p_estremo = float(subset_tazza["High"].max())
+                            
+                        # Calcolo della parabola vettorializzata distribuita uniformemente sull'indice temporale corretto
+                        n_punti_curva = len(subset_tazza)
+                        x_norm = np.linspace(-1, 1, n_punti_curva)
                         
-                        segno = -1 if is_long_cup else 1
-                        curva_y = valore_poc + segno * max_dev * (1 - (t_x - mid_t)**2 / (mid_t**2))
+                        # Formula parabolica che vincola la curva ad appoggiarsi al POC e a flettere verso il minimo/massimo reale
+                        profondita = (p_iniziale - p_estremo)
+                        curva_y = p_iniziale - profondita * (1 - x_norm**2)
                         
-                        # Disegna la tazza/rounding tratteggiata arancione (Long) o cyan (Short)
+                        # Raccordo lineare finale verso la chiusura della candela Marubozu
+                        pendenza_raccordo = np.linspace(0, 1, n_punti_curva)
+                        curva_y_finalizzata = curva_y + (p_finale - p_iniziale) * pendenza_raccordo
+                        
+                        # Disegna la tazza/rounding tratteggiata arancione (Long) o cyan (Short) agganciata alle date corrette
                         colore_tazza = "#ff7a00" if is_long_cup else "#00f0ff"
                         fig_geo.add_trace(grp.Scatter(
-                            x=subset_tazza.index, y=curva_y, mode="lines",
+                            x=subset_tazza.index, y=curva_y_finalizzata, mode="lines",
                             showlegend=False, line=dict(color=colore_tazza, width=2.5, dash="dash")
                         ))
                         
-                        # Evidenzia graficamente la candela Marubozu con una freccia e un box sul grafico
+                        # Evidenzia la candela Marubozu con una freccia dinamica puntata al prezzo di chiusura
                         fig_geo.add_annotation(
                             x=marubozu_idx, y=close_series.loc[marubozu_idx],
                             text=f"💥 BREAKOUT MARUBOZU {'LONG' if is_long_cup else 'SHORT'}",
                             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
                             arrowcolor="#22c55e" if is_long_cup else "#ef4444",
-                            ax=-40, ay=-40 if is_long_cup else 40,
+                            ax=-50, ay=-50 if is_long_cup else 50,
                             font=dict(color="white", size=9, family="Plus Jakarta Sans", weight="bold"),
                             bgcolor="#22c55e" if is_long_cup else "#ef4444"
                         )
                 else:
-                    # Se non rileva Marubozu immediate estende un alert grafico di test sul livello
+                    # Se non rileva Marubozu immediate estende il tracciato ordinario
                     fig_geo.add_annotation(
                         x=data_start, y=valore_poc, text=f"Test POC: {round(valore_poc, 2)}",
                         showarrow=False, yshift=10, xanchor="left",
-                        font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
+                        font=dict(color="#f29e1f", size=9, family="Plus Jakarta Sans", weight="bold"),
                         bgcolor="rgba(15, 23, 42, 0.85)"
                     )
             
             fig_geo.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=520, margin=dict(l=20, r=20, t=10, b=10))
             st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
-            # --- SUBPLOT DEL DETECTOR INFERIORE DELLO Z-SCORE ---
-            st.markdown("##### 📉 Oscillatore Quantitativo: Z-Score dei Residui della Regressione")
-            fig_zg = grp.Figure()
-            fig_zg.add_trace(grp.Scatter(
-                x=df_g.index, y=df_g["Z_Score"], mode="lines", 
-                name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
-            ))
-            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
-            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
-            
-            fig_zg.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=20, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)"))
-            st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
             
             # --- ARCHITETTURA DI MICROSTRUTTURA DEI MERCATI: I 3 PILASTRI DEL VOLUME PROFILE ---
             st.markdown("---")
