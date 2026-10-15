@@ -404,10 +404,6 @@ with tab1:
                         st.plotly_chart(fig, width="stretch", key=f"chart_{ticker}")
                     else: 
                         st.warning(f"Dati storici insufficienti per {ticker}.")
-# ==============================================================================
-# --- TAB 2: ANALISI GEOMETRICA POC (PARTE 1: PARAMETRI E MOTORE Z-SCORE) ---
-# ==============================================================================
-with tab2:
     st.subheader("📐 Laboratorio Geometrico: Rilevamento Tazza e Rounding sul POC")
     st.markdown("Identifica la resistenza locale generata sul POC e traccia la linea tratteggiata di breakout in cerca della candela Marubozu.")
     
@@ -470,7 +466,6 @@ with tab2:
             
             df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             df_g["Accelerazione_Geometrica"] = np.where(df_g["Z_Score"] >= geo_soglia, 1, 0)
-            
             # Individuazione dei POC potenziali
             poc_grezzi = []
             stato_precedente = 0
@@ -497,6 +492,7 @@ with tab2:
                         break
                 if not trovato_duplicato:
                     linee_poc_geometriche.append((data_start, valore_poc, s_idx))
+            
             # --- RENDER DEL GRAFICO PRINCIPALE PREZZI ---
             st.markdown(f"##### 📊 Grafico Strutturale Price Action: Livelli di Resistenza e Tazza sul POC")
             fig_geo = grp.Figure()
@@ -509,36 +505,26 @@ with tab2:
             
             # Algoritmo per individuare il Massimo, tracciare la linea tratteggiata e cercare la Marubozu
             for data_start, valore_poc, s_idx in linee_poc_geometriche:
-                # 1. Trova il massimo locale generato nei pressi dell'innesco sul POC (finestra di 5 giorni)
                 finestra_massimo = df_g.iloc[max(0, s_idx-2) : min(s_idx+5, n_punti)]
                 massimo_generato = float(finestra_massimo["High"].max())
-                
-                # 2. Scanner delle successive 40 candele in cerca della Marubozu che rompe il massimo generato
                 finestra_ricerca_breakout = df_g.iloc[s_idx : min(s_idx + 40, n_punti)]
                 marubozu_idx = None
                 
                 for idx_m, riga in finestra_ricerca_breakout.iterrows():
-                    # Condizione per identificare una candela Marubozu rialzista (corpo >= 75% del range totale)
                     corpo = riga["Close"] - riga["Open"]
                     range_totale = riga["High"] - riga["Low"]
                     if range_totale == 0: continue
-                    
                     if corpo > 0 and (corpo / range_totale) >= 0.75:
-                        # Verifica se la Marubozu ha effettivamente rotto al rialzo la linea del massimo generato
                         if riga["Close"] > massimo_generato:
                             marubozu_idx = idx_m
                             break
                 
-                # 3. Gestione visiva del tracciamento sul grafico
                 if marubozu_idx is not None:
-                    # Traccia la linea tratteggiata orizzontale dal massimo generato fino alla candela Marubozu
                     fig_geo.add_trace(grp.Scatter(
                         x=[data_start, marubozu_idx], y=[massimo_generato, massimo_generato],
                         mode="lines", showlegend=False, 
                         line=dict(color="#38bdf8", width=2, dash="dash")
                     ))
-                    
-                    # Traccia la base curva di rounding reale (morbida sui minimi scambiati sul POC)
                     subset_tazza = df_g.loc[data_start:marubozu_idx]
                     if len(subset_tazza) >= 3:
                         linea_rounding = subset_tazza["Low"].rolling(window=max(2, len(subset_tazza)//3), min_periods=1).mean()
@@ -546,8 +532,6 @@ with tab2:
                             x=subset_tazza.index, y=linea_rounding.values, mode="lines",
                             showlegend=False, line=dict(color="rgba(34, 197, 94, 0.85)", width=2, dash="dot")
                         ))
-                    
-                    # Evidenzia graficamente la Marubozu di breakout che valida la tazza
                     fig_geo.add_annotation(
                         x=marubozu_idx, y=close_series.loc[marubozu_idx],
                         text="💥 TAZZA VALIDATA: MARUBOZU",
@@ -557,7 +541,6 @@ with tab2:
                         bgcolor="#22c55e", bordercolor="white", borderwidth=1
                     )
                 else:
-                    # Se non è ancora avvenuto il breakout, estende la linea tratteggiata fino a oggi in modalità monitoraggio
                     fig_geo.add_trace(grp.Scatter(
                         x=[data_start, data_oggi], y=[massimo_generato, massimo_generato],
                         mode="lines", showlegend=False, 
@@ -570,7 +553,6 @@ with tab2:
                         bgcolor="rgba(15, 23, 42, 0.8)"
                     )
                 
-                # Disegna sempre il livello del POC di riferimento iniziale
                 fig_geo.add_trace(grp.Scatter(
                     x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
                     showlegend=False, line=dict(color="rgba(242, 158, 31, 0.4)", width=1.5)
@@ -584,7 +566,7 @@ with tab2:
             )
             st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
             # --- SUBPLOT DEL DETECTOR INFERIORE DELLO Z-SCORE ---
-            st.markdown("##### 📉 Oscillatore Quantitativo: Z-Score dei Residui della Regressione")
+            st.markdown("##### 📉 Oscillatore Quantitative: Z-Score dei Residui della Regressione")
             fig_zg = grp.Figure()
             fig_zg.add_trace(grp.Scatter(
                 x=df_g.index, y=df_g["Z_Score"], mode="lines", 
@@ -615,7 +597,7 @@ with tab2:
                 * **Il Breakout con Marubozu:** Quando compare la **Marubozu** che rompe il bordo geometrico della tazza, hai la certezza statistica che una delle due fazioni (buyer o seller) ha vinto la battaglia sul POC, decidendo di iniettare una quantità massiccia di ordini per avviare un trend direzionale esplosivo.
                 
                 ##### 📐 3. Asimmetria Matematica del Rischio (Risk/Reward Ottimale)
-                Operare sui breakout in proximità del POC ti garantisce un vantaggio matematico nel *Position Sizing*:
+                Operare sui breakout in prossimità del POC ti garantisce un vantaggio matematico nel *Position Sizing*:
                 * Se entri su una Marubozu che rompe un pivot nato lontano dal POC, rischi di comprare i massimi o vendere i minimi di un movimento esteso (estremamente esposto a finti breakout).
                 * Entrando sulla rottura di una tazza formatasi attorno al POC, lo **Stop Loss può essere posizionato in modo chirurgico** appena sotto/sopra il POC stesso o alla base della tazza. Poiché il POC funge da barriera volumetrica insormontabile senza forti volumi, il tuo rischio monetario è ridotto al minimo, mentre il target verso le zone prive di volumi storici è estremamente ampio.
                 
