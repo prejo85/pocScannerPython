@@ -433,7 +433,7 @@ with tab2:
     st.markdown("")
 
 # ==============================================================================
-# --- TAB 2: PARTE 2 - ENGINE INTEGRATO MOMENTUM, TAZZA, MARUBOZU & TRENDLINE ---
+# --- TAB 2: PARTE 2 (CORRETTA) - COOLDOWN RECENTE & BLOCCO TRENDLINE AL BREAKOUT ---
 # ==============================================================================
     if st.button("📐 Genera Struttura Geometrica POC", type="primary", key="geo_btn_start"):
         st.info(f"Elaborazione dei profili volumetrici e mappatura delle tazze per {geo_ticker}...")
@@ -447,7 +447,7 @@ with tab2:
             open_series = pd.Series(df_g["Open"].values.flatten(), index=df_g.index).astype(float)
             n_punti = len(df_g)
             
-            # 1. Calcolo Vettorizzato dello Z-Score dei Residui per il Cambio di Momentum
+            # Calcolo Vettorizzato dello Z-Score dei Residui
             n = geo_finestra
             x = np.arange(n)
             sum_x, sum_x2 = x.sum(), (x**2).sum()
@@ -473,90 +473,78 @@ with tab2:
             
             df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             
-            # 2. Definizione candela Marubozu (corpo esteso >= 75% del range totale)
+            # Definizione candela Marubozu (corpo esteso >= 75% del range totale)
             corpo = (close_series - open_series).abs()
             range_totale = high_series - low_series
             range_totale = np.where(range_totale == 0, 0.00001, range_totale)
             df_g["Marubozu"] = (corpo / range_totale) >= 0.75
             
             # Strutture dati di memorizzazione
-            linee_orizzontali_strutturali = [] # Tratteggi bianchi (Bordi Tazza)
-            linee_poc_geometriche = []         # Linee continue arancioni (POC dal Cambio Momentum)
-            linee_trend_dinamiche = []         # Trendline continue bianche sui minimi crescenti delle tazze
+            linee_orizzontali_strutturali = [] 
+            linee_poc_geometriche = []         
+            linee_trend_dinamiche = []         
             
-            stato_precedente = 0
-            tolleranza_cluster_poc = 0.015  
+            # Variabile di blocco temporale per ignorare i segnali ravvicinati (Filtro Anti-Doppioni)
+            indice_cooldown_impulso = 0
+            soglia_prossimita_poc = 0.02   
             
-            # 3. Analisi Algoritmica Sequenziale Progressiva
             for i in range(geo_finestra, n_punti):
+                if i < indice_cooldown_impulso:
+                    continue
+                    
                 z_corrente = df_g["Z_Score"].iloc[i]
                 
-                if stato_precedente == 0:
-                    # CASO LONG: Lo Z-Score buca la soglia negativa (Cambio Momentum Ribassista -> Inizio studio volumi)
-                    if z_corrente <= -geo_soglia:
-                        stato_precedente = -1
-                        data_innesco = df_g.index[i]
-                        livello_bordo = float(high_series.iloc[i]) # Massimo del bordo sinistro della tazza
-                        
-                        # Studio immediato dei volumi: estrazione del POC dal cambio di momentum a oggi
-                        df_da_mom = df_g.iloc[i:]
-                        p_poc, _, _, _, _ = calc_vp(df_da_mom)
-                        
-                        if p_poc is not None:
-                            # Registrazione del POC filtrando i cluster sovrapposti
-                            duplicato_poc = False
-                            for dt_s, val_s in linee_poc_geometriche:
-                                if abs(p_poc - val_s) / val_s <= tolleranza_cluster_poc:
-                                    duplicato_poc = True
-                                    break
-                            if not duplicato_poc:
-                                linee_poc_geometriche.append((data_innesco, float(p_poc)))
-                            
-                            # Ricerca del Breakout Futuro della Marubozu sul bordo superiore
-                            data_breakout = None
-                            for j in range(i + 5, n_punti):
-                                if df_g["Marubozu"].iloc[j] and close_series.iloc[j] > livello_bordo:
-                                    data_breakout = df_g.index[j]
-                                    break
-                            
-                            if data_breakout is not None:
-                                linee_orizzontali_strutturali.append((data_innesco, data_breakout, livello_bordo, "Tazza Completata"))
-                            else:
-                                linee_orizzontali_strutturali.append((data_innesco, df_g.index[-1], livello_bordo, "Livello Attivo"))
-                                
-                            # TRACCIAMENTO AUTOMATICO TRENDLINE DINAMICA (Sui minimi della curva della tazza)
-                            fine_ricerca_trend = j if data_breakout is not None else n_punti - 1
-                            df_fase_tazza = df_g.iloc[i:fine_ricerca_trend]
-                            if len(df_fase_tazza) > 10:
-                                data_min_assoluto = df_fase_tazza["Low"].idxmin()
-                                val_min_assoluto = float(df_fase_tazza["Low"].min())
-                                idx_min_ass = df_g.index.get_loc(data_min_assoluto)
-                                
-                                # Cerchiamo un secondo minimo crescente successivo per tracciare la linea di spinta
-                                df_risalita = df_g.iloc[idx_min_ass + 2:fine_ricerca_trend]
-                                if len(df_risalita) > 3:
-                                    data_secondo_min = df_risalita["Low"].idxmin()
-                                    val_secondo_min = float(df_risalita["Low"].min())
-                                    if val_secondo_min > val_min_assoluto:
-                                        linee_trend_dinamiche.append((data_min_assoluto, df_g.index[fine_ricerca_trend], val_min_assoluto, val_secondo_min, data_secondo_min))
-
-                # CASO SHORT SPECULARE: Lo Z-Score rompe la soglia positiva
-                elif stato_precedente == 0 and z_corrente >= geo_soglia:
-                    stato_precedente = 1
+                # CASO LONG: Cambio Momentum Ribassista (Formazione fondo Tazza)
+                if z_corrente <= -geo_soglia:
                     data_innesco = df_g.index[i]
-                    livello_bordo = float(low_series.iloc[i]) # Pavimento del bordo sinistro della tazza rovesciata
+                    livello_bordo = float(high_series.iloc[i]) 
                     
                     df_da_mom = df_g.iloc[i:]
                     p_poc, _, _, _, _ = calc_vp(df_da_mom)
                     
-                    if p_poc is not None:
-                        duplicato_poc = False
-                        for dt_s, val_s in linee_poc_geometriche:
-                            if abs(p_poc - val_s) / val_s <= tolleranza_cluster_poc:
-                                duplicato_poc = True
+                    if p_poc is not None and abs(livello_bordo - p_poc) / p_poc <= soglia_prossimita_poc:
+                        # Attiviamo il cooldown rigido: ignoriamo i segnali per i prossimi 60 giorni di borsa scambiati
+                        indice_cooldown_impulso = i + 60
+                        linee_poc_geometriche.append((data_innesco, float(p_poc)))
+                        
+                        # Ricerca della Marubozu futura di breakout
+                        data_breakout = None
+                        for j in range(i + 5, n_punti):
+                            if df_g["Marubozu"].iloc[j] and close_series.iloc[j] > livello_bordo:
+                                data_breakout = df_g.index[j]
                                 break
-                        if not duplicato_poc:
-                            linee_poc_geometriche.append((data_innesco, float(p_poc)))
+                        
+                        data_fine_tracciamento = data_breakout if data_breakout is not None else df_g.index[-1]
+                        stato_testo = "Tazza Completata" if data_breakout is not None else "Livello Attivo"
+                        linee_orizzontali_strutturali.append((data_innesco, data_fine_tracciamento, livello_bordo, stato_testo))
+                            
+                        # CALCOLO TRENDLINE DINAMICA DELIMITATA (Solo all'interno dello sviluppo della tazza)
+                        df_sviluppo_tazza = df_g.loc[data_innesco:data_fine_tracciamento]
+                        if len(df_sviluppo_tazza) > 10:
+                            data_min_fondo = df_sviluppo_tazza["Low"].idxmin()
+                            val_min_fondo = float(df_sviluppo_tazza["Low"].min())
+                            
+                            # Troviamo il secondo minimo di supporto nella fase di risalita verso destra
+                            df_risalita_destra = df_g.loc[data_min_fondo:data_fine_tracciamento]
+                            if len(df_risalita_destra) > 5:
+                                data_secondo_min = df_risalita_destra["Low"].idxmin()
+                                val_secondo_min = float(df_risalita_destra["Low"].min())
+                                
+                                # Disegniamo la linea continua solo se unisce due punti strutturali chiusi entro il breakout
+                                if data_secondo_min != data_min_fondo and val_secondo_min > val_min_fondo:
+                                    linee_trend_dinamiche.append((data_min_fondo, data_fine_tracciamento, val_min_fondo, val_secondo_min, data_secondo_min))
+
+                # CASO SHORT: Cambio Momentum Rialzista (Formazione soffitto Tazza Rovescio)
+                elif z_corrente >= geo_soglia:
+                    data_innesco = df_g.index[i]
+                    livello_bordo = float(low_series.iloc[i]) 
+                    
+                    df_da_mom = df_g.iloc[i:]
+                    p_poc, _, _, _, _ = calc_vp(df_da_mom)
+                    
+                    if p_poc is not None and abs(livello_bordo - p_poc) / p_poc <= soglia_prossimita_poc:
+                        indice_cooldown_impulso = i + 60
+                        linee_poc_geometriche.append((data_innesco, float(p_poc)))
                         
                         data_breakout = None
                         for j in range(i + 5, n_punti):
@@ -564,51 +552,42 @@ with tab2:
                                 data_breakout = df_g.index[j]
                                 break
                         
-                        if data_breakout is not None:
-                            linee_orizzontali_strutturali.append((data_innesco, data_breakout, livello_bordo, "Tazza Rovescio Completata"))
-                        else:
-                            linee_orizzontali_strutturali.append((data_innesco, df_g.index[-1], livello_bordo, "Livello Attivo"))
+                        data_fine_tracciamento = data_breakout if data_breakout is not None else df_g.index[-1]
+                        stato_testo = "Tazza Rovescio Completata" if data_breakout is not None else "Livello Attivo"
+                        linee_orizzontali_strutturali.append((data_innesco, data_fine_tracciamento, livello_bordo, stato_testo))
                             
-                        # Trendline sui massimi decrescenti della tazza rovesciata
-                        fine_ricerca_trend = j if data_breakout is not None else n_punti - 1
-                        df_fase_tazza = df_g.iloc[i:fine_ricerca_trend]
-                        if len(df_fase_tazza) > 10:
-                            data_max_assoluto = df_fase_tazza["High"].idxmax()
-                            val_max_assoluto = float(df_fase_tazza["High"].max())
-                            idx_max_ass = df_g.index.get_loc(data_max_assoluto)
+                        # Trendline decrescente protetta entro i confini della tazza rovesciata
+                        df_sviluppo_tazza = df_g.loc[data_innesco:data_fine_tracciamento]
+                        if len(df_sviluppo_tazza) > 10:
+                            data_max_soffitto = df_sviluppo_tazza["High"].idxmax()
+                            val_max_soffitto = float(df_sviluppo_tazza["High"].max())
                             
-                            df_discesa = df_g.iloc[idx_max_ass + 2:fine_ricerca_trend]
-                            if len(df_discesa) > 3:
-                                data_secondo_max = df_discesa["High"].idxmax()
-                                val_secondo_max = float(df_discesa["High"].max())
-                                if val_secondo_max < val_max_assoluto:
-                                    linee_trend_dinamiche.append((data_max_assoluto, df_g.index[fine_ricerca_trend], val_max_assoluto, val_secondo_max, data_secondo_max))
-
-                # Ripristino stazionario della caccia al momentum
-                elif stato_precedente == -1 and z_corrente > 0:
-                    stato_precedente = 0
-                elif stato_precedente == 1 and z_corrente < 0:
-                    stato_precedente = 0
-
+                            df_discesa_destra = df_g.loc[data_max_soffitto:data_fine_tracciamento]
+                            if len(df_discesa_destra) > 5:
+                                data_secondo_max = df_discesa_destra["High"].idxmax()
+                                val_secondo_max = float(df_discesa_destra["High"].max())
+                                
+                                if data_secondo_max != data_max_soffitto and val_secondo_max < val_max_soffitto:
+                                    linee_trend_dinamiche.append((data_max_soffitto, data_fine_tracciamento, val_max_soffitto, val_secondo_max, data_secondo_max))
 # ==============================================================================
-# --- TAB 2: PARTE 3 - INTERFACCIA PLOTLY CON INTEGRAZIONE VISIVA TRENDLINE ---
+# --- TAB 2: PARTE 3 (CORRETTA) - RESA GRAFICA PULITA SENZA DISTORSIONE ASSI ---
 # ==============================================================================
             p_attuale = float(close_series.iloc[-1])
             data_oggi = df_g.index[-1]
             
-            st.markdown(f"##### 📊 Dashboard di Controllo Geometrico: Studio Volumi sui Cambi di Momentum")
+            st.markdown(f"##### 📊 Dashboard Geometrica: Studio Volumi e Nodi Strutturali Puliti")
             fig_geo = grp.Figure()
             
-            # Candele Giapponesi
+            # Candele Giapponesi principali
             fig_geo.add_trace(grp.Candlestick(
                 x=df_g.index, open=df_g["Open"].astype(float), high=df_g["High"].astype(float),
                 low=df_g["Low"].astype(float), close=df_g["Close"].astype(float), name=geo_ticker
             ))
             
-            # 1. TRACCIAMENTO LINEE BIANCHE TRATTEGGIATE (I livelli dei massimi/minimi di attivazione delle tazze)
+            # 1. TRACCIAMENTO LINEE BIANCHE TRATTEGGIATE (I livelli dei bordi delle tazze)
             for d_start, d_end, liv_pivot, stato_tazza in linee_orizzontali_strutturali:
                 stile_linea = "dash" if "Livello Attivo" in stato_tazza else "dot"
-                spessore = 2.5 if "Livello Attivo" in stato_tazza else 1.5
+                spessore = 2.0 if "Livello Attivo" in stato_tazza else 1.5
                 colore_linea = "#ffffff" if "Livello Attivo" in stato_tazza else "rgba(255,255,255,0.4)"
                 
                 fig_geo.add_trace(grp.Scatter(
@@ -617,33 +596,34 @@ with tab2:
                 ))
                 
                 fig_geo.add_annotation(
-                    x=d_end, y=liv_pivot, text=f" Bordo: {round(liv_pivot, 2)} ({stato_tazza})",
-                    showarrow=False, xanchor="left", yshift=8,
+                    x=d_end, y=liv_pivot, text=f" Bordo: {round(liv_pivot, 2)}",
+                    showarrow=False, xanchor="left", yshift=6,
                     font=dict(color="#ffffff", size=9, family="Plus Jakarta Sans"),
-                    bgcolor="rgba(15, 23, 42, 0.85)", bordercolor=colore_linea, borderwidth=1
+                    bgcolor="rgba(15, 23, 42, 0.85)"
                 )
 
-            # 2. TRACCIAMENTO DELLE TRENDLINE DINAMICHE SUI MINIMI/MASSIMI DELLA CURVA (Linea Bianca Continua)
+            # 2. TRACCIAMENTO DELLE TRENDLINE DINAMICHE BLOCCHATE (Non sparano più fuori scala)
             for d_pivot, d_fine, val_p1, val_p2, d_pivot2 in linee_trend_dinamiche:
                 giorni_dist_base = (d_pivot2 - d_pivot).days
                 if giorni_dist_base > 0:
                     pendenza_m = (val_p2 - val_p1) / giorni_dist_base
-                    giorni_totali_proiezione = (d_fine - d_pivot).days
-                    val_finale_proiettato = val_p1 + (pendenza_m * giorni_totali_proiezione)
+                    giorni_sviluppo = (d_fine - d_pivot).days
+                    # Calcoliamo il valore finale bloccandolo rigidamente alla data di fine tazza/breakout
+                    val_finale_bloccato = val_p1 + (pendenza_m * giorni_sviluppo)
                     
                     fig_geo.add_trace(grp.Scatter(
-                        x=[d_pivot, d_fine], y=[val_p1, val_finale_proiettato], mode="lines",
-                        showlegend=False, line=dict(color="#ffffff", width=2.5, dash="solid")
+                        x=[d_pivot, d_fine], y=[val_p1, val_finale_bloccato], mode="lines",
+                        showlegend=False, line=dict(color="#ffffff", width=2, dash="solid")
                     ))
 
-            # 3. TRACCIAMENTO DEI LIVELLI POC ISTITUZIONALI (Linee continue arancioni spesse identiche a TradingView)
+            # 3. TRACCIAMENTO DEI LIVELLI POC ISTITUZIONALI COMPRESSI E UNICI
             for idx, (data_start, valore_poc) in enumerate(linee_poc_geometriche):
                 fig_geo.add_trace(grp.Scatter(
                     x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
-                    showlegend=False, line=dict(color="#f29e1f", width=3, dash="solid")
+                    showlegend=False, line=dict(color="#f29e1f", width=2.5, dash="solid")
                 ))
                 fig_geo.add_annotation(
-                    x=data_oggi, y=valore_poc, text=f" 🎯 POC ISTITUZIONALE: {round(valore_poc, 2)}",
+                    x=data_oggi, y=valore_poc, text=f" 🎯 POC: {round(valore_poc, 2)}",
                     showarrow=False, xanchor="left",
                     font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
                     bgcolor="rgba(15, 23, 42, 0.90)", bordercolor="#f29e1f", borderwidth=1
@@ -652,13 +632,13 @@ with tab2:
             fig_geo.update_layout(
                 template="plotly_dark", 
                 xaxis_rangeslider_visible=False, 
-                height=600, 
+                height=550, 
                 margin=dict(l=20, r=80, t=10, b=10),
-                yaxis=dict(side="right", gridcolor="rgba(51, 65, 85, 0.25)")
+                yaxis=dict(side="right", gridcolor="rgba(51, 65, 85, 0.25)") # Scala dei prezzi corretta e pulita
             )
             st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
             
-            # Sotto-grafico dello Z-Score dei Residui
+            # Sotto-grafico dell'Oscillatore Z-Score dei Residui
             st.markdown("##### 📉 Studio della Pressione Quantitativa (Z-Score dei Residui di Regressione)")
             fig_zg = grp.Figure()
             fig_zg.add_trace(grp.Scatter(
@@ -672,22 +652,7 @@ with tab2:
             fig_zg.update_layout(template="plotly_dark", height=180, margin=dict(l=20, r=80, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)", side="right"))
             st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
             
-            # Pannello Tabellare dei Dati Raccolti
-            if linee_poc_geometriche:
-                st.markdown("##### 📋 Registro ed Assetto dei Nodi Volumetrici Attivi")
-                dati_tabella_geo = []
-                for dt_p, val_p in linee_poc_geometriche:
-                    dist_pct = ((p_attuale - val_p) / val_p) * 100
-                    stato_nodo = "🟢 SOPRA IL POC (Supporto)" if dist_pct >= 0 else "🔴 SOTTO IL POC (Resistenza)"
-                    dati_tabella_geo.append({
-                        "Data Cambio Momentum": dt_p.strftime("%d/%m/%Y"),
-                        "Valore Prezzo POC ($)": f"$ {round(val_p, 2)}",
-                        "Distanza Percentuale Odierna": f"{round(dist_pct, 2)} %",
-                        "Assetto della Price Action": stato_nodo
-                    })
-                st.dataframe(pd.DataFrame(dati_tabella_geo), use_container_width=True)
-                
-            st.success("📐 Layout quantitativo-strutturale completato. POC nativi, tazze e trendline dinamicamente proiettati.")
+            st.success("📐 Compressione completata. Eliminati i cluster doppi e corretto l'asse di proiezione visivo.")
         else:
             st.error("Dati storici insufficienti per modellare l'orizzonte geometrico dell'asset richiesto.")
 
