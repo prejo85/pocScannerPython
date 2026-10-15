@@ -405,7 +405,7 @@ with tab1:
                     else: 
                         st.warning(f"Dati storici insufficienti per {ticker}.")
 # ==============================================================================
-# --- TAB 2: LABORATORIO GEOMETRICO (TAZZA SUL POC & MARUBOZU DETECTOR) ---
+# --- TAB 2: ANALISI GEOMETRICA POC (PARTE 1: PARAMETRI E MOTORE Z-SCORE) ---
 # ==============================================================================
 with tab2:
     st.subheader("📐 Laboratorio Geometrico: Rilevamento Tazza e Rounding sul POC")
@@ -431,6 +431,7 @@ with tab2:
         geo_rischio_pct = st.slider("Rischio scelto per Trade (%):", min_value=0.2, max_value=5.0, value=1.0, step=0.1, key="geo_risk_sl")
 
     st.markdown("")
+    
     if st.button("📐 Genera Struttura Geometrica POC", type="primary", key="geo_btn_start"):
         st.info(f"Elaborazione matriciale e calcolo profili per {geo_ticker}...")
         df_g = yf.download(tickers=geo_ticker, period=mappa_periodi_geo[geo_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
@@ -476,7 +477,27 @@ with tab2:
             for i in range(geo_finestra, n_punti):
                 stato_attuale = df_g["Accelerazione_Geometrica"].iloc[i]
                 if stato_attuale == 1 and stato_precedente == 0:
-                    start_idx = i            # --- RENDER DEL GRAFICO PRINCIPALE PREZZI ---
+                    start_idx = i
+                    df_da_mom_a_oggi = df_g.iloc[start_idx:]
+                    p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
+                    if p_poc is not None:
+                        poc_grezzi.append((df_g.index[start_idx], float(p_poc), start_idx))
+                stato_precedente = stato_attuale
+            
+            # Filtraggio dei Cluster POC Simili (Tolleranza 1.5%)
+            linee_poc_geometriche = []
+            tolleranza_filtro = 0.015
+            for data_start, valore_poc, s_idx in poc_grezzi:
+                trovato_duplicato = False
+                for i, (dt_saved, val_saved, _) in enumerate(linee_poc_geometriche):
+                    if abs(valore_poc - val_saved) / val_saved <= tolleranza_filtro:
+                        trovato_duplicato = True
+                        if data_start > dt_saved:
+                            linee_poc_geometriche[i] = (data_start, valore_poc, s_idx)
+                        break
+                if not trovato_duplicato:
+                    linee_poc_geometriche.append((data_start, valore_poc, s_idx))
+            # --- RENDER DEL GRAFICO PRINCIPALE PREZZI ---
             st.markdown(f"##### 📊 Grafico Strutturale Price Action: Livelli di Resistenza e Tazza sul POC")
             fig_geo = grp.Figure()
             fig_geo.add_trace(grp.Candlestick(
@@ -594,7 +615,7 @@ with tab2:
                 * **Il Breakout con Marubozu:** Quando compare la **Marubozu** che rompe il bordo geometrico della tazza, hai la certezza statistica che una delle due fazioni (buyer o seller) ha vinto la battaglia sul POC, decidendo di iniettare una quantità massiccia di ordini per avviare un trend direzionale esplosivo.
                 
                 ##### 📐 3. Asimmetria Matematica del Rischio (Risk/Reward Ottimale)
-                Operare sui breakout in prossimità del POC ti garantisce un vantaggio matematico nel *Position Sizing*:
+                Operare sui breakout in proximità del POC ti garantisce un vantaggio matematico nel *Position Sizing*:
                 * Se entri su una Marubozu che rompe un pivot nato lontano dal POC, rischi di comprare i massimi o vendere i minimi di un movimento esteso (estremamente esposto a finti breakout).
                 * Entrando sulla rottura di una tazza formatasi attorno al POC, lo **Stop Loss può essere posizionato in modo chirurgico** appena sotto/sopra il POC stesso o alla base della tazza. Poiché il POC funge da barriera volumetrica insormontabile senza forti volumi, il tuo rischio monetario è ridotto al minimo, mentre il target verso le zone prive di volumi storici è estremamente ampio.
                 
@@ -604,26 +625,6 @@ with tab2:
             st.success("📐 Algoritmo di tracciamento completato. Linee tratteggiate di resistenza e identificazione Marubozu attive.")
         else:
             st.error("Dati storici non sufficienti per calcolare la regressione rolling nel modulo geometrico.")
-
-                    df_da_mom_a_oggi = df_g.iloc[start_idx:]
-                    p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
-                    if p_poc is not None:
-                        poc_grezzi.append((df_g.index[start_idx], float(p_poc), start_idx))
-                stato_precedente = stato_attuale
-            
-            # Filtraggio dei Cluster POC Simili (Tolleranza 1.5%)
-            linee_poc_geometriche = []
-            tolleranza_filtro = 0.015
-            for data_start, valore_poc, s_idx in poc_grezzi:
-                trovato_duplicato = False
-                for i, (dt_saved, val_saved, _) in enumerate(linee_poc_geometriche):
-                    if abs(valore_poc - val_saved) / val_saved <= tolleranza_filtro:
-                        trovato_duplicato = True
-                        if data_start > dt_saved:
-                            linee_poc_geometriche[i] = (data_start, valore_poc, s_idx)
-                        break
-                if not trovato_duplicato:
-                    linee_poc_geometriche.append((data_start, valore_poc, s_idx))
 
 # ==============================================================================
 # --- TAB 3: BREAKOUT TREND-FOLLOWING (MOTORE DI BACKTEST STRATEGICO CON GEO-Z) ---
