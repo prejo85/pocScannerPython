@@ -405,22 +405,39 @@ with tab1:
                     else: 
                         st.warning(f"Dati storici insufficienti per {ticker}.")
 # ==============================================================================
-# --- TAB 2: ANALISI GEOMETRICA POC (STRUTTURA CORRETTA CORRETTA) ---
+# --- TAB 2: ANALISI GEOMETRICA POC (SOLO TRACCIAMENTO GEO-POC FINO A OGGI) ---
 # ==============================================================================
 with tab2:
-    st.subheader("📐 Analisi Geometrica dei Nodi di Volume e Rounding Pattern")
+    st.subheader("📐 Laboratorio Geometrico: Tracciamento POC su Impulso Continuato")
+    st.markdown("Rileva il cambio di momentum tramite il distacco dello Z-Score dalla regressione ed estende i profili volumetrici da quel punto fino a oggi.")
     
-    # 1. Definisci qui i parametri di input specifici per la Tab 2
-    g_col1, g_col2 = st.columns(2)
+    # RIGA 1: Parametri di scansione dell'asset e dello storico
+    g_col1, g_col2, g_col3 = st.columns(3)
     with g_col1:
-        geo_ticker = st.text_input("Inserisci Ticker (Tab 2):", value="AAPL", key="geo_tk_in")
-        geo_periodo = st.selectbox("Orizzonte temporale:", ["1 Anno", "3 Anni", "5 Anni"], key="geo_per_in")
-        mappa_periodi_geo = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y"}
+        geo_ticker = st.text_input("Inserisci Ticker da scansionare:", value="AAPL", key="geo_tk_input")
     with g_col2:
-        geo_finestra = st.slider("Finestra Regressione (Giorni):", 20, 100, 50, key="geo_win_sl")
-        geo_soglia = st.slider("Soglia Deviazione Z-Score:", 1.5, 3.5, 2.0, 0.1, key="geo_z_sl")
+        geo_periodo = st.selectbox("Orizzonte storico dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], index=0, key="geo_per_sel")
+        mappa_periodi_geo = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
+    with g_col3:
+        geo_finestra = st.slider("Finestra Regressione Lineare (Giorni base):", min_value=20, max_value=100, value=50, step=5, key="geo_win_sl")
 
-    # 2. Pulsante di attivazione logica
+    # RIGA 2: Soglia Z-Score e Nuovi controlli di Risk Management inseriti
+    g_col4, g_col5, g_col6 = st.columns(3)
+    with g_col4:
+        geo_soglia = st.slider("Soglia Z-Score per Cambio Momentum:", min_value=1.5, max_value=3.5, value=2.0, step=0.1, key="geo_z_sl")
+    with g_col5:
+        # Input del capitale operativo del laboratorio
+        geo_capitale = st.number_input("Capitale Operativo ($):", min_value=100, value=10000, step=500, key="geo_cap_input")
+    with g_col6:
+        # Slider per impostare il rischio percentuale per singola idea operativa
+        geo_rischio_pct = st.slider("Rischio scelto per Trade (%):", min_value=0.2, max_value=5.0, value=1.0, step=0.1, key="geo_risk_sl")
+
+    # Spazio di separazione prima del pulsante di esecuzione grafico
+    st.markdown("")
+    
+    # ==============================================================================
+# PARTE 2 & 4 REGOLATE: FILTRO POC SIMILI E OTTIMIZZAZIONE GRAFICA INDICATORE
+# ==============================================================================
     if st.button("📐 Genera Struttura Geometrica POC", type="primary", key="geo_btn_start"):
         st.info(f"Elaborazione matriciale e calcolo profili per {geo_ticker}...")
         df_g = yf.download(tickers=geo_ticker, period=mappa_periodi_geo[geo_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
@@ -428,55 +445,75 @@ with tab2:
         if df_g is not None and len(df_g) > geo_finestra:
             df_g.columns = [str(c).strip() for c in df_g.columns]
             close_series = pd.Series(df_g["Close"].values.flatten(), index=df_g.index).astype(float)
-            high_series = pd.Series(df_g["High"].values.flatten(), index=df_g.index).astype(float)
-            low_series = pd.Series(df_g["Low"].values.flatten(), index=df_g.index).astype(float)
-            open_series = pd.Series(df_g["Open"].values.flatten(), index=df_g.index).astype(float)
             n_punti = len(df_g)
             
-            # --- [I tuoi calcoli matematici vettorizzati (m_series, q_series, std_residui_series...)] ---
-            # ... (Mantieni invariati i tuoi calcoli qui)
+            # Algoritmo Vettorizzato per la Regressione e lo Z-Score
+            n = geo_finestra
+            x = np.arange(n)
+            sum_x, sum_x2 = x.sum(), (x**2).sum()
+            denominatore = n * sum_x2 - (sum_x**2)
             
-            # Assegnazione dello Z-Score
+            sum_y = close_series.rolling(window=n).sum()
+            sum_y2 = (close_series**2).rolling(window=n).sum()
+            
+            xy_conv = np.convolve(close_series.values, x[::-1], mode='valid')
+            sum_xy = pd.Series(np.nan, index=close_series.index)
+            sum_xy.iloc[n-1:] = xy_conv
+            
+            m_series = (n * sum_xy - sum_x * sum_y) / denominatore
+            q_series = (sum_x2 * sum_y - sum_x * sum_xy) / denominatore
+            prezzi_teorici_series = m_series * n + q_series
+            
+            mean_x, var_x = sum_x / n, sum_x2 / n - ((sum_x / n)**2)
+            mean_y, var_y = sum_y / n, sum_y2 / n - ((sum_y / n)**2)
+            cov_xy = sum_xy / n - (mean_x * mean_y)
+            
+            var_residui = var_y - (2 * m_series * cov_xy) + (m_series**2 * var_x)
+            std_residui_series = np.sqrt(np.clip(var_residui, 0.00001, None))
+            
             df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
+            df_g["Accelerazione_Geometrica"] = np.where(df_g["Z_Score"] >= geo_soglia, 1, 0)
             
-            # Definizione candela Marubozu
-            corpo = (close_series - open_series).abs()
-            range_totale = high_series - low_series
-            range_totale = np.where(range_totale == 0, 0.00001, range_totale)
-            df_g["Marubozu"] = (corpo / range_totale) >= 0.75
+            # Individuazione temporanea di tutti i POC potenziali
+            poc_grezzi = []
+            stato_precedente = 0
             
-            # --- [Ciclo for per la rilevazione di Tazzee Livelli POC] ---
-            # ... (Mantieni invariato il tuo algoritmo di scansione strutturale passata)
+            for i in range(geo_finestra, n_punti):
+                stato_attuale = df_g["Accelerazione_Geometrica"].iloc[i]
+                if stato_attuale == 1 and stato_precedente == 0:
+                    start_idx = i
+                    df_da_mom_a_oggi = df_g.iloc[start_idx:]
+                    p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
+                    if p_poc is not None:
+                        poc_grezzi.append((df_g.index[start_idx], float(p_poc)))
+                stato_precedente = stato_attuale
             
-            # ==============================================================================
-            # --- TUTTO IL RENDERING GRAFICO (PARTE 3) DEVE STARE DENTRO QUESTO BLOCCO IF ---
-            # ==============================================================================
-            p_attuale = float(close_series.iloc[-1])
-            data_oggi = df_g.index[-1]
+            # --- LOGICA DI FILTRAGGIO E ACCORPAMENTO DEI POC SIMILI (Tolleranza 1.0%) ---
+            linee_poc_geometriche = []
+            tolleranza_filtro = 0.01  # 1.0% di tolleranza sul prezzo
             
-            st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Nodi Geometrici POC & Rounding Breakout")
+            for data_start, valore_poc in poc_grezzi:
+                trovato_duplicato = False
+                for i, (dt_saved, val_saved) in enumerate(linee_poc_geometriche):
+                    # Se lo scostamento percentuale tra il nuovo POC e uno già salvato è inferiore alla tolleranza
+                    if abs(valore_poc - val_saved) / val_saved <= tolleranza_filtro:
+                        trovato_duplicato = True
+                        # Aggiorniamo il POC mantenendo la data più recente per catturare l'impulso fresco
+                        if data_start > dt_saved:
+                            linee_poc_geometriche[i] = (data_start, valore_poc)
+                        break
+                if not trovato_duplicato:
+                    linee_poc_geometriche.append((data_start, valore_poc))
+                
+            # --- RENDER DEL GRAFICO PRINCIPALE PREZZI ---
+            st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Livelli POC Statici Filtrati")
             fig_geo = grp.Figure()
-            
-            # Candele Giapponesi
             fig_geo.add_trace(grp.Candlestick(
                 x=df_g.index, open=df_g["Open"].astype(float), high=df_g["High"].astype(float),
                 low=df_g["Low"].astype(float), close=df_g["Close"].astype(float), name=geo_ticker
             ))
             
-            # Tracciamento Linee Bianche Tratteggiate
-            for d_start, d_break, liv_pivot, stato_pattern in linee_orizzontali_strutturali:
-                fig_geo.add_trace(grp.Scatter(
-                    x=[d_start, d_break], y=[liv_pivot, liv_pivot], mode="lines",
-                    showlegend=False, line=dict(color="#ffffff", width=2, dash="dash")
-                ))
-                fig_geo.add_annotation(
-                    x=d_break, y=liv_pivot, text=f" Bordo: {round(liv_pivot, 2)} ({stato_pattern})",
-                    showarrow=False, xanchor="left", yshift=8,
-                    font=dict(color="#ffffff", size=9, family="Plus Jakarta Sans"),
-                    bgcolor="rgba(15, 23, 42, 0.85)", bordercolor="rgba(255,255,255,0.2)", borderwidth=1
-                )
-
-            # Tracciamento Livelli POC Arancioni Continui
+            data_oggi = df_g.index[-1]
             for idx, (data_start, valore_poc) in enumerate(linee_poc_geometriche):
                 fig_geo.add_trace(grp.Scatter(
                     x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
@@ -484,133 +521,40 @@ with tab2:
                 ))
                 fig_geo.add_annotation(
                     x=data_start, y=valore_poc, text=f"POC {round(valore_poc, 2)}",
-                    showarrow=False, yshift=-10, xanchor="left",
+                    showarrow=False, yshift=8, xanchor="left",
                     font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
-                    bgcolor="rgba(15, 23, 42, 0.90)"
+                    bgcolor="rgba(15, 23, 42, 0.85)"
                 )
-                
-            fig_geo.update_layout(
-                template="plotly_dark", 
-                xaxis_rangeslider_visible=False, 
-                height=550, 
-                margin=dict(l=20, r=80, t=10, b=10),
-                yaxis=dict(side="right", gridcolor="rgba(51, 65, 85, 0.25)")
-            )
+            fig_geo.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=500, margin=dict(l=20, r=20, t=10, b=10))
             st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
             
-            # Sotto-grafico dell'Oscillatore Z-Score (Adesso è sicuro e non genererà KeyError)
-            st.markdown("##### 📉 Analisi della Deviazione Statistica (Z-Score dei Residui della Regressione)")
+            # --- NUOVA SEZIONE: SUBPLOT DEL DETECTOR INFERIORE CORRETTO ---
+            st.markdown("##### 📉 Oscillatore Quantitativo: Z-Score dei Residui della Regressione")
+            
             fig_zg = grp.Figure()
             fig_zg.add_trace(grp.Scatter(
                 x=df_g.index, y=df_g["Z_Score"], mode="lines", 
                 name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ))
-            fig_zg.add_shape(type="line", x0=df_g.index.min(), x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
-            fig_zg.add_shape(type="line", x0=df_g.index.min(), x1=data_oggi, y0=-geo_soglia, y1=-geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
-            fig_zg.add_shape(type="line", x0=df_g.index.min(), x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
+            # Linea della soglia utente per visualizzare l'anomalia balistica
+            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
+            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
             
-            fig_zg.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=80, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)", side="right"))
-            st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
-            
-            # Tabella riassuntiva
-            if linee_poc_geometriche:
-                st.markdown("##### 📋 Registro dei Livelli POC Statici Rilevati")
-                dati_tabella_geo = []
-                for dt_p, val_p in linee_poc_geometriche:
-                    dist_pct = ((p_attuale - val_p) / val_p) * 100
-                    stato_nodo = "🟢 SOPRA (Supporto)" if dist_pct >= 0 else "🔴 SOTTO (Resistenza)"
-                    dati_tabella_geo.append({
-                        "Inizio Configurazione Pattern": dt_p.strftime("%d/%m/%Y"),
-                        "Prezzo del POC ($)": f"$ {round(val_p, 2)}",
-                        "Distanza Percentuale Corrente": f"{round(dist_pct, 2)} %",
-                        "Stato Finanziario Struttura": stato_nodo
-                    })
-                st.dataframe(pd.DataFrame(dati_tabella_geo), use_container_width=True)
-                
-            st.success("📐 Errore corretto. Script riavviato e layout visivo ripristinato con successo.")
-        else:
-            st.error("Dati storici non sufficienti per calcolare la regressione rolling.")
-
-# ==============================================================================
-# --- TAB 2: PARTE 3 (CORRETTA) - RENDERING GRAFICO SICURO ED ALLINEATO ---
-# ==============================================================================
-            p_attuale = float(close_series.iloc[-1])
-            data_oggi = df_g.index[-1]
-            
-            st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Nodi Geometrici POC & Rounding Breakout")
-            fig_geo = grp.Figure()
-            
-            # Candele Giapponesi
-            fig_geo.add_trace(grp.Candlestick(
-                x=df_g.index, open=df_g["Open"].astype(float), high=df_g["High"].astype(float),
-                low=df_g["Low"].astype(float), close=df_g["Close"].astype(float), name=geo_ticker
-            ))
-            
-            # Tracciamento Linee Bianche Tratteggiate
-            for d_start, d_break, liv_pivot, stato_pattern in linee_orizzontali_strutturali:
-                fig_geo.add_trace(grp.Scatter(
-                    x=[d_start, d_break], y=[liv_pivot, liv_pivot], mode="lines",
-                    showlegend=False, line=dict(color="#ffffff", width=2, dash="dash")
-                ))
-                fig_geo.add_annotation(
-                    x=d_break, y=liv_pivot, text=f" Bordo: {round(liv_pivot, 2)} ({stato_pattern})",
-                    showarrow=False, xanchor="left", yshift=8,
-                    font=dict(color="#ffffff", size=9, family="Plus Jakarta Sans"),
-                    bgcolor="rgba(15, 23, 42, 0.85)", bordercolor="rgba(255,255,255,0.2)", borderwidth=1
-                )
-
-            # Tracciamento Livelli POC Arancioni Continui
-            for idx, (data_start, valore_poc) in enumerate(linee_poc_geometriche):
-                fig_geo.add_trace(grp.Scatter(
-                    x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
-                    showlegend=False, line=dict(color="#f29e1f", width=2.5, dash="solid")
-                ))
-                fig_geo.add_annotation(
-                    x=data_start, y=valore_poc, text=f"POC {round(valore_poc, 2)}",
-                    showarrow=False, yshift=-10, xanchor="left",
-                    font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
-                    bgcolor="rgba(15, 23, 42, 0.90)"
-                )
-                
-            fig_geo.update_layout(
-                template="plotly_dark", 
-                xaxis_rangeslider_visible=False, 
-                height=550, 
-                margin=dict(l=20, r=80, t=10, b=10),
-                yaxis=dict(side="right", gridcolor="rgba(51, 65, 85, 0.25)")
+            fig_zg.update_layout(
+                template="plotly_dark", height=200, 
+                margin=dict(l=20, r=20, t=10, b=20),
+                yaxis=dict(title="Deviazioni Std (Z)")
             )
-            st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
-            
-            # Sotto-grafico dell'Oscillatore Z-Score (Agganciato in modo sicuro alla colonna salvata)
-            st.markdown("##### 📉 Analisi della Deviazione Statistica (Z-Score dei Residui della Regressione)")
-            fig_zg = grp.Figure()
-            fig_zg.add_trace(grp.Scatter(
-                x=df_g.index, y=df_g["Z_Score"], mode="lines", 
-                name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
-            ))
-            fig_zg.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
-            fig_zg.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=-geo_soglia, y1=-geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
-            fig_zg.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
-            
-            fig_zg.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=80, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)", side="right"))
             st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
             
-            # Tabella riassuntiva dei dati raccolti nello storico
-            if linee_poc_geometriche:
-                st.markdown("##### 📋 Registro dei Livelli POC Statici Rilevati")
-                dati_tabella_geo = []
-                for dt_p, val_p in linee_poc_geometriche:
-                    dist_pct = ((p_attuale - val_p) / val_p) * 100
-                    stato_nodo = "🟢 SOPRA (Supporto)" if dist_pct >= 0 else "🔴 SOTTO (Resistenza)"
-                    dati_tabella_geo.append({
-                        "Inizio Configurazione Pattern": dt_p.strftime("%d/%m/%Y"),
-                        "Prezzo del POC ($)": f"$ {round(val_p, 2)}",
-                        "Distanza Percentuale Corrente": f"{round(dist_pct, 2)} %",
-                        "Stato Finanziario Struttura": stato_nodo
-                    })
-                st.dataframe(pd.DataFrame(dati_tabella_geo), use_container_width=True)
-                
-            st.success("📐 Errore corretto. Script riavviato e layout visivo ripristinato con successo.")
+            # Box informativo di spiegazione matematica dell'oscillatore inferiore
+            st.info(f"""
+            ℹ️ **Significato dell'Indicatore Inferiore: Z-Score dei Residui Geometrici**
+            * **Cosa misura:** Rappresenta quante deviazioni standard il prezzo attuale si trova al di sopra o al di sotto della retta di regressione lineare calcolata negli ultimi **{geo_finestra} giorni** (il trend centrale equilibrato).
+            * **Significato operativo delle linee:** Quando la linea azzurra rompe la soglia critica rossa tratteggiata a **+{geo_soglia}**, l'asset sta registrando un'accelerazione di prezzo statisticamente anomala (Momento Balistico). Il sistema intercetta quel punto esatto per avviare il calcolo del Volume Profile continuato fino a oggi.
+            """)
+            
+            st.success("📐 Mappatura geometrica dei volumi completata con eliminazione dei cluster ridondanti. In attesa dei tuoi comandi...")
         else:
             st.error("Dati storici non sufficienti per calcolare la regressione rolling.")
 
