@@ -405,7 +405,7 @@ with tab1:
                     else: 
                         st.warning(f"Dati storici insufficienti per {ticker}.")
 # ==============================================================================
-# --- TAB 2: ANALISI GEOMETRICA POC (SOLO TRACCIAMENTO GEO-POC FINO A OGGI) ---
+# --- TAB 2: PARTE 1 - CONFIGURAZIONE INTERFACCIA UTENTE & INPUT ---
 # ==============================================================================
 with tab2:
     st.subheader("📐 Laboratorio Geometrico: Tracciamento POC su Impulso Continuato")
@@ -421,22 +421,18 @@ with tab2:
     with g_col3:
         geo_finestra = st.slider("Finestra Regressione Lineare (Giorni base):", min_value=20, max_value=100, value=50, step=5, key="geo_win_sl")
 
-    # RIGA 2: Soglia Z-Score e Nuovi controlli di Risk Management inseriti
+    # RIGA 2: Soglia Z-Score e controlli di Risk Management per il dimensionamento
     g_col4, g_col5, g_col6 = st.columns(3)
     with g_col4:
         geo_soglia = st.slider("Soglia Z-Score per Cambio Momentum:", min_value=1.5, max_value=3.5, value=2.0, step=0.1, key="geo_z_sl")
     with g_col5:
-        # Input del capitale operativo del laboratorio
         geo_capitale = st.number_input("Capitale Operativo ($):", min_value=100, value=10000, step=500, key="geo_cap_input")
     with g_col6:
-        # Slider per impostare il rischio percentuale per singola idea operativa
         geo_rischio_pct = st.slider("Rischio scelto per Trade (%):", min_value=0.2, max_value=5.0, value=1.0, step=0.1, key="geo_risk_sl")
 
-    # Spazio di separazione prima del pulsante di esecuzione grafico
     st.markdown("")
-    
-    # ==============================================================================
-# PARTE 2 & 4 REGOLATE: FILTRO POC SIMILI E OTTIMIZZAZIONE GRAFICA INDICATORE
+# ==============================================================================
+# --- TAB 2: PARTE 2 - CORE ENGINE QUANTITATIVO E FILTRAGGIO CLUSTER ---
 # ==============================================================================
     if st.button("📐 Genera Struttura Geometrica POC", type="primary", key="geo_btn_start"):
         st.info(f"Elaborazione matriciale e calcolo profili per {geo_ticker}...")
@@ -447,7 +443,7 @@ with tab2:
             close_series = pd.Series(df_g["Close"].values.flatten(), index=df_g.index).astype(float)
             n_punti = len(df_g)
             
-            # Algoritmo Vettorizzato per la Regressione e lo Z-Score
+            # Algoritmo Vettorizzato per la Regressione e lo Z-Score dei Residui
             n = geo_finestra
             x = np.arange(n)
             sum_x, sum_x2 = x.sum(), (x**2).sum()
@@ -474,7 +470,7 @@ with tab2:
             df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             df_g["Accelerazione_Geometrica"] = np.where(df_g["Z_Score"] >= geo_soglia, 1, 0)
             
-            # Individuazione temporanea di tutti i POC potenziali
+            # Individuazione temporanea di tutti i POC potenziali sui breakout dello Z-Score
             poc_grezzi = []
             stato_precedente = 0
             
@@ -483,29 +479,10 @@ with tab2:
                 if stato_attuale == 1 and stato_precedente == 0:
                     start_idx = i
                     df_da_mom_a_oggi = df_g.iloc[start_idx:]
-                    p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
-                    if p_poc is not None:
-                        poc_grezzi.append((df_g.index[start_idx], float(p_poc)))
-                stato_precedente = stato_attuale
-            
-            # --- LOGICA DI FILTRAGGIO E ACCORPAMENTO DEI POC SIMILI (Tolleranza 1.0%) ---
-            linee_poc_geometriche = []
-            tolleranza_filtro = 0.01  # 1.0% di tolleranza sul prezzo
-            
-            for data_start, valore_poc in poc_grezzi:
-                trovato_duplicato = False
-                for i, (dt_saved, val_saved) in enumerate(linee_poc_geometriche):
-                    # Se lo scostamento percentuale tra il nuovo POC e uno già salvato è inferiore alla tolleranza
-                    if abs(valore_poc - val_saved) / val_saved <= tolleranza_filtro:
-                        trovato_duplicato = True
-                        # Aggiorniamo il POC mantenendo la data più recente per catturare l'impulso fresco
-                        if data_start > dt_saved:
-                            linee_poc_geometriche[i] = (data_start, valore_poc)
-                        break
-                if not trovato_duplicato:
-                    linee_poc_geometriche.append((data_start, valore_poc))
-                
-            # --- RENDER DEL GRAFICO PRINCIPALE PREZZI ---
+                    p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)# ==============================================================================
+# --- TAB 2: PARTE 3 - RENDERING GRAFICI PLOTLY & METRICHE POSITION SIZING ---
+# ==============================================================================
+            # Rendering del grafico dei prezzi
             st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Livelli POC Statici Filtrati")
             fig_geo = grp.Figure()
             fig_geo.add_trace(grp.Candlestick(
@@ -514,13 +491,15 @@ with tab2:
             ))
             
             data_oggi = df_g.index[-1]
+            p_attuale = float(close_series.iloc[-1])
+            
             for idx, (data_start, valore_poc) in enumerate(linee_poc_geometriche):
                 fig_geo.add_trace(grp.Scatter(
                     x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
                     showlegend=False, line=dict(color="#f29e1f", width=2.5, dash="solid")
                 ))
                 fig_geo.add_annotation(
-                    x=data_start, y=valore_poc, text=f"POC {round(valore_poc, 2)}",
+                    x=data_start, y=valore_poc, text=f"GEO-POC {round(valore_poc, 2)}",
                     showarrow=False, yshift=8, xanchor="left",
                     font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
                     bgcolor="rgba(15, 23, 42, 0.85)"
@@ -528,35 +507,87 @@ with tab2:
             fig_geo.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=500, margin=dict(l=20, r=20, t=10, b=10))
             st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
             
-            # --- NUOVA SEZIONE: SUBPLOT DEL DETECTOR INFERIORE CORRETTO ---
+            # Sotto-grafico dell'oscillatore Z-Score
             st.markdown("##### 📉 Oscillatore Quantitativo: Z-Score dei Residui della Regressione")
-            
             fig_zg = grp.Figure()
             fig_zg.add_trace(grp.Scatter(
                 x=df_g.index, y=df_g["Z_Score"], mode="lines", 
                 name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ))
-            # Linea della soglia utente per visualizzare l'anomalia balistica
             fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
             fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
             
-            fig_zg.update_layout(
-                template="plotly_dark", height=200, 
-                margin=dict(l=20, r=20, t=10, b=20),
-                yaxis=dict(title="Deviazioni Std (Z)")
-            )
+            fig_zg.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=20, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)"))
             st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
             
-            # Box informativo di spiegazione matematica dell'oscillatore inferiore
             st.info(f"""
             ℹ️ **Significato dell'Indicatore Inferiore: Z-Score dei Residui Geometrici**
-            * **Cosa misura:** Rappresenta quante deviazioni standard il prezzo attuale si trova al di sopra o al di sotto della retta di regressione lineare calcolata negli ultimi **{geo_finestra} giorni** (il trend centrale equilibrato).
-            * **Significato operativo delle linee:** Quando la linea azzurra rompe la soglia critica rossa tratteggiata a **+{geo_soglia}**, l'asset sta registrando un'accelerazione di prezzo statisticamente anomala (Momento Balistico). Il sistema intercetta quel punto esatto per avviare il calcolo del Volume Profile continuato fino a oggi.
+            * **Cosa misura:** Indica quante deviazioni standard il prezzo si scosta dalla sua retta centrale calcolata a **{geo_finestra} giorni**.
+            * **Significato operativo:** La rottura della linea tratteggiata a **+{geo_soglia}** segnala un'anomalia balistica (forte momentum). In quel punto esatto si avvia il calcolo del Volume Profile continuato fino a oggi.
             """)
-            
-            st.success("📐 Mappatura geometrica dei volumi completata con eliminazione dei cluster ridondanti. In attesa dei tuoi comandi...")
+
+            # Calcolo automatico della taglia della posizione (Position Sizing)
+            st.markdown("### 🎯 Matrice Operativa & Dimensionamento della Posizione")
+            if linee_poc_geometriche:
+                riga_finale = df_g.iloc[-1]
+                intervallo_prezzo = float(riga_finale["High"] - riga_finale["Low"])
+                if intervallo_prezzo == 0: 
+                    intervallo_prezzo = p_attuale * 0.01
+                
+                stop_tecnico = p_attuale - (1.5 * intervallo_prezzo)
+                distanza_stop = max(0.01, p_attuale - stop_tecnico)
+                
+                rischio_monetario = float(geo_capitale * (geo_rischio_pct / 100))
+                size_contratti_ideale = rischio_monetario / distanza_stop
+                controvalore_posizione = size_contratti_ideale * p_attuale
+                leva_operativa = controvalore_posizione / geo_capitale
+                
+                rm_col1, rm_col2, rm_col3 = st.columns(3)
+                with rm_col1:
+                    st.metric("Rischio Allocato ($)", f"$ {round(rischio_monetario, 2)}", f"{geo_rischio_pct} % del Capitale")
+                with rm_col2:
+                    st.metric("Size Contratti Calcolata", f"{round(size_contratti_ideale, 2)} Pz", f"Controvalore: $ {round(controvalore_posizione, 2)}")
+                with rm_col3:
+                    st.metric("Leva Finanziaria Richiesta", f"{round(leva_operativa, 2)} x", "Rapporto Esposizione / Capitale")
+                
+                # Tabella riassuntiva dello stato dei nodi statici
+                st.markdown("##### 📋 Stato dei Livelli di Supporto/Resistenza Geometrici Rilevati")
+                dati_tabella_geo = []
+                for dt_p, val_p in linee_poc_geometriche:
+                    dist_pct = ((p_attuale - val_p) / val_p) * 100
+                    stato_nodo = "🟢 SOPRA (Supporto)" if dist_pct >= 0 else "🔴 SOTTO (Resistenza)"
+                    dati_tabella_geo.append({
+                        "Data Rilevazione Segnale": dt_p.strftime("%d/%m/%Y"),
+                        "Prezzo del GEO-POC": f"$ {round(val_p, 2)}",
+                        "Distanza Percentuale Corrente": f"{round(dist_pct, 2)} %",
+                        "Stato Strutturale": stato_nodo
+                    })
+                st.dataframe(pd.DataFrame(dati_tabella_geo), use_container_width=True)
+            else:
+                st.warning("⚠️ Nessun impulso balistico rilevato con l'attuale combinazione di filtri. Riduci la soglia o amplia l'orizzonte dati.")
+                
+            st.success("📐 Mappatura geometrica dei volumi e calcolo del dimensionamento completati con successo. In attesa di nuovi comandi...")
         else:
             st.error("Dati storici non sufficienti per calcolare la regressione rolling.")
+
+                    if p_poc is not None:
+                        poc_grezzi.append((df_g.index[start_idx], float(p_poc)))
+                stato_precedente = stato_attuale
+            
+            # Logica di accorpamento e pulizia dei POC sovrapposti (Tolleranza 1.0%)
+            linee_poc_geometriche = []
+            tolleranza_filtro = 0.01  
+            
+            for data_start, valore_poc in poc_grezzi:
+                trovato_duplicato = False
+                for i, (dt_saved, val_saved) in enumerate(linee_poc_geometriche):
+                    if abs(valore_poc - val_saved) / val_saved <= tolleranza_filtro:
+                        trovato_duplicato = True
+                        if data_start > dt_saved:
+                            linee_poc_geometriche[i] = (data_start, valore_poc)
+                        break
+                if not trovato_duplicato:
+                    linee_poc_geometriche.append((data_start, valore_poc))
 
 
 # ==============================================================================
