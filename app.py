@@ -1122,21 +1122,43 @@ with tab3:
                     showlegend=False, line=dict(color="#f29e1f", width=2.5, dash="solid")
                 ), row=1, col=1)
 # ==============================================================================
-# --- TAB 3: PARTE 3B - Z-SCORE OSCILLATOR, SCATOLI METRICHE & NOTE ---
+# --- TAB 3: PARTE 3B - GRAPHIC SÈTUP Z-SCORE, TABELLA TRADE & NOTE ---
 # ==============================================================================
             # 2. Inserimento dell'oscillatore quantitativo Z-Score dei residui (Riga 2)
             fig_bt.add_trace(grp.Scatter(
                 x=df_bt.index, y=df_bt["Z_Score"], mode="lines", name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ), row=2, col=1)
             
-            # Ancoraggio rigido delle linee di griglia a +-2 e zero sulla riga 2 dello Z-Score (yref="y2")
-            fig_bt.add_shape(type="line", x0=df_bt.index, x1=data_oggi, y0=soglia_zscore, y1=soglia_zscore, line=dict(color="#ef4444", width=1.5, dash="dash"), row=2, col=1, yref="y2")
-            fig_bt.add_shape(type="line", x0=df_bt.index, x1=data_oggi, y0=2.0, y1=2.0, line=dict(color="#22c55e", width=1.2, dash="dash"), row=2, col=1, yref="y2")
-            fig_bt.add_shape(type="line", x0=df_bt.index, x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="solid"), row=2, col=1, yref="y2")
-            fig_bt.add_shape(type="line", x0=df_bt.index, x1=data_oggi, y0=-2.0, y1=-2.0, line=dict(color="#ef4444", width=1.2, dash="dash"), row=2, col=1, yref="y2")
+            # Estrarre stringhe pulite della prima e ultima data per bloccare l'orizzontalità delle forme
+            data_inizio_str = df_bt.index[0].strftime("%Y-%m-%d")
+            data_fine_str = df_bt.index[-1].strftime("%Y-%m-%d")
+            
+            # --- APPLICAZIONE TRATTEGGI FINI E SOTTILI (STILE TAB 2) ---
+            # Linea della soglia utente dinamica (Innesco accelerazione)
+            fig_bt.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=soglia_zscore, y1=soglia_zscore, 
+                             line=dict(color="#ef4444", width=1.5, dash="dash"), row=2, col=1, yref="y2")
+            
+            # Linea tratteggiata VERDE SOTTILE a +2
+            fig_bt.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=2, y1=2, 
+                             line=dict(color="#22c55e", width=1.0, dash="dash"), row=2, col=1, yref="y2")
+            
+            # Linea centrale dello zero
+            fig_bt.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=0, y1=0, 
+                             line=dict(color="rgba(255,255,255,0.2)", width=1.0, dash="solid"), row=2, col=1, yref="y2")
+            
+            # Linea tratteggiata ROSSA SOTTILE a -2
+            fig_bt.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=-2, y1=-2, 
+                             line=dict(color="#ef4444", width=1.0, dash="dash"), row=2, col=1, yref="y2")
             
             # Configurazione del layout e rimozione dei range slider conflittuali per lo shared zoom
-            fig_bt.update_layout(template="plotly_dark", height=700, margin=dict(l=20, r=20, t=10, b=10), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+            fig_bt.update_layout(
+                template="plotly_dark", 
+                height=700, 
+                margin=dict(l=20, r=20, t=10, b=10), 
+                showlegend=True, 
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            
             fig_bt.update_yaxes(title_text=f"Prezzo {bt_ticker} ($)", row=1, col=1)
             fig_bt.update_yaxes(title_text="Deviazioni Std (Z)", range=[-5.5, 5.5], row=2, col=1)
             fig_bt.update_xaxes(rangeslider_visible=False, row=1, col=1)
@@ -1154,7 +1176,6 @@ with tab3:
                 win_rate = (len(operazioni_vincenti) / len(df_trades)) * 100
                 ritorno_percentuale = ((capitale - capitale_iniziale) / capitale_iniziale) * 100
                 
-                # I tre scatoli card tornano perfettamente stabili e visibili sopra la griglia dei trade
                 c1, c2, c3 = st.columns(3)
                 with c1:
                     st.metric("Ritorno Totale Portafoglio", f"{round(ritorno_percentuale, 2)} %", f"Netto: $ {round(capitale - capitale_iniziale, 2)}")
@@ -1183,9 +1204,8 @@ with tab3:
                * **Frazione A (Target Rapido):** Viene liquidata per prima non appena il mercato tocca l'estensione geometrica fissa **1:4** rispetto al rischio iniziale, oppure intercetta un **GEO-POC superiore** preesistente sul grafico.
                * **Frazione B (Runner ad Oltranza):** Nel momento esatto in cui la Frazione A va a segno, lo Stop Loss del secondo contratto viene **spostato automaticamente a Break-Even (al prezzo di ingresso)**. Questo contratto rimane a mercato a rischio zero e liquida il profitto solo sul **Massimo Storico Progressivo (ATH)**.
             """)
-            st.success("📐 Backtest e report delle metriche frazionate completati con successo con assi X sincronizzati.")
-        else:
-            st.error("Dati storici insufficienti per compilare il simulatore di backtest.")
+            st.success("📐 Backtest e report completati. Tratteggi fini a +-2 sincronizzati in stile Tab 2.")
+
 
 # ==========================================
 # --- TAB 4: LIVE ALERTS STRATEGICI ---
