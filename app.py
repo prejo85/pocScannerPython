@@ -503,7 +503,7 @@ with tab2:
 
             
 # ==============================================================================
-# --- TAB 2: PARTE 2B - SCANNER STRUTTURALE POC E RESISTENZE MARUBOZU ---
+# --- TAB 2: PARTE 2B - SCANNER STRUTTURALE CON ANCHOR PROFILE SULL'IMPULSO ---
 # ==============================================================================
             # Calcolo dei parametri rolling dinamici per identificare la Marubozu
             corpi = (df_g["Close"].astype(float) - df_g["Open"].astype(float)).abs()
@@ -526,67 +526,77 @@ with tab2:
                     data_innesco = df_g.index[start_idx]
                     atr_attuale = float(df_g["ATR"].iloc[start_idx])
                     
-                    if (start_idx - ultimo_index_innesco) >= minimo_giorni_distanza:
-                        df_da_mom_a_oggi = df_g.iloc[start_idx:]
-                        p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
+                    # --------------------------------------------------------------------------
+                    # CORREZIONE BUG: ISOLAMENTO VOLUMETRICO DELL'IMPULSO (FINESTRA 35 CANDELÈ)
+                    # --------------------------------------------------------------------------
+                    fine_finestra_impulso = min(n_punti, start_idx + 35)
+                    df_puro_impulso = df_g.iloc[start_idx : fine_finestra_impulso]
+                    df_da_mom_a_oggi = df_g.iloc[start_idx:]
+                    
+                    # Calcoliamo il POC ancorato solo sulla durata della spinta balistica
+                    p_poc, _, _, _, _ = calc_vp(df_puro_impulso)
+                    
+                    # --------------------------------------------------------------------------
+                    # LIVELLO 1: DISÈGNO DELLE LINEE BIANCHE DI RESISTENZA (SEMPRE ATTIVO)
+                    # --------------------------------------------------------------------------
+                    finestra_lookback = max(0, start_idx - 65)
+                    df_periodo_precedente = df_g.iloc[finestra_lookback : start_idx + 1]
+                    val_massimo_riferimento = float(df_periodo_precedente["High"].max())
+                    idx_data_massimo = df_periodo_precedente["High"].idxmax()
+                    
+                    data_fine_linea = df_g.index[-1]
+                    trovato_breakout = False
+                    data_breakout_marubozu = None
+                    val_fondo_rounding = float(df_periodo_precedente["Low"].min()) 
+                    
+                    for j in range(start_idx, n_punti):
+                        c_open = float(df_g["Open"].iloc[j])
+                        c_close = float(df_g["Close"].iloc[j])
+                        c_high = float(df_g["High"].iloc[j])
+                        c_low = float(df_g["Low"].iloc[j])
                         
+                        if range_candela := (c_high - c_low) > 0 and (dimensione_corpo := (c_close - c_open)) > 0:
+                            is_corpo_ampio = dimensione_corpo > (corpo_medio.iloc[j] * 1.05)
+                            senza_ombra_sup = (c_high - c_close) / (c_high - c_low) <= 0.22
+                            senza_ombra_inf = (c_open - c_low) / (c_high - c_low) <= 0.22
+                            is_marubozu = is_corpo_ampio and senza_ombra_sup and senza_ombra_inf
+                            
+                            if is_marubozu and c_close > val_massimo_riferimento:
+                                trovato_breakout = True
+                                data_fine_linea = df_g.index[j]
+                                data_breakout_marubozu = df_g.index[j]
+                                segnali_di_breakout_storici[j] = {
+                                    "tipo": "LONG",
+                                    "linea_resistenza": val_massimo_riferimento,
+                                    "stop_loss_base": val_fondo_rounding
+                                }
+                                break
+                                
+                    linee_bianche_proiettate.append({
+                        "data_inizio": idx_data_massimo,
+                        "data_innesco_z": data_innesco,
+                        "data_fine": data_fine_linea,
+                        "valore": val_massimo_riferimento,
+                        "breakout": trovato_breakout,
+                        "data_breakout": data_breakout_marubozu
+                    })
+                    
+                    # --------------------------------------------------------------------------
+                    # LIVELLO 2: FILTRO DI PROSSIMITÀ SUI GEO-POC ANCORATI
+                    # --------------------------------------------------------------------------
+                    if (start_idx - ultimo_index_innesco) >= minimo_giorni_distanza:
                         if p_poc is not None:
                             val_poc_attuale = float(p_poc)
                             accetta_nuovo_poc = True
                             
                             for dt_saved, val_saved in poc_grezzi:
-                                if abs(val_poc_attuale - val_saved) <= (1.5 * atr_attuale):
+                                if abs(val_poc_attuale - val_saved) <= (1.2 * atr_attuale):
                                     accetta_nuovo_poc = False
                                     break
                             
                             if accetta_nuovo_poc:
                                 poc_grezzi.append((data_innesco, val_poc_attuale))
                                 ultimo_index_innesco = start_idx
-                                
-                                finestra_lookback = max(0, start_idx - 65)
-                                df_periodo_precedente = df_g.iloc[finestra_lookback : start_idx + 1]
-                                val_massimo_riferimento = float(df_periodo_precedente["High"].max())
-                                idx_data_massimo = df_periodo_precedente["High"].idxmax()
-                                
-                                data_fine_linea = df_g.index[-1]
-                                trovato_breakout = False
-                                data_breakout_marubozu = None
-                                val_fondo_rounding = float(df_periodo_precedente["Low"].min()) 
-                                
-                                for j in range(start_idx, n_punti):
-                                    c_open = float(df_g["Open"].iloc[j])
-                                    c_close = float(df_g["Close"].iloc[j])
-                                    c_high = float(df_g["High"].iloc[j])
-                                    c_low = float(df_g["Low"].iloc[j])
-                                    
-                                    dimensione_corpo = c_close - c_open
-                                    range_candela = c_high - c_low
-                                    
-                                    if range_candela > 0 and dimensione_corpo > 0:
-                                        is_corpo_ampio = dimensione_corpo > (corpo_medio.iloc[j] * 1.05)
-                                        senza_ombra_sup = (c_high - c_close) / range_candela <= 0.22
-                                        senza_ombra_inf = (c_open - c_low) / range_candela <= 0.22
-                                        is_marubozu = is_corpo_ampio and senza_ombra_sup and senza_ombra_inf
-                                        
-                                        if is_marubozu and c_close > val_massimo_riferimento:
-                                            trovato_breakout = True
-                                            data_fine_linea = df_g.index[j]
-                                            data_breakout_marubozu = df_g.index[j]
-                                            segnali_di_breakout_storici[j] = {
-                                                "tipo": "LONG",
-                                                "linea_resistenza": val_massimo_riferimento,
-                                                "stop_loss_base": val_fondo_rounding
-                                            }
-                                            break
-                                            
-                                linee_bianche_proiettate.append({
-                                    "data_inizio": idx_data_massimo,
-                                    "data_innesco_z": data_innesco,
-                                    "data_fine": data_fine_linea,
-                                    "valore": val_massimo_riferimento,
-                                    "breakout": trovato_breakout,
-                                    "data_breakout": data_breakout_marubozu
-                                })
                     
                 stato_precedente = stato_attuale
             linee_poc_geometriche = poc_grezzi
