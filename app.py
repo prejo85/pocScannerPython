@@ -817,10 +817,9 @@ with tab2:
 # --- TAB 3: PARTE 1 - CONFIGURAZIONE INTERFACCIA UTENTE VERTICALE ---
 # ==============================================================================
 with tab3:
-    st.subheader("⚙️ Simulatore Quantitativo: Breakout Trend-Following")
-    st.markdown("Esegue la scansione e il backtest della strategia algoritmica basata sulla rottura dei massimi strutturali tramite candele Marubozu.")
+    st.subheader("⚙️ Simulatore Quantitativo: Breakout Trend-Following Avanzato")
+    st.markdown("Backtest strategico con frazionamento della posizione, uscita parziale 1:4 o su POC superiori, Break-Even automatico e corsa ad oltranza fino all'ATH.")
     
-    # Tre colonne verticali ordinate per scopo operativo per eliminare il caos visivo
     b_col_scopo1, b_col_scopo2, b_col_scopo3 = st.columns(3)
     
     # --------------------------------------------------------------------------
@@ -830,7 +829,7 @@ with tab3:
         st.markdown("#### 🗂️ 1. Paniere & Orizzonte")
         bt_ticker = st.text_input("Inserisci un singolo Ticker da testare:", value="AAPL", key="bt_tk_in")
         
-        bt_periodo = st.selectbox("Orizzonte temporale dei dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], key="bt_per_in")
+        bt_periodo = st.selectbox("Orizzonte temporale dei dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], index=1, key="bt_per_in")
         mappa_periodi = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
         
         bt_tf_label = st.selectbox("Timeframe operativo Backtest:", ["Giornaliero (Daily)", "Settimanale (Weekly)", "Mensile (Monthly)"], key="bt_tf_sel")
@@ -862,11 +861,11 @@ with tab3:
             "Valore quota / Leva (Tab 3):",
             min_value=0.5, value=25.0 if "Percentuale" in bt_modello_size else 1.0, step=1.0, key="bt_quota_leva_input"
         )
-        rischio_trade = 1.0  # Rischio frazionario predefinito all'1%
+        geo_rischio_pct = st.slider("Rischio percentuale (%):", min_value=0.2, max_value=5.0, value=1.0, step=0.1, key="bt_risk_pct_sel")
 
     st.markdown("---")
 # ==============================================================================
-# --- TAB 3: PARTE 2 - CORE QUANT ENGINE & SCANSIONE VETTORIALE ---
+# --- TAB 3: PARTE 2A - CORE QUANT ENGINE & APPARATO MATRICIALE ---
 # ==============================================================================
     if st.button("🚀 Avvia Backtest Algoritmico Integrato", type="primary", key="bt_btn_start"):
         st.info(f"Calcolo vettoriale e simulazione degli ordini per {bt_ticker} in timeframe {bt_tf_label}...")
@@ -875,7 +874,11 @@ with tab3:
         if df_bt is not None and len(df_bt) > finestra_regressione:
             df_bt.columns = [str(c).strip() for c in df_bt.columns]
             close_series = pd.Series(df_bt["Close"].values.flatten(), index=df_bt.index).astype(float)
+            high_series = pd.Series(df_bt["High"].values.flatten(), index=df_bt.index).astype(float)
             n_punti = len(df_bt)
+            
+            # Calcolo dell'ATH dinamico rolling progressivo nel tempo
+            df_bt["Rolling_ATH"] = high_series.cummax()
             
             # Formula vettorizzata veloce per lo Z-Score dei Residui
             n = finestra_regressione
@@ -904,21 +907,23 @@ with tab3:
             df_bt["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             df_bt["Accelerazione_Geometrica"] = np.where(df_bt["Z_Score"] >= soglia_zscore, 1, 0)
             
+            tr = pd.concat([df_bt["High"] - df_bt["Low"], (df_bt["High"] - df_bt["Close"].shift(1)).abs(), (df_bt["Low"] - df_bt["Close"].shift(1)).abs()], axis=1).max(axis=1)
+            df_bt["ATR"] = tr.rolling(window=14).mean().fillna(tr.mean())
+# ==============================================================================
+# --- TAB 3: PARTE 2B - SCANNER STRUTTURALE LINEE & BREAKOUT MARUBOZU ---
+# ==============================================================================
             # Calcolo dei parametri rolling dinamici per identificare la Marubozu
             corpi = (df_bt["Close"].astype(float) - df_bt["Open"].astype(float)).abs()
             range_totale = df_bt["High"].astype(float) - df_bt["Low"].astype(float)
             corpo_medio = corpi.rolling(window=20).mean().fillna(range_totale.mean())
             
-            # Strutture dati per salvare i livelli e i breakout storici
             linee_poc_momentum = []
             linee_bianche_proiettate = []
             segnali_di_breakout_storici = {}
             stato_precedente = 0
             ultimo_index_innesco = -999
             minimo_giorni_distanza = 15
-            
-            tr = pd.concat([df_bt["High"] - df_bt["Low"], (df_bt["High"] - df_bt["Close"].shift(1)).abs(), (df_bt["Low"] - df_bt["Close"].shift(1)).abs()], axis=1).max(axis=1)
-            df_bt["ATR"] = tr.rolling(window=14).mean().fillna(tr.mean())
+            df_bt["Linea_Protezione_ATR"] = np.nan
 
             for i in range(finestra_regressione, n_punti):
                 stato_attuale = df_bt["Accelerazione_Geometrica"].iloc[i]
@@ -927,11 +932,12 @@ with tab3:
                     data_innesco = df_bt.index[start_idx]
                     atr_attuale = float(df_bt["ATR"].iloc[start_idx])
                     
+                    # Isolamento del Volume Profile ristretto solo alla durata dell'impulso balistico
                     fine_finestra_impulso = min(n_punti, start_idx + 35)
                     df_puro_impulso = df_bt.iloc[start_idx : fine_finestra_impulso]
                     p_poc, _, _, _, _ = calc_vp(df_puro_impulso)
                     
-                    # ANCORAGGIO DELLA LINEA BIANCA DI RESISTENZA AL MASSIMO PRECEDENTE (LOOKBACK 65D)
+                    # Ancoraggio della linea bianca di resistenza strutturale al Massimo Precedente
                     finestra_lookback = max(0, start_idx - 65)
                     df_periodo_precedente = df_bt.iloc[finestra_lookback : start_idx + 1]
                     val_massimo_riferimento = float(df_periodo_precedente["High"].max())
@@ -974,7 +980,7 @@ with tab3:
                         "breakout": trovato_breakout, "data_breakout": data_breakout_marubozu
                     })
                     
-                    # FILTRAGGIO DELLE RIGHE ARANCIONI DEI GEO-POC
+                    # Filtro anti-sovrapposizione ad ampiezza ATR per le linee dei POC arancioni
                     if (start_idx - ultimo_index_innesco) >= minimo_giorni_distanza:
                         if p_poc is not None:
                             val_poc_attuale = float(p_poc)
@@ -988,56 +994,112 @@ with tab3:
                                 ultimo_index_innesco = start_idx
                                 
                 stato_precedente = stato_attuale
-
-            # SIMULATORE DI BACKTEST AD INGRESSO STRUTTURALE SU CANDELA t+1
+# ==============================================================================
+# --- TAB 3: PARTE 2C - ENGINE STRATEGICO DUE FRAZIONI CON BREAK-EVEN ---
+# ==============================================================================
             capitale = float(capitale_iniziale)
+            in_posizione = False
             trade_history = []
 
             for idx_c in range(finestra_regressione, n_punti):
                 data_corrente = df_bt.index[idx_c]
                 prezzo_apertura = float(df_bt["Open"].iloc[idx_c])
-                
-                # Apertura dell'operazione all'apertura del giorno (t+1) successivo al breakout registrato
-                if (idx_c - 1) in segnali_di_breakout_storici:
+                prezzo_high = float(df_bt["High"].iloc[idx_c])
+                prezzo_low = float(df_bt["Low"].iloc[idx_c])
+                ath_corrente = float(df_bt["Rolling_ATH"].iloc[idx_c])
+
+                if in_posizione:
+                    # GESTIONE FRAZIONE A (TARGET PARZIALE 1:4 O SU POC SUPERIORE PREESISTENTE)
+                    if not trade_corrente["frazione_a_chiusa"]:
+                        ha_toccato_poc_sup = False
+                        for _, val_poc in linee_poc_momentum:
+                            if val_poc > trade_corrente["prezzo_ingresso"] and prezzo_high >= val_poc:
+                                target_parziale_effettivo = val_poc
+                                ha_toccato_poc_sup = True
+                                break
+                        
+                        if prezzo_high >= trade_corrente["tp_parziale"] or ha_toccato_poc_sup:
+                            if not ha_toccato_poc_sup:
+                                target_parziale_effettivo = trade_corrente["tp_parziale"]
+                            
+                            pnl_a = (target_parziale_effettivo - trade_corrente["prezzo_ingresso"]) * trade_corrente["taglia_frazione"] - (comun_fee * 2)
+                            capitale += pnl_a
+                            trade_corrente["frazione_a_chiusa"] = True
+                            
+                            # REGOLA: Spostamento istantaneo dello Stop della Frazione B a Break-Even (Prezzo d'ingresso)
+                            trade_corrente["sl_b"] = trade_corrente["prezzo_ingresso"]
+                            
+                            trade_history.append({
+                                "Data Ingress": trade_corrente["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"),
+                                "Tipo": "PARZIALE LONG (A)", "Prezzo Ingresso": round(trade_corrente["prezzo_ingresso"], 2),
+                                "Stop Loss": round(trade_corrente["sl_a"], 2), "Esito": "TP PARZIALE 1:4 / POC",
+                                "PnL ($)": round(pnl_a, 2), "Capitale": round(capitale, 2)
+                            })
+                        
+                        elif prezzo_low <= trade_corrente["sl_a"]:
+                            pnl_totale = (trade_corrente["sl_a"] - trade_corrente["prezzo_ingresso"]) * (trade_corrente["taglia_frazione"] * 2) - (comun_fee * 4)
+                            capitale += pnl_totale
+                            trade_history.append({"Data Ingress": trade_corrente["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"), "Tipo": "LONG COMPLETO", "Prezzo Ingresso": round(trade_corrente["prezzo_ingresso"], 2), "Stop Loss": round(trade_corrente["sl_a"], 2), "Esito": "STOP LOSS BASE PATTERN", "PnL ($)": round(pnl_totale, 2), "Capitale": round(capitale, 2)})
+                            in_posizione = False
+                    
+                    # GESTIONE FRAZIONE B (CORSA FINO ALL'ATH CON PROTEZIONE A PAREGGIO)
+                    else:
+                        if prezzo_high >= ath_corrente:
+                            pnl_b = (ath_corrente - trade_corrente["prezzo_ingresso"]) * trade_corrente["taglia_frazione"] - (comun_fee * 2)
+                            capitale += pnl_b
+                            trade_history.append({"Data Ingress": trade_corrente["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"), "Tipo": "RUNNER LONG (B)", "Prezzo Ingresso": round(trade_corrente["prezzo_ingresso"], 2), "Stop Loss": round(trade_corrente["sl_b"], 2), "Esito": "TARGET ATH COMPLETATO", "PnL ($)": round(pnl_b, 2), "Capitale": round(capitale, 2)})
+                            in_posizione = False
+                        elif prezzo_low <= trade_corrente["sl_b"]:
+                            pnl_b = (trade_corrente["sl_b"] - trade_corrente["prezzo_ingresso"]) * trade_corrente["taglia_frazione"] - (comun_fee * 2)
+                            capitale += pnl_b
+                            trade_history.append({"Data Ingress": trade_corrente["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"), "Tipo": "RUNNER LONG (B)", "Prezzo Ingresso": round(trade_corrente["prezzo_ingresso"], 2), "Stop Loss": round(trade_corrente["sl_b"], 2), "Esito": "CHIUSURA BREAK-EVEN", "PnL ($)": round(pnl_b, 2), "Capitale": round(capitale, 2)})
+                            in_posizione = False
+
+                # Apertura dell'operazione sulla candela successiva t+1 al breakout Marubozu
+                if not in_posizione and (idx_c - 1) in segnali_di_breakout_storici:
                     dati_breakout = segnali_di_breakout_storici[idx_c - 1]
                     distanza_stop = prezzo_apertura - dati_breakout["stop_loss_base"]
                     
                     if distanza_stop > 0:
-                        # Modulo di calcolo della taglia della posizione basato sulla scelta utente
                         if bt_modello_size == "Rischio Fisso Frazionario":
-                            rischio_monetario = capitale * (rischio_trade / 100)
-                            taglia_contratti = rischio_monetario / distanza_stop
+                            rischio_monetario = capitale * (geo_rischio_pct / 100)
+                            taglia_totale = rischio_monetario / distanza_stop
                         elif bt_modello_size == "Percentuale Fissa del Capitale":
-                            taglia_contratti = (capitale * (bt_quota_leva / 100)) / prezzo_apertura
+                            taglia_totale = (capitale * (bt_quota_leva / 100)) / prezzo_apertura
                         elif bt_modello_size == "Leva Finanziaria Costante":
-                            taglia_contratti = (capitale * bt_quota_leva) / prezzo_apertura
+                            taglia_totale = (capitale * bt_quota_leva) / prezzo_apertura
                         
-                        if taglia_contratti > 0:
-                            # Registrazione dell'avvenuto ingresso del trade a mercato
-                            trade_history.append({
-                                "Data Ingress": data_corrente.strftime("%d/%m/%Y"),
-                                "Tipo": "GEO LONG",
-                                "Prezzo Ingresso": round(prezzo_apertura, 2),
-                                "Stop Loss Strutturale": round(dati_breakout["stop_loss_base"], 2),
-                                "Taglia Contratti (Pz)": round(taglia_contratti, 2)
-                            })
+                        if taglia_totale > 0:
+                            taglia_frazionata = taglia_totale / 2
+                            trade_corrente = {
+                                "data": data_corrente.strftime("%d/%m/%Y"), "prezzo_ingresso": prezzo_apertura,
+                                "sl_a": dati_breakout["stop_loss_base"], "sl_b": dati_breakout["stop_loss_base"], 
+                                "tp_parziale": prezzo_apertura + (4.0 * distanza_stop), 
+                                "taglia_frazione": taglia_frazionata, "frazione_a_chiusa": False
+                            }
+                            in_posizione = True
 # ==============================================================================
-# --- TAB 3: PARTE 3 - PLOTLY SHARED ZOOM & DESCRIZIONE MODELLO ---
+# --- TAB 3: PARTE 3A - GRAPHIC RENDERING A ASSI CONDIVISI (SHARED ZOOM) ---
 # ==============================================================================
             st.markdown(f"##### 📊 Dashboard di Backtest con Assi Temporali Sincronizzati (Shared Zoom)")
             
-            # Subplot unificato a 2 righe con assi temporali sincronizzati
-            fig_bt = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.70, 0.30])
+            # Creazione del subplot accoppiato a due righe con asse X condiviso
+            fig_bt = make_subplots(
+                rows=2, cols=1, 
+                shared_xaxes=True, 
+                vertical_spacing=0.08, 
+                row_heights=[0.70, 0.30]
+            )
             
             data_oggi = df_bt.index[-1]
             
-            # 1. Grafico a candele principale (Riga 1)
+            # 1. Inserimento del grafico a candele principale (Riga 1)
             fig_bt.add_trace(grp.Candlestick(
                 x=df_bt.index, open=df_bt["Open"].astype(float), high=df_bt["High"].astype(float),
                 low=df_bt["Low"].astype(float), close=df_bt["Close"].astype(float), name=bt_ticker
             ), row=1, col=1)
             
-            # Tracciamento continuo delle resistenze bianche strutturali
+            # Rendering grafico continuo delle resistenze bianche strutturali ancorate ai massimi
             for idx, linea in enumerate(linee_bianche_proiettate):
                 mostra_in_legenda = True if idx == 0 else False
                 fig_bt.add_trace(grp.Scatter(
@@ -1045,6 +1107,7 @@ with tab3:
                     mode="lines", line=dict(color="#ffffff", width=2.5, dash="dash"),
                     name="Resistenza Massimo Periodo", showlegend=mostra_in_legenda
                 ), row=1, col=1)
+                
                 if linea["breakout"]:
                     fig_bt.add_trace(grp.Scatter(
                         x=[linea["data_breakout"]], y=[linea["valore"]], mode="markers",
@@ -1052,30 +1115,27 @@ with tab3:
                         name="Breakout Marubozu Rilevato", showlegend=mostra_in_legenda
                     ), row=1, col=1)
             
-            # Proiezione delle linee arancioni dei GEO-POC ancorati all'impulso
+            # Proiezione delle linee orizzontali arancioni dei GEO-POC ancorati all'impulso
             for idx, (data_start, valore_poc) in enumerate(linee_poc_momentum):
                 fig_bt.add_trace(grp.Scatter(
                     x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
                     showlegend=False, line=dict(color="#f29e1f", width=2.5, dash="solid")
                 ), row=1, col=1)
-                fig_bt.add_annotation(
-                    x=data_start, y=valore_poc, text=f"POC {round(valore_poc, 2)}",
-                    showarrow=False, yshift=8, xanchor="left",
-                    font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
-                    bgcolor="rgba(15, 23, 42, 0.85)", row=1, col=1
-                )
-            
-            # 2. Sotto-grafico dell'oscillatore Z-Score dei residui (Riga 2)
+# ==============================================================================
+# --- TAB 3: PARTE 3B - Z-SCORE OSCILLATOR, SCATOLI METRICHE & NOTE ---
+# ==============================================================================
+            # 2. Inserimento dell'oscillatore quantitativo Z-Score dei residui (Riga 2)
             fig_bt.add_trace(grp.Scatter(
                 x=df_bt.index, y=df_bt["Z_Score"], mode="lines", name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ), row=2, col=1)
             
-            # Disegno linee statiche e righe tratteggiate a +-2 e zero sulla riga 2
+            # Ancoraggio rigido delle linee di griglia a +-2 e zero sulla riga 2 dello Z-Score (yref="y2")
             fig_bt.add_shape(type="line", x0=df_bt.index, x1=data_oggi, y0=soglia_zscore, y1=soglia_zscore, line=dict(color="#ef4444", width=1.5, dash="dash"), row=2, col=1, yref="y2")
             fig_bt.add_shape(type="line", x0=df_bt.index, x1=data_oggi, y0=2.0, y1=2.0, line=dict(color="#22c55e", width=1.2, dash="dash"), row=2, col=1, yref="y2")
             fig_bt.add_shape(type="line", x0=df_bt.index, x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="solid"), row=2, col=1, yref="y2")
             fig_bt.add_shape(type="line", x0=df_bt.index, x1=data_oggi, y0=-2.0, y1=-2.0, line=dict(color="#ef4444", width=1.2, dash="dash"), row=2, col=1, yref="y2")
             
+            # Configurazione del layout e rimozione dei range slider conflittuali per lo shared zoom
             fig_bt.update_layout(template="plotly_dark", height=700, margin=dict(l=20, r=20, t=10, b=10), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
             fig_bt.update_yaxes(title_text=f"Prezzo {bt_ticker} ($)", row=1, col=1)
             fig_bt.update_yaxes(title_text="Deviazioni Std (Z)", range=[-5.5, 5.5], row=2, col=1)
@@ -1084,35 +1144,46 @@ with tab3:
             
             st.plotly_chart(fig_bt, use_container_width=True, key="bt_strat_chart_combined")
             
-            # GRIGLIA DI RIEPILOGO DEGLI ORDINI EFFETTUATI
-            st.subheader("📋 Registro Esecuzioni Ingressi Operativi (Tab 3)")
+            # --- RENDERING BOX CARD DELLE METRICHE SBLOCCATE E DISPONIBILI ---
+            st.subheader("📊 Performance Ledger: Risultati Economici della Strategia")
             st.info(f"⚙️ **Modello di Taglia Attivo nel Simulatore:** {bt_modello_size}")
+            
             if trade_history:
-                st.dataframe(pd.DataFrame(trade_history), use_container_width=True)
-            else:
-                st.warning("⚠️ Nessun ingresso registrato nello storico selezionato con i parametri correnti.")
+                df_trades = pd.DataFrame(trade_history)
+                operazioni_vincenti = df_trades[df_trades["PnL ($)"] > 0]
+                win_rate = (len(operazioni_vincenti) / len(df_trades)) * 100
+                ritorno_percentuale = ((capitale - capitale_iniziale) / capitale_iniziale) * 100
                 
-            # ==============================================================================
-            # --- SEZIONE DESCRIZIONE DEL MODELLO DI INGRESSO (RICHIESTA) ---
-            # ==============================================================================
+                # I tre scatoli card tornano perfettamente stabili e visibili sopra la griglia dei trade
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.metric("Ritorno Totale Portafoglio", f"{round(ritorno_percentuale, 2)} %", f"Netto: $ {round(capitale - capitale_iniziale, 2)}")
+                with c2:
+                    st.metric("Affidabilità (Win Rate)", f"{round(win_rate, 2)} %", f"{len(operazioni_vincenti)} su {len(df_trades)} Frazioni Chiuse")
+                with c3:
+                    st.metric("Capitale Finale Bilancio", f"$ {round(capitale, 2)}", f"Iniziale: $ {capitale_iniziale}")
+                
+                st.dataframe(df_trades, use_container_width=True)
+            else:
+                st.warning("⚠️ Nessun trade concluso registrato nello storico selezionato con i parametri correnti.")
+                
+            # Sezione descrizione tecnica verticale del modello di gestione della posizione
             st.markdown("---")
-            st.markdown("### 🔏 Descrizione Tecnica del Modello di Ingresso Algoritmico")
+            st.markdown("### 🔏 Descrizione Tecnica del Modello di Ingresso e Gestione della Posizione")
             st.markdown(f"""
-            Il modulo di backtest applica un protocollo rigido di esecuzione basato sul **Breakout Cinematico di Strutture di Distribuzione Locali**. 
-            Il modello mappa l'ingresso a mercato strutturandosi su tre fasi analitiche sequenziali:
+            Il simulatore esegue un backtest quantitativo evoluto basato sul **Breakout di Sottostrutture di Lungo Periodo** abbinato a un protocollo di **Money Management multi-frazione**:
             
-            1. ⚡ **Innesco del Momentum (Anomalia Quantitativa):**
-               L'algoritmo monitora costantemente lo Z-Score dei residui estratti dalla regressione lineare rolling. Quando la linea blu perfora la barriera critica impostata a **+{soglia_zscore} Deviazioni Standard**, viene registrata un'anomalia di spinta balistica. Questo punto esatto definisce l'avvio della mappatura geometrica dei flussi.
+            1. ⚡ **Innesco del Breakout Strutturale:**
+               L'ingresso avviene all'apertura della candela successiva ($t+1$) rispetto alla candela Marubozu che rompe in chiusura la linea di resistenza bianca dei massimi a 65 giorni, attivata dall'anomalia cinetica dello Z-Score.
             
-            2. 📐 **Ancoraggio Geometrico della Resistenza:**
-               Nel momento esatto in cui scatta l'allerta dello Z-Score, l'algoritmo applica una scansione a ritroso (*Lookback di 65 candele*) per individuare il **Vero Massimo Strutturale precedente**. Da quel picco di prezzo viene proiettata verso destra una **linea bianca orizzontale tratteggiata**, definita come *Linea di Resistenza del Periodo di Consolidamento*.
+            2. 📊 **Frazionamento Simmetrico (Contratti A & B):**
+               La taglia complessiva calcolata tramite il modello frazionario impostato sul rischio viene suddivisa in due contratti separati aventi lo Stop Loss iniziale comune posizionato rigidamente sotto la base del pattern grafico.
             
-            3. 🎯 **Breakout Marubozu & Ordine di Esecuzione (Candela $t+1$):**
-               La linea bianca rimane attiva sul grafico e continua a essere estesa fino a quando non viene identificata una candela **Marubozu Rialzista** (corpo esteso superiore del 5\\% alla media rolling recente e quasi priva di ombre superiori/inferiori). La candela Marubozu valida in chiusura la rottura formale della resistenza strutturale.
-               
-               *L'ordine di ingresso Long viene eseguito in modalità automatica **all'apertura della candela immediatamente successiva ($t+1$)**, azzerando il rischio di falso segnale intraday.*
+            3. 🎯 **Uscita Parziale & Trailing a Break-Even:**
+               * **Frazione A (Target Rapido):** Viene liquidata per prima non appena il mercato tocca l'estensione geometrica fissa **1:4** rispetto al rischio iniziale, oppure intercetta un **GEO-POC superiore** preesistente sul grafico.
+               * **Frazione B (Runner ad Oltranza):** Nel momento esatto in cui la Frazione A va a segno, lo Stop Loss del secondo contratto viene **spostato automaticamente a Break-Even (al prezzo di ingresso)**. Questo contratto rimane a mercato a rischio zero e liquida il profitto solo sul **Massimo Storico Progressivo (ATH)**.
             """)
-            st.success("📐 Elaborazione del backtest conclusa. Descrizione del modello e registro caricate in dashboard.")
+            st.success("📐 Backtest e report delle metriche frazionate completati con successo con assi X sincronizzati.")
         else:
             st.error("Dati storici insufficienti per compilare il simulatore di backtest.")
 
