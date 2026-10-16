@@ -470,18 +470,57 @@ with tab2:
             df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             df_g["Accelerazione_Geometrica"] = np.where(df_g["Z_Score"] >= geo_soglia, 1, 0)
             
-            # Individuazione temporanea di tutti i POC potenziali sui breakout dello Z-Score
+            # Liste per salvare i dati estratti dai segnali dello Z-Score
             poc_grezzi = []
+            tazze_rilevate_da_zscore = [] # Salverà i dati delle tazze validate per il grafico
             stato_precedente = 0
             
             for i in range(geo_finestra, n_punti):
                 stato_attuale = df_g["Accelerazione_Geometrica"].iloc[i]
+                
+                # Rileviamo il preciso istante del Breakout dello Z-Score (Transizione 0 -> 1)
                 if stato_attuale == 1 and stato_precedente == 0:
                     start_idx = i
+                    data_innesco = df_g.index[start_idx]
                     df_da_mom_a_oggi = df_g.iloc[start_idx:]
+                    
+                    # 1. Calcolo del Volume Profile da questo punto a oggi
                     p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
                     if p_poc is not None:
-                        poc_grezzi.append((df_g.index[start_idx], float(p_poc)))
+                        poc_grezzi.append((data_innesco, float(p_poc)))
+                    
+                    # 2. VERIFICA GEOMETRICA DELLA TAZZA IN CORRISPONDENZA DI QUESTO SEGNALE Z-SCORE
+                    if len(df_da_mom_a_oggi) > 10:
+                        # Criterio A: Il Bordo Sinistro coincide con il massimo del giorno del segnale Z-Score
+                        val_bordo_sx = float(df_g["High"].iloc[start_idx])
+                        
+                        # Criterio B: Cerchiamo il Fondo della Tazza (minimo assoluto nel sotto-periodo)
+                        idx_fondo_tazza = df_da_mom_a_oggi["Low"].idxmin()
+                        val_fondo_tazza = float(df_da_mom_a_oggi["Low"].min())
+                        
+                        # Criterio C: Cerchiamo il Bordo Destro (massimo registrato dopo il fondo della tazza)
+                        df_risalita = df_da_mom_a_oggi.loc[idx_fondo_tazza:]
+                        
+                        if len(df_risalita) > 2:
+                            idx_bordo_dx = df_risalita["High"].idxmax()
+                            val_bordo_dx = float(df_risalita["High"].max())
+                            
+                            # Validazione matematica dei criteri geometrici legati allo Z-Score
+                            distanza_bordi_pct = abs(val_bordo_sx - val_bordo_dx) / val_bordo_sx
+                            profondita_tazza_ok = val_fondo_tazza < min(val_bordo_sx, val_bordo_dx)
+                            coerenza_temporale = data_innesco < idx_fondo_tazza < idx_bordo_dx
+                            
+                            # Se l'oscillazione dei prezzi successiva al segnale Z-Score disegna una tazza (tolleranza 25%)
+                            if distanza_bordi_pct <= 0.25 and profondita_tazza_ok and coerenza_temporale:
+                                tazze_rilevate_da_zscore.append({
+                                    "bordo_sx_data": data_innesco,
+                                    "bordo_sx_val": val_bordo_sx,
+                                    "fondo_data": idx_fondo_tazza,
+                                    "fondo_val": val_fondo_tazza,
+                                    "bordo_dx_data": idx_bordo_dx,
+                                    "bordo_dx_val": val_bordo_dx
+                                })
+                                
                 stato_precedente = stato_attuale
             
             # Logica di accorpamento e pulizia dei POC sovrapposti (Tolleranza 1.0%)
@@ -502,7 +541,7 @@ with tab2:
 # --- TAB 2: PARTE 3 - RENDERING GRAFICI PLOTLY & METRICHE POSITION SIZING ---
 # ==============================================================================
             # Rendering del grafico dei prezzi
-            st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Livelli POC Statici Filtrati")
+            st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Livelli POC Statici e Tazze da Z-Score")
             fig_geo = grp.Figure()
             fig_geo.add_trace(grp.Candlestick(
                 x=df_g.index, open=df_g["Open"].astype(float), high=df_g["High"].astype(float),
@@ -512,46 +551,27 @@ with tab2:
             data_oggi = df_g.index[-1]
             p_attuale = float(close_series.iloc[-1])
             
-            # --- ALGORITMO DI RILEVAMENTO FIGURA DELLA TAZZA OTTIMIZZATO (CUP & HANDLE GEOMETRIC) ---
-            if len(df_g) > 20:
-                idx_max_assoluto = df_g["High"].idxmax()
-                val_max_assoluto = float(df_g["High"].max())
-                date_max_assoluto = pd.to_datetime(idx_max_assoluto)
-                
-                df_successivo = df_g.loc[date_max_assoluto:]
-                
-                if len(df_successivo) > 10:
-                    idx_fondo_tazza = df_successivo["Low"].idxmin()
-                    val_fondo_tazza = float(df_successivo["Low"].min())
-                    
-                    df_bordo_destro = df_successivo.loc[idx_fondo_tazza:]
-                    
-                    if len(df_bordo_destro) > 3:
-                        idx_bordo_destro = df_bordo_destro["High"].idxmax()
-                        val_bordo_destro = float(df_bordo_destro["High"].max())
-                        
-                        distanza_bordi_pct = abs(val_max_assoluto - val_bordo_destro) / val_max_assoluto
-                        profondita_tazza_ok = val_fondo_tazza < min(val_max_assoluto, val_bordo_destro)
-                        
-                        # Ottimizzazione: Tolleranza aumentata al 30% per includere le tazze asimmetriche in trend rialzista
-                        if distanza_bordi_pct <= 0.30 and profondita_tazza_ok:
-                            # Disegna la linea di resistenza statica del bordo sinistro (Neckline)
-                            fig_geo.add_trace(grp.Scatter(
-                                x=[date_max_assoluto, data_oggi], 
-                                y=[val_max_assoluto, val_max_assoluto],
-                                mode="lines",
-                                line=dict(color="rgba(255, 255, 255, 0.6)", width=2, dash="dash"),
-                                name="Resistenza Tazza (Neckline)"
-                            ))
-                            # Disegna la concavità della scodella (Sinistro -> Fondo -> Destro)
-                            fig_geo.add_trace(grp.Scatter(
-                                x=[date_max_assoluto, idx_fondo_tazza, idx_bordo_destro], 
-                                y=[val_max_assoluto, val_fondo_tazza, val_bordo_destro],
-                                mode="lines+markers",
-                                line=dict(color="#38bdf8", width=2.5),
-                                marker=dict(size=8, color="#c084fc", symbol="diamond"),
-                                name="Profilo Geometrico Tazza"
-                            ))
+            # --- DISEGNO DELLE TAZZE VALIDATE SUI SEGNALI Z-SCORE ---
+            for tazza in tazze_rilevate_da_zscore:
+                # Disegna la Neckline (Resistenza) che parte dal punto del segnale Z-Score al bordo destro
+                fig_geo.add_trace(grp.Scatter(
+                    x=[tazza["bordo_sx_data"], tazza["bordo_dx_data"]], 
+                    y=[tazza["bordo_sx_val"], tazza["bordo_sx_val"]],
+                    mode="lines",
+                    line=dict(color="rgba(248, 250, 252, 0.6)", width=1.5, dash="dash"),
+                    name="Neckline Z-Tazza",
+                    showlegend=False
+                ))
+                # Disegna la curva parabolica scheletrica della tazza unendo i 3 punti chiave identificati dal segnale
+                fig_geo.add_trace(grp.Scatter(
+                    x=[tazza["bordo_sx_data"], tazza["fondo_data"], tazza["bordo_dx_data"]], 
+                    y=[tazza["bordo_sx_val"], tazza["fondo_val"], tazza["bordo_dx_val"]],
+                    mode="lines+markers",
+                    line=dict(color="#38bdf8", width=2),
+                    marker=dict(size=7, color="#c084fc", symbol="circle"),
+                    name=f"Tazza da Z-Score ({tazza['bordo_sx_data'].strftime('%d/%m')})",
+                    showlegend=True
+                ))
             
             # Tracciamento dei livelli GEO-POC calcolati dallo Z-Score
             for idx, (data_start, valore_poc) in enumerate(linee_poc_geometriche):
@@ -575,18 +595,14 @@ with tab2:
                 x=df_g.index, y=df_g["Z_Score"], mode="lines", 
                 name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ))
-            
-            # Correzione dinamica per evitare il crash delle shapes su x0/x1 con array interi
-            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
-            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
+            fig_zg.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
+            fig_zg.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
             
             fig_zg.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=20, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)"))
             st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
             
             st.info(f"""
-            ℹ️ **Significato dell'Indicatore Inferiore: Z-Score dei Residui Geometrici**
-            * **Cosa misura:** Indica quante deviazioni standard il prezzo si scosta dalla sua retta centrale calcolata a **{geo_finestra} giorni**.
-            * **Significato operativo:** La rottura della linea tratteggiata a **+{geo_soglia}** segnala un'anomalia balistica (forte momentum). In quel punto esatto si avvia il calcolo del Volume Profile continuato fino a oggi.
+            ℹ Honorariamente vincolato ai punti di innesco dello Z-Score: l'algoritmo calcola la tazza partendo esclusivamente dalle date dei segnali operativi volumetrici.
             """)
 
             # Calcolo automatico della taglia della posizione (Position Sizing)
