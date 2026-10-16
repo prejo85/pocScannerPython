@@ -694,6 +694,7 @@ with tab2:
                     font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
                     bgcolor="rgba(15, 23, 42, 0.85)"
                 )
+
 # ==============================================================================
 # --- TAB 2: PARTE 3B - Z-SCORE OSCILLATOR, TABELLA TRADE & NOTE ---
 # ==============================================================================
@@ -706,9 +707,21 @@ with tab2:
             fig_zg.add_trace(grp.Scatter(
                 x=df_g.index, y=df_g["Z_Score"], mode="lines", name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ))
-            fig_zg.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
-            fig_zg.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
-            fig_zg.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=20, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)"))
+            
+            # --- AGGIORNAMENTO LOGICA DELLE RIGHE DI SOGLIA SOTTILI ---
+            # Linea della soglia utente dinamica (innesco POC accelerazione)
+            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dash"))
+            
+            # Linea tratteggiata sottile VERDE a +2
+            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=2.0, y1=2.0, line=dict(color="#22c55e", width=1.0, dash="dash"))
+            
+            # Linea centrale dello zero
+            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="solid"))
+            
+            # Linea tratteggiata sottile ROSSA a -2
+            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=-2.0, y1=-2.0, line=dict(color="#ef4444", width=1.0, dash="dash"))
+            
+            fig_zg.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=20, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)", range=[-5.5, 5.5]))
             st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
             
             # REPORT PRESTAZIONI FINANZIARIE
