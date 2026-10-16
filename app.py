@@ -814,35 +814,70 @@ with tab2:
 
 
 # ==============================================================================
-# --- TAB 3: BREAKOUT TREND-FOLLOWING (MOTORE DI BACKTEST STRATEGICO CON GEO-Z) ---
+# --- TAB 3: PARTE 1 - CONFIGURAZIONE INTERFACCIA UTENTE VERTICALE ---
 # ==============================================================================
 with tab3:
     st.subheader("⚙️ Simulatore Quantitativo: Breakout Trend-Following")
-    st.markdown("Esegue il backtest della strategia algoritmica entrando sui breakout balistici dello Z-Score ed uscendo sui target o all'esaurimento della spinta.")
+    st.markdown("Esegue la scansione e il backtest della strategia algoritmica basata sulla rottura dei massimi strutturali tramite candele Marubozu.")
     
-    b_col1, b_col2, b_col3 = st.columns(3)
-    with b_col1:
+    # Tre colonne verticali ordinate per scopo operativo per eliminare il caos visivo
+    b_col_scopo1, b_col_scopo2, b_col_scopo3 = st.columns(3)
+    
+    # --------------------------------------------------------------------------
+    # PANNELLO 1: ASSET & TIMEFRAME SELECTION
+    # --------------------------------------------------------------------------
+    with b_col_scopo1:
+        st.markdown("#### 🗂️ 1. Paniere & Orizzonte")
         bt_ticker = st.text_input("Inserisci un singolo Ticker da testare:", value="AAPL", key="bt_tk_in")
-        capitale_iniziale = st.number_input("Capitale iniziale ($):", min_value=100, value=10000, step=500, key="bt_cap_in")
-    with b_col2:
+        
         bt_periodo = st.selectbox("Orizzonte temporale dei dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], key="bt_per_in")
         mappa_periodi = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
-        finestra_regressione = st.slider("Finestra della Regressione Lineare (Giorni di base):", min_value=20, max_value=100, value=50, step=5, key="bt_win_sl")
-    with b_col3:
-        soglia_zscore = st.slider("Soglia Z-Score per Accelerazione (Distacco Balistico):", min_value=1.5, max_value=3.5, value=2.0, step=0.1, key="bt_z_sl")
-        comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5, key="bt_fee_in")
-        rischio_trade = 1.0  # Rischio fisso percentuale per trade
+        
+        bt_tf_label = st.selectbox("Timeframe operativo Backtest:", ["Giornaliero (Daily)", "Settimanale (Weekly)", "Mensile (Monthly)"], key="bt_tf_sel")
+        bt_tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk", "Mensile (Monthly)": "1mo"}[bt_tf_label]
 
-    if st.button("🚀 Avvia Backtest Algoritmico", type="primary", key="bt_btn_start"):
-        st.info(f"Calcolo vettoriale veloce ed esecuzione ordini storici per {bt_ticker}...")
-        df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
+    # --------------------------------------------------------------------------
+    # PANNELLO 2: CONFIGURAZIONE PARAMETRI ALGORITMICI
+    # --------------------------------------------------------------------------
+    with b_col_scopo2:
+        st.markdown("#### 📐 2. Algoritmo di Innesco")
+        finestra_regressione = st.slider("Finestra Regressione (Candele base):", min_value=20, max_value=100, value=50, step=5, key="bt_win_sl")
+        soglia_zscore = st.slider("Soglia Z-Score Accelerazione:", min_value=1.5, max_value=3.5, value=2.0, step=0.1, key="bt_z_sl")
+        st.caption("Fissa la deviazione standard utile a rilevare gli inneschi distribuzionali.")
+
+    # --------------------------------------------------------------------------
+    # PANNELLO 3: CAPITALE E GESTIONE MONETARIA DELLA TAGLIA
+    # --------------------------------------------------------------------------
+    with b_col_scopo3:
+        st.markdown("#### 🎯 3. Capitale & Gestione Size")
+        capitale_iniziale = st.number_input("Capitale iniziale ($):", min_value=100, value=10000, step=500, key="bt_cap_in")
+        comun_fee = st.number_input("Commissioni per singolo eseguito ($):", min_value=0.0, value=1.99, step=0.5, key="bt_fee_in")
+        
+        bt_modello_size = st.radio(
+            "Modello Position Sizing (Tab 3):",
+            ["Rischio Fisso Frazionario", "Percentuale Fissa del Capitale", "Leva Finanziaria Costante"],
+            index=0, key="bt_modello_size_sel"
+        )
+        bt_quota_leva = st.number_input(
+            "Valore quota / Leva (Tab 3):",
+            min_value=0.5, value=25.0 if "Percentuale" in bt_modello_size else 1.0, step=1.0, key="bt_quota_leva_input"
+        )
+        rischio_trade = 1.0  # Rischio frazionario predefinito all'1%
+
+    st.markdown("---")
+# ==============================================================================
+# --- TAB 3: PARTE 2 - CORE QUANT ENGINE & SCANSIONE VETTORIALE ---
+# ==============================================================================
+    if st.button("🚀 Avvia Backtest Algoritmico Integrato", type="primary", key="bt_btn_start"):
+        st.info(f"Calcolo vettoriale e simulazione degli ordini per {bt_ticker} in timeframe {bt_tf_label}...")
+        df_bt = yf.download(tickers=bt_ticker, period=mappa_periodi[bt_periodo], interval=bt_tf_attivo, auto_adjust=False, multi_level_index=False, progress=False)
         
         if df_bt is not None and len(df_bt) > finestra_regressione:
             df_bt.columns = [str(c).strip() for c in df_bt.columns]
             close_series = pd.Series(df_bt["Close"].values.flatten(), index=df_bt.index).astype(float)
             n_punti = len(df_bt)
             
-            # Formula vettorizzata veloce per lo Z-Score
+            # Formula vettorizzata veloce per lo Z-Score dei Residui
             n = finestra_regressione
             x = np.arange(n)
             sum_x, sum_x2 = x.sum(), (x**2).sum()
@@ -869,99 +904,217 @@ with tab3:
             df_bt["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             df_bt["Accelerazione_Geometrica"] = np.where(df_bt["Z_Score"] >= soglia_zscore, 1, 0)
             
-            # Calcolo dei POC estratti da ogni segnale fino a oggi
+            # Calcolo dei parametri rolling dinamici per identificare la Marubozu
+            corpi = (df_bt["Close"].astype(float) - df_bt["Open"].astype(float)).abs()
+            range_totale = df_bt["High"].astype(float) - df_bt["Low"].astype(float)
+            corpo_medio = corpi.rolling(window=20).mean().fillna(range_totale.mean())
+            
+            # Strutture dati per salvare i livelli e i breakout storici
             linee_poc_momentum = []
+            linee_bianche_proiettate = []
+            segnali_di_breakout_storici = {}
             stato_precedente = 0
+            ultimo_index_innesco = -999
+            minimo_giorni_distanza = 15
+            
+            tr = pd.concat([df_bt["High"] - df_bt["Low"], (df_bt["High"] - df_bt["Close"].shift(1)).abs(), (df_bt["Low"] - df_bt["Close"].shift(1)).abs()], axis=1).max(axis=1)
+            df_bt["ATR"] = tr.rolling(window=14).mean().fillna(tr.mean())
+
             for i in range(finestra_regressione, n_punti):
                 stato_attuale = df_bt["Accelerazione_Geometrica"].iloc[i]
                 if stato_attuale == 1 and stato_precedente == 0:
                     start_idx = i
-                    df_da_momentum_a_oggi = df_bt.iloc[start_idx:]
-                    p_poc, _, _, _, _ = calc_vp(df_da_momentum_a_oggi)
-                    if p_poc is not None:
-                        linee_poc_momentum.append((df_bt.index[start_idx], p_poc))
+                    data_innesco = df_bt.index[start_idx]
+                    atr_attuale = float(df_bt["ATR"].iloc[start_idx])
+                    
+                    fine_finestra_impulso = min(n_punti, start_idx + 35)
+                    df_puro_impulso = df_bt.iloc[start_idx : fine_finestra_impulso]
+                    p_poc, _, _, _, _ = calc_vp(df_puro_impulso)
+                    
+                    # ANCORAGGIO DELLA LINEA BIANCA DI RESISTENZA AL MASSIMO PRECEDENTE (LOOKBACK 65D)
+                    finestra_lookback = max(0, start_idx - 65)
+                    df_periodo_precedente = df_bt.iloc[finestra_lookback : start_idx + 1]
+                    val_massimo_riferimento = float(df_periodo_precedente["High"].max())
+                    idx_data_massimo = df_periodo_precedente["High"].idxmax()
+                    
+                    data_fine_linea = df_bt.index[-1]
+                    trovato_breakout = False
+                    data_breakout_marubozu = None
+                    val_fondo_rounding = float(df_periodo_precedente["Low"].min())
+                    
+                    for j in range(start_idx, n_punti):
+                        c_open = float(df_bt["Open"].iloc[j])
+                        c_close = float(df_bt["Close"].iloc[j])
+                        c_high = float(df_bt["High"].iloc[j])
+                        c_low = float(df_bt["Low"].iloc[j])
+                        
+                        range_candela = c_high - c_low
+                        dimensione_corpo = c_close - c_open
+                        
+                        if range_candela > 0 and dimensione_corpo > 0:
+                            is_corpo_ampio = dimensione_corpo > (corpo_medio.iloc[j] * 1.05)
+                            senza_ombra_sup = (c_high - c_close) / range_candela <= 0.22
+                            senza_ombra_inf = (c_open - c_low) / range_candela <= 0.22
+                            is_marubozu = is_corpo_ampio and senza_ombra_sup and senza_ombra_inf
+                            
+                            if is_marubozu and c_close > val_massimo_riferimento:
+                                trovato_breakout = True
+                                data_fine_linea = df_bt.index[j]
+                                data_breakout_marubozu = df_bt.index[j]
+                                segnali_di_breakout_storici[j] = {
+                                    "tipo": "LONG",
+                                    "linea_resistenza": val_massimo_riferimento,
+                                    "stop_loss_base": val_fondo_rounding
+                                }
+                                break
+                                
+                    linee_bianche_proiettate.append({
+                        "data_inizio": idx_data_massimo, "data_innesco_z": data_innesco,
+                        "data_fine": data_fine_linea, "valore": val_massimo_riferimento,
+                        "breakout": trovato_breakout, "data_breakout": data_breakout_marubozu
+                    })
+                    
+                    # FILTRAGGIO DELLE RIGHE ARANCIONI DEI GEO-POC
+                    if (start_idx - ultimo_index_innesco) >= minimo_giorni_distanza:
+                        if p_poc is not None:
+                            val_poc_attuale = float(p_poc)
+                            accetta_nuovo_poc = True
+                            for dt_saved, val_saved in linee_poc_momentum:
+                                if abs(val_poc_attuale - val_saved) <= (1.2 * atr_attuale):
+                                    accetta_nuovo_poc = False
+                                    break
+                            if accetta_nuovo_poc:
+                                linee_poc_momentum.append((data_innesco, val_poc_attuale))
+                                ultimo_index_innesco = start_idx
+                                
                 stato_precedente = stato_attuale
 
-            # Simulatore dei Trade Storici
-            capitale = capitale_iniziale
-            in_posizione = False
-            prezzo_ingresso = 0
+            # SIMULATORE DI BACKTEST AD INGRESSO STRUTTURALE SU CANDELA t+1
+            capitale = float(capitale_iniziale)
             trade_history = []
 
-            for i in range(finestra_regressione, n_punti):
-                riga_attuale = df_bt.iloc[i]
-                prezzo_corrente = float(riga_attuale["Close"])
-                data_corrente = df_bt.index[i]
-                trigger_mom = df_bt["Accelerazione_Geometrica"].iloc[i] == 1
-
-                if not in_posizione and trigger_mom:
-                    df_storico_finora = df_bt.iloc[:i]
-                    p_poc, p_vh, p_vl, _, _ = calc_vp(df_storico_finora)
-                    if p_poc is None: continue
-                    
-                    prezzo_ingresso = prezzo_corrente
-                    intervallo_prezzo = float(riga_attuale.get("High", prezzo_corrente) - riga_attuale.get("Low", prezzo_corrente))
-                    if intervallo_prezzo == 0: intervallo_prezzo = prezzo_corrente * 0.01
-                    livello_sl = prezzo_ingresso - (1.5 * intervallo_prezzo)
-                    livello_tp = prezzo_ingresso + (3.0 * abs(prezzo_ingresso - livello_sl))
-
-                    if livello_sl > 0 and prezzo_ingresso > livello_sl:
-                        in_posizione = True
-                        size_contratti = (capitale * (rischio_trade / 100)) / (prezzo_ingresso - livello_sl)
+            for idx_c in range(finestra_regressione, n_punti):
+                data_corrente = df_bt.index[idx_c]
+                prezzo_apertura = float(df_bt["Open"].iloc[idx_c])
                 
-                elif in_posizione:
-                    high_g, low_g = float(riga_attuale["High"]), float(riga_attuale["Low"])
-                    uscito, p_chiusura = False, 0
-                    z_attuale = df_bt["Z_Score"].iloc[i]
+                # Apertura dell'operazione all'apertura del giorno (t+1) successivo al breakout registrato
+                if (idx_c - 1) in segnali_di_breakout_storici:
+                    dati_breakout = segnali_di_breakout_storici[idx_c - 1]
+                    distanza_stop = prezzo_apertura - dati_breakout["stop_loss_base"]
                     
-                    if low_g <= livello_sl: uscito, p_chiusura = True, livello_sl
-                    elif high_g >= livello_tp: uscito, p_chiusura = True, livello_tp
-                    elif z_attuale < 0: uscito, p_chiusura = True, prezzo_corrente
-
-                    if uscito:
-                        pnl = (p_chiusura - prezzo_ingresso) * size_contratti - (comun_fee * 2)
-                        capitale += pnl
-                        trade_history.append({"Data": data_corrente.strftime("%d/%m/%Y"), "Tipo": "GEO LONG", "PnL ($)": round(pnl, 2), "Capitale": round(capitale, 2)})
-                        in_posizione = False
-
-            # Rendering del Grafico di Backtest
-            st.markdown(f"##### 📊 Grafico di Backtest & Livelli POC Semplificati")
-            fig_bt = grp.Figure()
+                    if distanza_stop > 0:
+                        # Modulo di calcolo della taglia della posizione basato sulla scelta utente
+                        if bt_modello_size == "Rischio Fisso Frazionario":
+                            rischio_monetario = capitale * (rischio_trade / 100)
+                            taglia_contratti = rischio_monetario / distanza_stop
+                        elif bt_modello_size == "Percentuale Fissa del Capitale":
+                            taglia_contratti = (capitale * (bt_quota_leva / 100)) / prezzo_apertura
+                        elif bt_modello_size == "Leva Finanziaria Costante":
+                            taglia_contratti = (capitale * bt_quota_leva) / prezzo_apertura
+                        
+                        if taglia_contratti > 0:
+                            # Registrazione dell'avvenuto ingresso del trade a mercato
+                            trade_history.append({
+                                "Data Ingress": data_corrente.strftime("%d/%m/%Y"),
+                                "Tipo": "GEO LONG",
+                                "Prezzo Ingresso": round(prezzo_apertura, 2),
+                                "Stop Loss Strutturale": round(dati_breakout["stop_loss_base"], 2),
+                                "Taglia Contratti (Pz)": round(taglia_contratti, 2)
+                            })
+# ==============================================================================
+# --- TAB 3: PARTE 3 - PLOTLY SHARED ZOOM & DESCRIZIONE MODELLO ---
+# ==============================================================================
+            st.markdown(f"##### 📊 Dashboard di Backtest con Assi Temporali Sincronizzati (Shared Zoom)")
+            
+            # Subplot unificato a 2 righe con assi temporali sincronizzati
+            fig_bt = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.70, 0.30])
+            
+            data_oggi = df_bt.index[-1]
+            
+            # 1. Grafico a candele principale (Riga 1)
             fig_bt.add_trace(grp.Candlestick(
                 x=df_bt.index, open=df_bt["Open"].astype(float), high=df_bt["High"].astype(float),
                 low=df_bt["Low"].astype(float), close=df_bt["Close"].astype(float), name=bt_ticker
-            ))
+            ), row=1, col=1)
             
-            data_oggi = df_bt.index[-1]
+            # Tracciamento continuo delle resistenze bianche strutturali
+            for idx, linea in enumerate(linee_bianche_proiettate):
+                mostra_in_legenda = True if idx == 0 else False
+                fig_bt.add_trace(grp.Scatter(
+                    x=[linea["data_inizio"], linea["data_fine"]], y=[linea["valore"], linea["valore"]],
+                    mode="lines", line=dict(color="#ffffff", width=2.5, dash="dash"),
+                    name="Resistenza Massimo Periodo", showlegend=mostra_in_legenda
+                ), row=1, col=1)
+                if linea["breakout"]:
+                    fig_bt.add_trace(grp.Scatter(
+                        x=[linea["data_breakout"]], y=[linea["valore"]], mode="markers",
+                        marker=dict(color="#d946ef", size=12, symbol="circle-open", line=dict(width=3)),
+                        name="Breakout Marubozu Rilevato", showlegend=mostra_in_legenda
+                    ), row=1, col=1)
+            
+            # Proiezione delle linee arancioni dei GEO-POC ancorati all'impulso
             for idx, (data_start, valore_poc) in enumerate(linee_poc_momentum):
                 fig_bt.add_trace(grp.Scatter(
                     x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
                     showlegend=False, line=dict(color="#f29e1f", width=2.5, dash="solid")
-                ))
+                ), row=1, col=1)
                 fig_bt.add_annotation(
                     x=data_start, y=valore_poc, text=f"POC {round(valore_poc, 2)}",
                     showarrow=False, yshift=8, xanchor="left",
                     font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
-                    bgcolor="rgba(15, 23, 42, 0.85)"
+                    bgcolor="rgba(15, 23, 42, 0.85)", row=1, col=1
                 )
-            fig_bt.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=550)
-            st.plotly_chart(fig_bt, use_container_width=True, key="bt_strat_chart")
             
-            # Statistiche e log finale delle performance
-            st.subheader("📊 Performance Engine Geometrico")
+            # 2. Sotto-grafico dell'oscillatore Z-Score dei residui (Riga 2)
+            fig_bt.add_trace(grp.Scatter(
+                x=df_bt.index, y=df_bt["Z_Score"], mode="lines", name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
+            ), row=2, col=1)
+            
+            # Disegno linee statiche e righe tratteggiate a +-2 e zero sulla riga 2
+            fig_bt.add_shape(type="line", x0=df_bt.index, x1=data_oggi, y0=soglia_zscore, y1=soglia_zscore, line=dict(color="#ef4444", width=1.5, dash="dash"), row=2, col=1, yref="y2")
+            fig_bt.add_shape(type="line", x0=df_bt.index, x1=data_oggi, y0=2.0, y1=2.0, line=dict(color="#22c55e", width=1.2, dash="dash"), row=2, col=1, yref="y2")
+            fig_bt.add_shape(type="line", x0=df_bt.index, x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="solid"), row=2, col=1, yref="y2")
+            fig_bt.add_shape(type="line", x0=df_bt.index, x1=data_oggi, y0=-2.0, y1=-2.0, line=dict(color="#ef4444", width=1.2, dash="dash"), row=2, col=1, yref="y2")
+            
+            fig_bt.update_layout(template="plotly_dark", height=700, margin=dict(l=20, r=20, t=10, b=10), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+            fig_bt.update_yaxes(title_text=f"Prezzo {bt_ticker} ($)", row=1, col=1)
+            fig_bt.update_yaxes(title_text="Deviazioni Std (Z)", range=[-5.5, 5.5], row=2, col=1)
+            fig_bt.update_xaxes(rangeslider_visible=False, row=1, col=1)
+            fig_bt.update_xaxes(rangeslider_visible=False, row=2, col=1)
+            
+            st.plotly_chart(fig_bt, use_container_width=True, key="bt_strat_chart_combined")
+            
+            # GRIGLIA DI RIEPILOGO DEGLI ORDINI EFFETTUATI
+            st.subheader("📋 Registro Esecuzioni Ingressi Operativi (Tab 3)")
+            st.info(f"⚙️ **Modello di Taglia Attivo nel Simulatore:** {bt_modello_size}")
             if trade_history:
-                df_trades = pd.DataFrame(trade_history)
-                win_rate = round((len(df_trades[df_trades["PnL ($)"] > 0]) / len(df_trades)) * 100, 2)
-                
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Ritorno Totale", f"{round(((capitale - capitale_iniziale) / capitale_iniziale) * 100, 2)} %")
-                c2.metric("Win Rate", f"{win_rate} %")
-                c3.metric("Capitale Finale", f"$ {round(capitale, 2)}")
-                st.dataframe(df_trades, use_container_width=True)
+                st.dataframe(pd.DataFrame(trade_history), use_container_width=True)
             else:
-                st.warning("Nessun trade registrato. Modifica la tolleranza dello Z-Score.")
+                st.warning("⚠️ Nessun ingresso registrato nello storico selezionato con i parametri correnti.")
+                
+            # ==============================================================================
+            # --- SEZIONE DESCRIZIONE DEL MODELLO DI INGRESSO (RICHIESTA) ---
+            # ==============================================================================
+            st.markdown("---")
+            st.markdown("### 🔏 Descrizione Tecnica del Modello di Ingresso Algoritmico")
+            st.markdown(f"""
+            Il modulo di backtest applica un protocollo rigido di esecuzione basato sul **Breakout Cinematico di Strutture di Distribuzione Locali**. 
+            Il modello mappa l'ingresso a mercato strutturandosi su tre fasi analitiche sequenziali:
+            
+            1. ⚡ **Innesco del Momentum (Anomalia Quantitativa):**
+               L'algoritmo monitora costantemente lo Z-Score dei residui estratti dalla regressione lineare rolling. Quando la linea blu perfora la barriera critica impostata a **+{soglia_zscore} Deviazioni Standard**, viene registrata un'anomalia di spinta balistica. Questo punto esatto definisce l'avvio della mappatura geometrica dei flussi.
+            
+            2. 📐 **Ancoraggio Geometrico della Resistenza:**
+               Nel momento esatto in cui scatta l'allerta dello Z-Score, l'algoritmo applica una scansione a ritroso (*Lookback di 65 candele*) per individuare il **Vero Massimo Strutturale precedente**. Da quel picco di prezzo viene proiettata verso destra una **linea bianca orizzontale tratteggiata**, definita come *Linea di Resistenza del Periodo di Consolidamento*.
+            
+            3. 🎯 **Breakout Marubozu & Ordine di Esecuzione (Candela $t+1$):**
+               La linea bianca rimane attiva sul grafico e continua a essere estesa fino a quando non viene identificata una candela **Marubozu Rialzista** (corpo esteso superiore del 5\\% alla media rolling recente e quasi priva di ombre superiori/inferiori). La candela Marubozu valida in chiusura la rottura formale della resistenza strutturale.
+               
+               *L'ordine di ingresso Long viene eseguito in modalità automatica **all'apertura della candela immediatamente successiva ($t+1$)**, azzerando il rischio di falso segnale intraday.*
+            """)
+            st.success("📐 Elaborazione del backtest conclusa. Descrizione del modello e registro caricate in dashboard.")
         else:
-            st.error("Dati storici insufficienti.")
+            st.error("Dati storici insufficienti per compilare il simulatore di backtest.")
 
 # ==========================================
 # --- TAB 4: LIVE ALERTS STRATEGICI ---
