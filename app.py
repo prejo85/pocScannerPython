@@ -488,7 +488,7 @@ with tab2:
             df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             df_g["Accelerazione_Geometrica"] = np.where(df_g["Z_Score"] >= geo_soglia, 1, 0)
             
-            # Calcolo dell'ATR per il Trailing Stop di uscita
+            # Calcolo dell'ATR utilizzato ESCLUSIVAMENTE come protezione della posizione
             tr = pd.concat([df_g["High"] - df_g["Low"], (df_g["High"] - df_g["Close"].shift(1)).abs(), (df_g["Low"] - df_g["Close"].shift(1)).abs()], axis=1).max(axis=1)
             df_g["ATR"] = tr.rolling(window=14).mean().fillna(tr.mean())
             
@@ -502,7 +502,7 @@ with tab2:
             segnali_di_breakout_storici = {} 
             stato_precedente = 0
 # ==============================================================================
-# --- TAB 2: PARTE 2B - MOTORE SCANNER MARUBOZU & SIMULATORE BACKTEST ---
+# --- TAB 2: PARTE 2B - SCANNER MARUBOZU & SIMULATORE PRESTAZIONI ---
 # ==============================================================================
             for i in range(geo_finestra, n_punti):
                 stato_attuale = df_g["Accelerazione_Geometrica"].iloc[i]
@@ -565,7 +565,7 @@ with tab2:
                     
                 stato_precedente = stato_attuale
             
-            # LOGICA DI SIMULAZIONE OPERATIVA DEI TRADE (CANDELA t+1)
+            # LOGICA DI SIMULAZIONE OPERATIVA DEI TRADE (ATR SOLO IN PROTEZIONE)
             capitale_corrente = float(geo_capitale)
             in_posizione = False
             trade_log = []
@@ -573,23 +573,33 @@ with tab2:
             for idx_c in range(geo_finestra, n_punti):
                 data_corrente = df_g.index[idx_c]
                 prezzo_apertura = float(df_g["Open"].iloc[idx_c])
+                prezzo_high = float(df_g["High"].iloc[idx_c])
                 prezzo_low = float(df_g["Low"].iloc[idx_c])
                 prezzo_chiusura = float(df_g["Close"].iloc[idx_c])
                 atr_corrente = float(df_g["ATR"].iloc[idx_c])
                 
                 if in_posizione:
                     if trade_corrente["tipo"] == "LONG":
+                        # L'ATR alza dinamicamente il livello minimo di protezione (Trailing Stop)
                         livello_trailing_atr = max(livello_trailing_atr, prezzo_chiusura - (2.0 * atr_corrente))
                         
-                        if prezzo_low <= trade_corrente["sl"]:
+                        # Target di Gain statico calcolato alla nascita del trade
+                        if prezzo_high >= trade_corrente["tp"]:
+                            pnl_lordo = (trade_corrente["tp"] - trade_corrente["prezzo_ingresso"]) * trade_corrente["taglia"]
+                            capitale_corrente += pnl_lordo
+                            trade_log.append({"Data Ingress": trade_corrente["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"), "Tipo": "LONG", "Esito": "TARGET GAIN COMPLETATO", "PnL ($)": round(pnl_lordo, 2), "Capitale ($)": round(capitale_corrente, 2)})
+                            in_posizione = False
+                        # Uscita in Stop Loss sulla base della tazza/rounding
+                        elif prezzo_low <= trade_corrente["sl"]:
                             pnl_lordo = (trade_corrente["sl"] - trade_corrente["prezzo_ingresso"]) * trade_corrente["taglia"]
                             capitale_corrente += pnl_lordo
                             trade_log.append({"Data Ingress": trade_corrente["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"), "Tipo": "LONG", "Esito": "STOP LOSS BASE", "PnL ($)": round(pnl_lordo, 2), "Capitale ($)": round(capitale_corrente, 2)})
                             in_posizione = False
+                        # Uscita in protezione da ATR (se scatta prima della base)
                         elif prezzo_low <= livello_trailing_atr:
                             pnl_lordo = (livello_trailing_atr - trade_corrente["prezzo_ingresso"]) * trade_corrente["taglia"]
                             capitale_corrente += pnl_lordo
-                            trade_log.append({"Data Ingress": trade_corrente["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"), "Tipo": "LONG", "Esito": "TRAILING ATR INCROCIO", "PnL ($)": round(pnl_lordo, 2), "Capitale ($)": round(capitale_corrente, 2)})
+                            trade_log.append({"Data Ingress": trade_corrente["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"), "Tipo": "LONG", "Esito": "PROTEZIONE ATR", "PnL ($)": round(pnl_lordo, 2), "Capitale ($)": round(capitale_corrente, 2)})
                             in_posizione = False
                 
                 if not in_posizione and (idx_c - 1) in segnali_di_breakout_storici:
@@ -599,7 +609,6 @@ with tab2:
                         distanza_stop = prezzo_apertura - dati_breakout["stop_loss_base"]
                         
                         if distanza_stop > 0:
-                            # CALCOLO MODULARE DEL POSITION SIZING SELEZIONATO
                             if modello_size == "Rischio Fisso Frazionario (Consigliato)":
                                 rischio_monetario = capitale_corrente * (geo_rischio_pct / 100)
                                 taglia_contratti = rischio_monetario / distanza_stop
@@ -611,11 +620,15 @@ with tab2:
                                 taglia_contratti = controvalore_esposizione / prezzo_apertura
                             
                             if taglia_contratti > 0:
+                                # Calcolo del Take Profit matematico fisso (Rapporto Rischio/Rendimento 1:3)
+                                livello_take_profit = prezzo_apertura + (3.0 * distanza_stop)
+                                
                                 trade_corrente = {
                                     "data": data_corrente.strftime("%d/%m/%Y"),
                                     "tipo": "LONG",
                                     "prezzo_ingresso": prezzo_apertura,
                                     "sl": dati_breakout["stop_loss_base"],
+                                    "tp": livello_take_profit,
                                     "taglia": taglia_contratti
                                 }
                                 livello_trailing_atr = prezzo_apertura - (2.0 * atr_corrente)
