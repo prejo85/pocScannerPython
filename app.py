@@ -648,83 +648,99 @@ with tab2:
                                 df_g.loc[data_corrente, "Linea_Protezione_ATR"] = livello_trailing_atr
                                 in_posizione = True
 # ==============================================================================
-# --- TAB 2: PARTE 3A - GRAPHIC RENDERING & TRACCIAMENTO VISIVO ---
+# --- TAB 2: PARTE 3A - GRAPHIC RENDERING A ASSI X CONDIVISI (SHARED ZOOM) ---
 # ==============================================================================
-            st.markdown(f"##### 📊 Grafico Strutturale con Linee di Resistenza ancorate al Massimo e Breakout Marubozu")
-            fig_geo = grp.Figure()
-            fig_geo.add_trace(grp.Candlestick(
-                x=df_g.index, open=df_g["Open"].astype(float), high=df_g["High"].astype(float),
-                low=df_g["Low"].astype(float), close=df_g["Close"].astype(float), name=geo_ticker
-            ))
+            st.markdown(f"##### 📊 Dashboard Grafica Integrata con Assi Temporali Sincronizzati (Zoom Linkato)")
+            
+            # Creiamo un subplot unico a due righe collegando nativamente gli assi X
+            fig_geo = make_subplots(
+                rows=2, cols=1, 
+                shared_xaxes=True, 
+                vertical_spacing=0.08, 
+                row_heights=[0.70, 0.30]
+            )
             
             data_oggi = df_g.index[-1]
             p_attuale = float(close_series.iloc[-1])
             
-            # Disegno grafico della linea magenta fucsia di protezione dell'ATR Trailing Stop
+            # 1. Inseriamo il grafico a candele principale nella riga 1
+            fig_geo.add_trace(grp.Candlestick(
+                x=df_g.index, open=df_g["Open"].astype(float), high=df_g["High"].astype(float),
+                low=df_g["Low"].astype(float), close=df_g["Close"].astype(float), name=geo_ticker
+            ), row=1, col=1)
+            
+            # Tracciamento grafico della linea magenta fucsia di protezione dell'ATR Trailing Stop
             if "Linea_Protezione_ATR" in df_g.columns and not df_g["Linea_Protezione_ATR"].isna().all():
                 fig_geo.add_trace(grp.Scatter(
                     x=df_g.index, y=df_g["Linea_Protezione_ATR"], mode="lines",
                     line=dict(color="#d946ef", width=2, dash="dot"), name="Protezione Trailing ATR"
-                ))
+                ), row=1, col=1)
             
-            # Rendering linee bianche delle resistenze di periodo
+            # Rendering linee bianche delle resistenze strutturali di periodo
             for idx, linea in enumerate(linee_bianche_proiettate):
                 mostra_in_legenda = True if idx == 0 else False
                 fig_geo.add_trace(grp.Scatter(
                     x=[linea["data_inizio"], linea["data_fine"]], y=[linea["valore"], linea["valore"]],
                     mode="lines", line=dict(color="#ffffff", width=2.5, dash="dash"),
                     name="Resistenza Massimo Periodo", showlegend=mostra_in_legenda
-                ))
+                ), row=1, col=1)
+                
                 if linea["breakout"]:
                     fig_geo.add_trace(grp.Scatter(
                         x=[linea["data_breakout"]], y=[linea["valore"]], mode="markers",
                         marker=dict(color="#d946ef", size=12, symbol="circle-open", line=dict(width=3)),
                         name="Breakout Marubozu Rilevato", showlegend=mostra_in_legenda
-                    ))
+                    ), row=1, col=1)
             
-            # Proiezione lineare orizzontale dei nodi volumetrici GEO-POC
+            # Proiezione lineare orizzontale dei nodi volumetrici GEO-POC con annotazione statica
             for idx, (data_start, valore_poc) in enumerate(linee_poc_geometriche):
                 fig_geo.add_trace(grp.Scatter(
                     x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
                     showlegend=False, line=dict(color="#f29e1f", width=2.5, dash="solid")
-                ))
+                ), row=1, col=1)
                 fig_geo.add_annotation(
                     x=data_start, y=valore_poc, text=f"GEO-POC {round(valore_poc, 2)}",
                     showarrow=False, yshift=8, xanchor="left",
                     font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
-                    bgcolor="rgba(15, 23, 42, 0.85)"
+                    bgcolor="rgba(15, 23, 42, 0.85)", row=1, col=1
                 )
-
 # ==============================================================================
-# --- TAB 2: PARTE 3B - Z-SCORE OSCILLATOR, TABELLA TRADE & NOTE ---
+# --- TAB 2: PARTE 3B - GRAPHIC SÈTUP Z-SCORE, TABELLA TRADE & NOTE ---
 # ==============================================================================
-            fig_geo.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=500, margin=dict(l=20, r=20, t=10, b=10))
-            st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
-            
-            # Sotto-grafico dell'oscillatore quantitativo Z-Score dei residui
-            st.markdown("##### 📉 Oscillatore Quantitativo: Z-Score dei Residui della Regressione")
-            fig_zg = grp.Figure()
-            fig_zg.add_trace(grp.Scatter(
+            # 2. Agganciamo l'oscillatore dello Z-Score dei residui sulla riga 2
+            fig_geo.add_trace(grp.Scatter(
                 x=df_g.index, y=df_g["Z_Score"], mode="lines", name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
-            ))
+            ), row=2, col=1)
             
-            # --- AGGIORNAMENTO LOGICA DELLE RIGHE DI SOGLIA SOTTILI ---
-            # Linea della soglia utente dinamica (innesco POC accelerazione)
-            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dash"))
-            
+            # Disegno delle forme geometriche di soglia legate alla riga 2 dello Z-Score
+            # Linea della soglia utente dinamica
+            fig_geo.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dash"), row=2, col=1)
             # Linea tratteggiata sottile VERDE a +2
-            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=2.0, y1=2.0, line=dict(color="#22c55e", width=1.0, dash="dash"))
-            
+            fig_geo.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=2.0, y1=2.0, line=dict(color="#22c55e", width=1.0, dash="dash"), row=2, col=1)
             # Linea centrale dello zero
-            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="solid"))
-            
+            fig_geo.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="solid"), row=2, col=1)
             # Linea tratteggiata sottile ROSSA a -2
-            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=-2.0, y1=-2.0, line=dict(color="#ef4444", width=1.0, dash="dash"))
+            fig_geo.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=-2.0, y1=-2.0, line=dict(color="#ef4444", width=1.0, dash="dash"), row=2, col=1)
             
-            fig_zg.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=20, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)", range=[-5.5, 5.5]))
-            st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
+            # Configurazione del layout unico: disattiviamo i range slider nativi che creerebbero conflitti sullo zoom
+            fig_geo.update_layout(
+                template="plotly_dark", 
+                height=700, 
+                margin=dict(l=20, r=20, t=10, b=10),
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
             
-            # REPORT PRESTAZIONI FINANZIARIE
+            # Applichiamo i limiti e le etichette per asse y1 e y2 in modo coordinato
+            fig_geo.update_yaxes(title_text=f"Prezzo {geo_ticker} ($)", row=1, col=1)
+            fig_geo.update_yaxes(title_text="Deviazioni Std (Z)", range=[-5.5, 5.5], row=2, col=1)
+            fig_geo.update_xaxes(rangeslider_visible=False, row=1, col=1)
+            fig_geo.update_xaxes(rangeslider_visible=False, row=2, col=1)
+            
+            # Inviamo l'unico grafico combinato a Streamlit
+            st.plotly_chart(fig_geo, use_container_width=True, key="geo_combined_shared_chart")
+            
+            # --- REPORT PRESTAZIONI FINANZIARIE ---
             st.markdown("### 📊 Performance Ledger: Backtest Strategia Marubozu Breakout")
             st.info(f"⚙️ **Modello di Taglia Attivo nel Simulatore:** {modello_size}")
             if trade_log:
@@ -774,7 +790,7 @@ with tab2:
             3. ⚡ **Modello Leva Finanziaria Costante:**
                Il controvalore totale del trade viene impostato come moltiplicatore lineare del capitale operativo disponibile (es. Leva **{quota_o_leva if "Leva" in modello_size else 1.0}x**). Permette di simulare l'esposizione costante tipica dei contratti Future o dei derivati marginati.
             """)
-            st.success("📐 Mappatura e report del dimensionamento completati con successo.")
+            st.success("📐 Mappatura e report del dimensionamento completati con successo con assi X sincronizzati.")
         else:
             st.error("Dati storici non sufficienti per calcolare la regressione rolling.")
 
