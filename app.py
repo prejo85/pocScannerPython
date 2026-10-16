@@ -512,7 +512,7 @@ with tab2:
             data_oggi = df_g.index[-1]
             p_attuale = float(close_series.iloc[-1])
             
-            # --- ALGORITMO DI RILEVAMENTO FIGURA DELLA TAZZA (CUP & HANDLE GEOMETRIC) ---
+            # --- ALGORITMO DI RILEVAMENTO FIGURA DELLA TAZZA OTTIMIZZATO (CUP & HANDLE GEOMETRIC) ---
             if len(df_g) > 20:
                 idx_max_assoluto = df_g["High"].idxmax()
                 val_max_assoluto = float(df_g["High"].max())
@@ -533,14 +533,14 @@ with tab2:
                         distanza_bordi_pct = abs(val_max_assoluto - val_bordo_destro) / val_max_assoluto
                         profondita_tazza_ok = val_fondo_tazza < min(val_max_assoluto, val_bordo_destro)
                         
-                        # Se i bordi sono allineati con tolleranza del 15%, disegna la tazza geometrica
-                        if distanza_bordi_pct <= 0.15 and profondita_tazza_ok:
-                            # Disegna la linea di resistenza statica (Neckline)
+                        # Ottimizzazione: Tolleranza aumentata al 30% per includere le tazze asimmetriche in trend rialzista
+                        if distanza_bordi_pct <= 0.30 and profondita_tazza_ok:
+                            # Disegna la linea di resistenza statica del bordo sinistro (Neckline)
                             fig_geo.add_trace(grp.Scatter(
-                                x=[date_max_assoluto, idx_bordo_destro], 
+                                x=[date_max_assoluto, data_oggi], 
                                 y=[val_max_assoluto, val_max_assoluto],
                                 mode="lines",
-                                line=dict(color="#ffffff", width=2, dash="dash"),
+                                line=dict(color="rgba(255, 255, 255, 0.6)", width=2, dash="dash"),
                                 name="Resistenza Tazza (Neckline)"
                             ))
                             # Disegna la concavità della scodella (Sinistro -> Fondo -> Destro)
@@ -549,7 +549,7 @@ with tab2:
                                 y=[val_max_assoluto, val_fondo_tazza, val_bordo_destro],
                                 mode="lines+markers",
                                 line=dict(color="#38bdf8", width=2.5),
-                                marker=dict(size=6, color="#c084fc"),
+                                marker=dict(size=8, color="#c084fc", symbol="diamond"),
                                 name="Profilo Geometrico Tazza"
                             ))
             
@@ -575,6 +575,8 @@ with tab2:
                 x=df_g.index, y=df_g["Z_Score"], mode="lines", 
                 name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ))
+            
+            # Correzione dinamica per evitare il crash delle shapes su x0/x1 con array interi
             fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
             fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
             
