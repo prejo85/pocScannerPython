@@ -411,19 +411,23 @@ with tab2:
     st.subheader("📐 Laboratorio Geometrico: Tracciamento e Backtest Quantitativo")
     st.markdown("Rileva il cambio di momentum tramite lo Z-Score, identifica le strutture di accumulazione e simula gli ingressi operativi sui breakout delle candele Marubozu.")
     
-    # RIGA 1: Parametri di scansione dell'asset e dello storico
-    g_col1, g_col2, g_col3 = st.columns(3)
+    # RIGA 1: Parametri di scansione dell'asset, dello storico e del TIMEFRAME
+    g_col1, g_col2, g_col3, g_col4 = st.columns(4)
     with g_col1:
         geo_ticker = st.text_input("Inserisci Ticker da scansionare:", value="AAPL", key="geo_tk_input")
     with g_col2:
         geo_periodo = st.selectbox("Orizzonte storico dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], index=0, key="geo_per_sel")
         mappa_periodi_geo = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
     with g_col3:
-        geo_finestra = st.slider("Finestra Regressione Lineare (Giorni base):", min_value=20, max_value=100, value=50, step=5, key="geo_win_sl")
+        # NUOVO: Selettore del Timeframe operativo dinamico
+        geo_tf_label = st.selectbox("Seleziona Timeframe Candele:", ["Giornaliero (Daily)", "Settimanale (Weekly)", "Mensile (Monthly)"], key="geo_tf_sel")
+        geo_tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk", "Mensile (Monthly)": "1mo"}[geo_tf_label]
+    with g_col4:
+        geo_finestra = st.slider("Finestra Regressione Lineare (Candele base):", min_value=20, max_value=100, value=50, step=5, key="geo_win_sl")
 
     # RIGA 2: Controlli di Capitale e Parametri di Rischio
-    g_col4, g_col5, g_col6 = st.columns(3)
-    with g_col4:
+    g_col4_2, g_col5, g_col6 = st.columns(3)
+    with g_col4_2:
         geo_soglia = st.slider("Soglia Z-Score per Cambio Momentum:", min_value=1.5, max_value=3.5, value=2.0, step=0.1, key="geo_z_sl")
     with g_col5:
         geo_capitale = st.number_input("Capitale Operativo Iniziale ($):", min_value=100, value=10000, step=500, key="geo_cap_input")
@@ -444,13 +448,15 @@ with tab2:
             min_value=0.5, value=25.0 if "Percentuale" in modello_size else 1.0, step=1.0, key="geo_quota_leva"
         )
     st.markdown("")
-    
+
 # ==============================================================================
-# --- TAB 2: PARTE 2A - CORE ENGINE QUANTITATIVO & CALCOLO MATRICIALE ---
+# --- TAB 2: PARTE 2A - CORE ENGINE QUANTITATIVO & CALCOLO INTERVALLO ---
 # ==============================================================================
     if st.button("📐 Genera Struttura Geometrica & Avvia Backtest", type="primary", key="geo_btn_start"):
-        st.info(f"Elaborazione matriciale e simulazione storica degli ordini per {geo_ticker}...")
-        df_g = yf.download(tickers=geo_ticker, period=mappa_periodi_geo[geo_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
+        st.info(f"Elaborazione matriciale e simulazione storica degli ordini per {geo_ticker} in timeframe {geo_tf_label}...")
+        
+        # MODIFICA: Ora la chiamata yfinance accetta l'intervallo temporale scelto dall'utente
+        df_g = yf.download(tickers=geo_ticker, period=mappa_periodi_geo[geo_periodo], interval=geo_tf_attivo, auto_adjust=False, multi_level_index=False, progress=False)
         
         if df_g is not None and len(df_g) > geo_finestra:
             df_g.columns = [str(c).strip() for c in df_g.columns]
@@ -484,9 +490,10 @@ with tab2:
             df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             df_g["Accelerazione_Geometrica"] = np.where(df_g["Z_Score"] >= geo_soglia, 1, 0)
             
-            # Calcolo dell'ATR utilizzato esclusivamente come stop protettivo dinamico
+            # Calcolo dell'ATR basato sulle candele del timeframe attivo
             tr = pd.concat([df_g["High"] - df_g["Low"], (df_g["High"] - df_g["Close"].shift(1)).abs(), (df_g["Low"] - df_g["Close"].shift(1)).abs()], axis=1).max(axis=1)
             df_g["ATR"] = tr.rolling(window=14).mean().fillna(tr.mean())
+
             
 # ==============================================================================
 # --- TAB 2: PARTE 2B - SCANNER STRUTTURALE POC E RESISTENZE MARUBOZU ---
