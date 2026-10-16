@@ -405,7 +405,7 @@ with tab1:
                     else: 
                         st.warning(f"Dati storici insufficienti per {ticker}.")
 # ==============================================================================
-# --- TAB 2: PARTE 1 - CONFIGURAZIONE INTERFACCIA UTENTE & COMPONENTI DE SCELTA ---
+# --- TAB 2: PARTE 1 - CONFIGURAZIONE INTERFACCIA UTENTE & INPUT ---
 # ==============================================================================
 with tab2:
     st.subheader("📐 Laboratorio Geometrico: Tracciamento e Backtest Quantitativo")
@@ -430,27 +430,23 @@ with tab2:
     with g_col6:
         geo_rischio_pct = st.slider("Rischio scelto per Trade (%):", min_value=0.2, max_value=5.0, value=1.0, step=0.1, key="geo_risk_sl")
 
-    # RIGA 3: NUOVI PULSANTI DI SCELTA MODULARE
+    # RIGA 3: Pulsanti di scelta modulare del modello di Position Sizing
     g_col7, g_col8 = st.columns(2)
     with g_col7:
         modello_size = st.radio(
             "Seleziona Modello di Gestione Taglia (Position Sizing):",
             ["Rischio Fisso Frazionario (Consigliato)", "Percentuale Fissa del Capitale", "Leva Finanziaria Costante"],
-            index=0,
-            key="geo_modello_size"
+            index=0, key="geo_modello_size"
         )
     with g_col8:
         quota_o_leva = st.number_input(
             "Valore per Modello Alternativo (% Capitale o Moltiplicatore Leva):",
-            min_value=0.5,
-            value=25.0 if "Percentuale" in modello_size else 1.0,
-            step=1.0,
-            key="geo_quota_leva"
+            min_value=0.5, value=25.0 if "Percentuale" in modello_size else 1.0, step=1.0, key="geo_quota_leva"
         )
-
     st.markdown("")
+    
 # ==============================================================================
-# --- TAB 2: PARTE 2A - RETE MATRICIALE & SEGNALI Z-SCORE ---
+# --- TAB 2: PARTE 2A - CORE ENGINE QUANTITATIVO & CALCOLO MATRICIALE ---
 # ==============================================================================
     if st.button("📐 Genera Struttura Geometrica & Avvia Backtest", type="primary", key="geo_btn_start"):
         st.info(f"Elaborazione matriciale e simulazione storica degli ordini per {geo_ticker}...")
@@ -488,24 +484,25 @@ with tab2:
             df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             df_g["Accelerazione_Geometrica"] = np.where(df_g["Z_Score"] >= geo_soglia, 1, 0)
             
-            # Calcolo dell'ATR utilizzato ESCLUSIVAMENTE come protezione della posizione
+            # Calcolo dell'ATR utilizzato esclusivamente come stop protettivo dinamico
             tr = pd.concat([df_g["High"] - df_g["Low"], (df_g["High"] - df_g["Close"].shift(1)).abs(), (df_g["Low"] - df_g["Close"].shift(1)).abs()], axis=1).max(axis=1)
             df_g["ATR"] = tr.rolling(window=14).mean().fillna(tr.mean())
             
-            # Parametri rolling dinamici per identificare la Marubozu
+# ==============================================================================
+# --- TAB 2: PARTE 2B - SCANNER STRUTTURALE POC E RESISTENZE MARUBOZU ---
+# ==============================================================================
+            # Calcolo dei parametri rolling dinamici per identificare la Marubozu
             corpi = (df_g["Close"].astype(float) - df_g["Open"].astype(float)).abs()
             range_totale = df_g["High"].astype(float) - df_g["Low"].astype(float)
             corpo_medio = corpi.rolling(window=20).mean().fillna(range_totale.mean())
             
+            df_g["Linea_Protezione_ATR"] = np.nan
             poc_grezzi = []
             linee_bianche_proiettate = [] 
             segnali_di_breakout_storici = {} 
             stato_precedente = 0
-# ==============================================================================
-# --- TAB 2: PARTE 2B - SCANNER MARUBOZU & SIMULATORE PRESTAZIONI ---
-# ==============================================================================
-            # Inizializziamo una serie vuota nel DataFrame per salvare la linea visiva dell'ATR Stop
-            df_g["Linea_Protezione_ATR"] = np.nan
+            ultimo_index_innesco = -999
+            minimo_giorni_distanza = 15 
             
             for i in range(geo_finestra, n_punti):
                 stato_attuale = df_g["Accelerazione_Geometrica"].iloc[i]
@@ -513,60 +510,78 @@ with tab2:
                 if stato_attuale == 1 and stato_precedente == 0:
                     start_idx = i
                     data_innesco = df_g.index[start_idx]
+                    atr_attuale = float(df_g["ATR"].iloc[start_idx])
                     
-                    df_da_mom_a_oggi = df_g.iloc[start_idx:]
-                    p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
-                    if p_poc is not None:
-                        poc_grezzi.append((data_innesco, float(p_poc)))
-                    
-                    finestra_lookback = max(0, start_idx - 65)
-                    df_periodo_precedente = df_g.iloc[finestra_lookback : start_idx + 1]
-                    
-                    val_massimo_riferimento = float(df_periodo_precedente["High"].max())
-                    idx_data_massimo = df_periodo_precedente["High"].idxmax()
-                    
-                    data_fine_linea = df_g.index[-1]
-                    trovato_breakout = False
-                    data_breakout_marubozu = None
-                    val_fondo_rounding = float(df_periodo_precedente["Low"].min()) 
-                    
-                    for j in range(start_idx, n_punti):
-                        c_open = float(df_g["Open"].iloc[j])
-                        c_close = float(df_g["Close"].iloc[j])
-                        c_high = float(df_g["High"].iloc[j])
-                        c_low = float(df_g["Low"].iloc[j])
+                    # FILTRO REPLICA 1: Distanza temporale minima tra inneschi Z-Score
+                    if (start_idx - ultimo_index_innesco) >= minimo_giorni_distanza:
+                        df_da_mom_a_oggi = df_g.iloc[start_idx:]
+                        p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
                         
-                        dimensione_corpo = c_close - c_open
-                        range_candela = c_high - c_low
-                        
-                        if range_candela > 0 and dimensione_corpo > 0:
-                            is_corpo_ampio = dimensione_corpo > (corpo_medio.iloc[j] * 1.05)
-                            senza_ombra_sup = (c_high - c_close) / range_candela <= 0.22
-                            senza_ombra_inf = (c_open - c_low) / range_candela <= 0.22
-                            is_marubozu = is_corpo_ampio and senza_ombra_sup and senza_ombra_inf
+                        if p_poc is not None:
+                            val_poc_attuale = float(p_poc)
+                            accetta_nuovo_poc = True
                             
-                            if is_marubozu and c_close > val_massimo_riferimento:
-                                trovato_breakout = True
-                                data_fine_linea = df_g.index[j]
-                                data_breakout_marubozu = df_g.index[j]
-                                segnali_di_breakout_storici[j] = {
-                                    "tipo": "LONG",
-                                    "linea_resistenza": val_massimo_riferimento,
-                                    "stop_loss_base": val_fondo_rounding
-                                }
-                                break
+                            # FILTRO REPLICA 2: Distanza matematica basata sull'ATR per eliminare POC sovrapposti
+                            for dt_saved, val_saved in poc_grezzi:
+                                if abs(val_poc_attuale - val_saved) <= (1.5 * atr_attuale):
+                                    accetta_nuovo_poc = False
+                                    break
+                            
+                            if accetta_nuovo_poc:
+                                poc_grezzi.append((data_innesco, val_poc_attuale))
+                                ultimo_index_innesco = start_idx
                                 
-                    linee_bianche_proiettate.append({
-                        "data_inizio": idx_data_massimo,
-                        "data_innesco_z": data_innesco,
-                        "data_fine": data_fine_linea,
-                        "valore": val_massimo_riferimento,
-                        "breakout": trovato_breakout,
-                        "data_breakout": data_breakout_marubozu
-                    })
+                                # Ricerca del Vero Massimo di Periodo strutturale (Lookback 65D)
+                                finestra_lookback = max(0, start_idx - 65)
+                                df_periodo_precedente = df_g.iloc[finestra_lookback : start_idx + 1]
+                                val_massimo_riferimento = float(df_periodo_precedente["High"].max())
+                                idx_data_massimo = df_periodo_precedente["High"].idxmax()
+                                
+                                data_fine_linea = df_g.index[-1]
+                                trovato_breakout = False
+                                data_breakout_marubozu = None
+                                val_fondo_rounding = float(df_periodo_precedente["Low"].min()) 
+                                
+                                for j in range(start_idx, n_punti):
+                                    c_open = float(df_g["Open"].iloc[j])
+                                    c_close = float(df_g["Close"].iloc[j])
+                                    c_high = float(df_g["High"].iloc[j])
+                                    c_low = float(df_g["Low"].iloc[j])
+                                    
+                                    dimensione_corpo = c_close - c_open
+                                    range_candela = c_high - c_low
+                                    
+                                    if range_candela > 0 and dimensione_corpo > 0:
+                                        is_corpo_ampio = dimensione_corpo > (corpo_medio.iloc[j] * 1.05)
+                                        senza_ombra_sup = (c_high - c_close) / range_candela <= 0.22
+                                        senza_ombra_inf = (c_open - c_low) / range_candela <= 0.22
+                                        is_marubozu = is_corpo_ampio and senza_ombra_sup and senza_ombra_inf
+                                        
+                                        if is_marubozu and c_close > val_massimo_riferimento:
+                                            trovato_breakout = True
+                                            data_fine_linea = df_g.index[j]
+                                            data_breakout_marubozu = df_g.index[j]
+                                            segnali_di_breakout_storici[j] = {
+                                                "tipo": "LONG",
+                                                "linea_resistenza": val_massimo_riferimento,
+                                                "stop_loss_base": val_fondo_rounding
+                                            }
+                                            break
+                                            
+                                linee_bianche_proiettate.append({
+                                    "data_inizio": idx_data_massimo,
+                                    "data_innesco_z": data_innesco,
+                                    "data_fine": data_fine_linea,
+                                    "valore": val_massimo_riferimento,
+                                    "breakout": trovato_breakout,
+                                    "data_breakout": data_breakout_marubozu
+                                })
                     
                 stato_precedente = stato_attuale
-            
+            linee_poc_geometriche = poc_grezzi
+# ==============================================================================
+# --- TAB 2: PARTE 2C - ENGINE STRATEGICO TRADE SIMULATOR (CANDELA t+1) ---
+# ==============================================================================
             capitale_corrente = float(geo_capitale)
             in_posizione = False
             trade_log = []
@@ -581,27 +596,30 @@ with tab2:
                 
                 if in_posizione:
                     if trade_corrente["tipo"] == "LONG":
-                        # L'ATR stringe la protezione alzandosi a gradini
+                        # L'ATR protegge la posizione alzandosi a gradini senza condizionare il target di gain
                         livello_trailing_atr = max(livello_trailing_atr, prezzo_chiusura - (2.0 * atr_corrente))
-                        # Salviamo il dato nel DataFrame per il tracciamento grafico
                         df_g.loc[data_corrente, "Linea_Protezione_ATR"] = livello_trailing_atr
                         
+                        # Target di Gain fisso (Rapporto Rischio/Rendimento 1:3)
                         if prezzo_high >= trade_corrente["tp"]:
                             pnl_lordo = (trade_corrente["tp"] - trade_corrente["prezzo_ingresso"]) * trade_corrente["taglia"]
                             capitale_corrente += pnl_lordo
                             trade_log.append({"Data Ingress": trade_corrente["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"), "Tipo": "LONG", "Esito": "TARGET GAIN COMPLETATO", "PnL ($)": round(pnl_lordo, 2), "Capitale ($)": round(capitale_corrente, 2)})
                             in_posizione = False
+                        # Uscita protettiva statica alla base della concavità/rounding
                         elif prezzo_low <= trade_corrente["sl"]:
                             pnl_lordo = (trade_corrente["sl"] - trade_corrente["prezzo_ingresso"]) * trade_corrente["taglia"]
                             capitale_corrente += pnl_lordo
                             trade_log.append({"Data Ingress": trade_corrente["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"), "Tipo": "LONG", "Esito": "STOP LOSS BASE", "PnL ($)": round(pnl_lordo, 2), "Capitale ($)": round(capitale_corrente, 2)})
                             in_posizione = False
+                        # Intervento del Trailing Stop gestito dall'ATR
                         elif prezzo_low <= livello_trailing_atr:
                             pnl_lordo = (livello_trailing_atr - trade_corrente["prezzo_ingresso"]) * trade_corrente["taglia"]
                             capitale_corrente += pnl_lordo
                             trade_log.append({"Data Ingress": trade_corrente["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"), "Tipo": "LONG", "Esito": "PROTEZIONE ATR", "PnL ($)": round(pnl_lordo, 2), "Capitale ($)": round(capitale_corrente, 2)})
                             in_posizione = False
                 
+                # Esecuzione del trade all'apertura del giorno (t+1) successivo al breakout della Marubozu
                 if not in_posizione and (idx_c - 1) in segnali_di_breakout_storici:
                     dati_breakout = segnali_di_breakout_storici[idx_c - 1]
                     
@@ -609,6 +627,7 @@ with tab2:
                         distanza_stop = prezzo_apertura - dati_breakout["stop_loss_base"]
                         
                         if distanza_stop > 0:
+                            # Calcolo della taglia basato sul pulsante di scelta selezionato
                             if modello_size == "Rischio Fisso Frazionario (Consigliato)":
                                 rischio_monetario = capitale_corrente * (geo_rischio_pct / 100)
                                 taglia_contratti = rischio_monetario / distanza_stop
@@ -622,32 +641,14 @@ with tab2:
                             if taglia_contratti > 0:
                                 livello_take_profit = prezzo_apertura + (3.0 * distanza_stop)
                                 trade_corrente = {
-                                    "data": data_corrente.strftime("%d/%m/%Y"),
-                                    "tipo": "LONG",
-                                    "prezzo_ingresso": prezzo_apertura,
-                                    "sl": dati_breakout["stop_loss_base"],
-                                    "tp": livello_take_profit,
-                                    "taglia": taglia_contratti
+                                    "data": data_corrente.strftime("%d/%m/%Y"), "tipo": "LONG", "prezzo_ingresso": prezzo_apertura,
+                                    "sl": dati_breakout["stop_loss_base"], "tp": livello_take_profit, "taglia": taglia_contratti
                                 }
                                 livello_trailing_atr = prezzo_apertura - (2.0 * atr_corrente)
                                 df_g.loc[data_corrente, "Linea_Protezione_ATR"] = livello_trailing_atr
                                 in_posizione = True
-
-            linee_poc_geometriche = []
-            tolleranza_filtro = 0.01  
-            for data_start, valore_poc in poc_grezzi:
-                trovato_duplicato = False
-                for idx_s, (dt_saved, val_saved) in enumerate(linee_poc_geometriche):
-                    if abs(valore_poc - val_saved) / val_saved <= tolleranza_filtro:
-                        trovato_duplicato = True
-                        if data_start > dt_saved:
-                            linee_poc_geometriche[idx_s] = (data_start, valore_poc)
-                        break
-                if not trovato_duplicato:
-                    linee_poc_geometriche.append((data_start, valore_poc))
-
 # ==============================================================================
-# --- TAB 2: PARTE 3A - TRACCIAMENTO GRAFICO PRINCIPALE PLOTLY ---
+# --- TAB 2: PARTE 3A - GRAPHIC RENDERING & TRACCIAMENTO VISIVO ---
 # ==============================================================================
             st.markdown(f"##### 📊 Grafico Strutturale con Linee di Resistenza ancorate al Massimo e Breakout Marubozu")
             fig_geo = grp.Figure()
@@ -659,38 +660,29 @@ with tab2:
             data_oggi = df_g.index[-1]
             p_attuale = float(close_series.iloc[-1])
             
-            # --- NUOVO: DISEGNO DELLA LINEA DI PROTEZIONE TRAILING ATR SUL GRAFICO Prezzi ---
+            # Disegno grafico della linea magenta fucsia di protezione dell'ATR Trailing Stop
             if "Linea_Protezione_ATR" in df_g.columns and not df_g["Linea_Protezione_ATR"].isna().all():
                 fig_geo.add_trace(grp.Scatter(
-                    x=df_g.index,
-                    y=df_g["Linea_Protezione_ATR"],
-                    mode="lines",
-                    line=dict(color="#d946ef", width=2, dash="dot"),
-                    name="Protezione Trailing ATR (2.0x)"
+                    x=df_g.index, y=df_g["Linea_Protezione_ATR"], mode="lines",
+                    line=dict(color="#d946ef", width=2, dash="dot"), name="Protezione Trailing ATR"
                 ))
             
-            # Rendering delle linee bianche di resistenza strutturale
+            # Rendering linee bianche delle resistenze di periodo
             for idx, linea in enumerate(linee_bianche_proiettate):
                 mostra_in_legenda = True if idx == 0 else False
                 fig_geo.add_trace(grp.Scatter(
-                    x=[linea["data_inizio"], linea["data_fine"]], 
-                    y=[linea["valore"], linea["valore"]],
-                    mode="lines",
-                    line=dict(color="#ffffff", width=2.5, dash="dash"),
-                    name="Resistenza Massimo Periodo",
-                    showlegend=mostra_in_legenda
+                    x=[linea["data_inizio"], linea["data_fine"]], y=[linea["valore"], linea["valore"]],
+                    mode="lines", line=dict(color="#ffffff", width=2.5, dash="dash"),
+                    name="Resistenza Massimo Periodo", showlegend=mostra_in_legenda
                 ))
-                
                 if linea["breakout"]:
                     fig_geo.add_trace(grp.Scatter(
-                        x=[linea["data_breakout"]], y=[linea["valore"]],
-                        mode="markers",
+                        x=[linea["data_breakout"]], y=[linea["valore"]], mode="markers",
                         marker=dict(color="#d946ef", size=12, symbol="circle-open", line=dict(width=3)),
-                        name="Breakout Marubozu Rilevato",
-                        showlegend=mostra_in_legenda
+                        name="Breakout Marubozu Rilevato", showlegend=mostra_in_legenda
                     ))
             
-            # Tracciamento dei livelli GEO-POC orizzontali calcolati dallo Z-Score
+            # Proiezione lineare orizzontale dei nodi volumetrici GEO-POC
             for idx, (data_start, valore_poc) in enumerate(linee_poc_geometriche):
                 fig_geo.add_trace(grp.Scatter(
                     x=[data_start, data_oggi], y=[valore_poc, valore_poc], mode="lines",
@@ -702,26 +694,24 @@ with tab2:
                     font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
                     bgcolor="rgba(15, 23, 42, 0.85)"
                 )
-
 # ==============================================================================
-# --- TAB 2: PARTE 3B - Z-SCORE OSCILLATOR & LEDGER PRESTAZIONI ---
+# --- TAB 2: PARTE 3B - Z-SCORE OSCILLATOR, TABELLA TRADE & NOTE ---
 # ==============================================================================
             fig_geo.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=500, margin=dict(l=20, r=20, t=10, b=10))
             st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
             
-            # Sotto-grafico dell'oscillatore Z-Score
+            # Sotto-grafico dell'oscillatore quantitativo Z-Score dei residui
             st.markdown("##### 📉 Oscillatore Quantitativo: Z-Score dei Residui della Regressione")
             fig_zg = grp.Figure()
             fig_zg.add_trace(grp.Scatter(
-                x=df_g.index, y=df_g["Z_Score"], mode="lines", 
-                name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
+                x=df_g.index, y=df_g["Z_Score"], mode="lines", name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ))
             fig_zg.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
             fig_zg.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
             fig_zg.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=20, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)"))
             st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
             
-            # REPORT PRESTAZIONI DEL BACKTEST
+            # REPORT PRESTAZIONI FINANZIARIE
             st.markdown("### 📊 Performance Ledger: Backtest Strategia Marubozu Breakout")
             st.info(f"⚙️ **Modello di Taglia Attivo nel Simulatore:** {modello_size}")
             if trade_log:
@@ -737,12 +727,11 @@ with tab2:
                     st.metric("Affidabilità (Win Rate)", f"{round(win_rate, 2)} %", f"{len(operazioni_vincenti)} su {len(df_report)} Trades")
                 with perf_col3:
                     st.metric("Uscita Media Trailing ATR", f"Fattore 2.0x ATR", "Incrocio Volatilità")
-                
                 st.dataframe(df_report, use_container_width=True)
             else:
-                st.warning("⚠️ Nessun trade registrato nel periodo con le impostazioni correnti.")
+                st.warning("⚠️ Nessun trade registrato nel periodo storico selezionato.")
                 
-            # Tabella riassuntiva dello stato dei nodi statici
+            # Tabella di riepilogo dello stato strutturale dei nodi
             if linee_poc_geometriche:
                 st.markdown("##### 📋 Stato dei Livelli di Supporto/Resistenza Geometrici Rilevati")
                 dati_tabella_geo = []
@@ -750,10 +739,8 @@ with tab2:
                     dist_pct = ((p_attuale - val_p) / val_p) * 100
                     stato_nodo = "🟢 SOPRA (Supporto)" if dist_pct >= 0 else "🔴 SOTTO (Resistenza)"
                     dati_tabella_geo.append({
-                        "Data Rilevazione Segnale": dt_p.strftime("%d/%m/%Y"),
-                        "Prezzo del GEO-POC": f"$ {round(val_p, 2)}",
-                        "Distanza Percentuale Corrente": f"{round(dist_pct, 2)} %",
-                        "Stato Strutturale": stato_nodo
+                        "Data Rilevazione Segnale": dt_p.strftime("%d/%m/%Y"), "Prezzo del GEO-POC": f"$ {round(val_p, 2)}",
+                        "Distanza Percentuale Corrente": f"{round(dist_pct, 2)} %", "Stato Strutturale": stato_nodo
                     })
                 st.dataframe(pd.DataFrame(dati_tabella_geo), use_container_width=True)
                 
@@ -774,7 +761,6 @@ with tab2:
             3. ⚡ **Modello Leva Finanziaria Costante:**
                Il controvalore totale del trade viene impostato come moltiplicatore lineare del capitale operativo disponibile (es. Leva **{quota_o_leva if "Leva" in modello_size else 1.0}x**). Permette di simulare l'esposizione costante tipica dei contratti Future o dei derivati marginati.
             """)
-            
             st.success("📐 Mappatura e report del dimensionamento completati con successo.")
         else:
             st.error("Dati storici non sufficienti per calcolare la regressione rolling.")
