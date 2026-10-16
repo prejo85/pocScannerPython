@@ -710,15 +710,29 @@ with tab2:
 # ==============================================================================
 # --- TAB 2: PARTE 3B - GRAPHIC SÈTUP Z-SCORE, TABELLA TRADE & NOTE ---
 # ==============================================================================
+            # 2. Agganciamo l'oscillatore dello Z-Score dei residui sulla riga 2
             fig_geo.add_trace(grp.Scatter(
                 x=df_g.index, y=df_g["Z_Score"], mode="lines", name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ), row=2, col=1)
             
-            fig_geo.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dash"), row=2, col=1)
-            fig_geo.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=2.0, y1=2.0, line=dict(color="#22c55e", width=1.0, dash="dash"), row=2, col=1)
-            fig_geo.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="solid"), row=2, col=1)
-            fig_geo.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=-2.0, y1=-2.0, line=dict(color="#ef4444", width=1.0, dash="dash"), row=2, col=1)
+            # --- PROTEZIONE ANCORAGGIO ASSI (yref="y2"): Mantiene visibili le linee tratteggiate ---
+            # Linea della soglia utente dinamica
+            fig_geo.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, 
+                              line=dict(color="#ef4444", width=1.5, dash="dash"), row=2, col=1, yref="y2")
             
+            # Linea tratteggiata sottile VERDE a +2
+            fig_geo.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=2.0, y1=2.0, 
+                              line=dict(color="#22c55e", width=1.2, dash="dash"), row=2, col=1, yref="y2")
+            
+            # Linea centrale dello zero
+            fig_geo.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, 
+                              line=dict(color="rgba(255,255,255,0.2)", width=1, dash="solid"), row=2, col=1, yref="y2")
+            
+            # Linea tratteggiata sottile ROSSA a -2
+            fig_geo.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=-2.0, y1=-2.0, 
+                              line=dict(color="#ef4444", width=1.2, dash="dash"), row=2, col=1, yref="y2")
+            
+            # Configurazione del layout unico: disattiviamo i range slider nativi che creerebbero conflitti sullo zoom
             fig_geo.update_layout(
                 template="plotly_dark", 
                 height=700, 
@@ -727,13 +741,16 @@ with tab2:
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
             
+            # Applichiamo i limiti e le etichette per asse y1 e y2 in modo coordinato
             fig_geo.update_yaxes(title_text=f"Prezzo {geo_ticker} ($)", row=1, col=1)
             fig_geo.update_yaxes(title_text="Deviazioni Std (Z)", range=[-5.5, 5.5], row=2, col=1)
             fig_geo.update_xaxes(rangeslider_visible=False, row=1, col=1)
             fig_geo.update_xaxes(rangeslider_visible=False, row=2, col=1)
             
+            # Inviamo l'unico grafico combinato a Streamlit
             st.plotly_chart(fig_geo, use_container_width=True, key="geo_combined_shared_chart")
             
+            # --- REPORT PRESTAZIONI FINANZIARIE ---
             st.markdown("### 📊 Performance Ledger: Backtest Strategia Marubozu Breakout")
             st.info(f"⚙️ **Modello di Taglia Attivo nel Simulatore:** {modello_size}")
             if trade_log:
@@ -753,6 +770,7 @@ with tab2:
             else:
                 st.warning("⚠️ Nessun trade registrato nel periodo storico selezionato.")
                 
+            # Tabella di riepilogo dello stato strutturale dei nodi
             if linee_poc_geometriche:
                 st.markdown("##### 📋 Stato dei Livelli di Supporto/Resistenza Geometrici Rilevati")
                 dati_tabella_geo = []
@@ -765,13 +783,14 @@ with tab2:
                     })
                 st.dataframe(pd.DataFrame(dati_tabella_geo), use_container_width=True)
                 
+            # --- NOTA METODOLOGICA DIDATTICA COPIABILE ---
             st.markdown("---")
             st.markdown("### 🔏 Note Metodologiche sulla Gestione del Rischio e Position Sizing")
             st.markdown(f"""
             La dashboard implementa un motore matematico di **Risk Management frazionario avanzato**. Quando si avvia un trade, l'esposizione non è mai casuale ma risponde a regole quantitative precise dipendenti dal modello scelto:
             
             1. 📊 **Modello Rischio Fisso Frazionario (Consigliato):**
-               Il capitale allocato sul mercato è inversamente poroziomale all'ampiezza della struttura geometrica. 
+               Il capitale allocato sul mercato è inversamente proporzionale all'ampiezza della struttura geometrica. 
                * **Formula:** $\\text{{Contratti}} = \\frac{{\\text{{Capitale}} \\times \\text{{Rischio \\%}}}}{{\\text{{Prezzo Ingresso}} - \\text{{Stop Loss (Base Rounding)}}}}$
                * *Effetto:* Se il rounding/scodella è stretto, il sistema compra più contratti; se è molto largo, ne compra pochissimi. In questo modo, l'eventuale perdita sul conto sarà sempre **esattamente pari al {geo_rischio_pct}\\% del capitale**, bloccando la varianza statistica del portafoglio.
             
@@ -779,11 +798,10 @@ with tab2:
                Il sistema investe una frazione costante del portafoglio (es. il **{quota_o_leva if "Percentuale" in modello_size else 25.0}\\%**) sul valore nozionale del trade, indipendentemente da dove sia posizionato lo Stop Loss. La perdita monetaria varierà a seconda della volatilità dell'asset.
             
             3. ⚡ **Modello Leva Finanziaria Costante:**
-               Il controvalore totale del trade viene impostato come moltiplicatore lineare del capitale operativo disponibile (es. Leva **{quota_o_leva if "Leva" in modello_size else 1.0}x**). Permette di simulare l'esposizione costante tipica dei contratti Future o dei derivati marginati.
+               Il controvalore totale del trade viene impostato como moltiplicatore lineare del capitale operativo disponibile (es. Leva **{quota_o_leva if "Leva" in modello_size else 1.0}x**). Permette di simulare l'esposizione costante tipica dei contratti Future o dei derivati marginati.
             """)
             st.success("📐 Mappatura e report del dimensionamento completati con successo con assi X sincronizzati.")
-        else:
-            st.error("Dati storici non sufficienti per calcolare la regressione rolling.")
+
 
 # ==============================================================================
 # --- TAB 3: BREAKOUT TREND-FOLLOWING (MOTORE DI BACKTEST STRATEGICO CON GEO-Z) ---
