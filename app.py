@@ -504,6 +504,9 @@ with tab2:
 # ==============================================================================
 # --- TAB 2: PARTE 2B - SCANNER MARUBOZU & SIMULATORE PRESTAZIONI ---
 # ==============================================================================
+            # Inizializziamo una serie vuota nel DataFrame per salvare la linea visiva dell'ATR Stop
+            df_g["Linea_Protezione_ATR"] = np.nan
+            
             for i in range(geo_finestra, n_punti):
                 stato_attuale = df_g["Accelerazione_Geometrica"].iloc[i]
                 
@@ -516,7 +519,6 @@ with tab2:
                     if p_poc is not None:
                         poc_grezzi.append((data_innesco, float(p_poc)))
                     
-                    # Ricerca del Massimo di Periodo prima del segnale Z-Score (Lookback 65D)
                     finestra_lookback = max(0, start_idx - 65)
                     df_periodo_precedente = df_g.iloc[finestra_lookback : start_idx + 1]
                     
@@ -565,7 +567,6 @@ with tab2:
                     
                 stato_precedente = stato_attuale
             
-            # LOGICA DI SIMULAZIONE OPERATIVA DEI TRADE (ATR SOLO IN PROTEZIONE)
             capitale_corrente = float(geo_capitale)
             in_posizione = False
             trade_log = []
@@ -580,22 +581,21 @@ with tab2:
                 
                 if in_posizione:
                     if trade_corrente["tipo"] == "LONG":
-                        # L'ATR alza dinamicamente il livello minimo di protezione (Trailing Stop)
+                        # L'ATR stringe la protezione alzandosi a gradini
                         livello_trailing_atr = max(livello_trailing_atr, prezzo_chiusura - (2.0 * atr_corrente))
+                        # Salviamo il dato nel DataFrame per il tracciamento grafico
+                        df_g.loc[data_corrente, "Linea_Protezione_ATR"] = livello_trailing_atr
                         
-                        # Target di Gain statico calcolato alla nascita del trade
                         if prezzo_high >= trade_corrente["tp"]:
                             pnl_lordo = (trade_corrente["tp"] - trade_corrente["prezzo_ingresso"]) * trade_corrente["taglia"]
                             capitale_corrente += pnl_lordo
                             trade_log.append({"Data Ingress": trade_corrente["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"), "Tipo": "LONG", "Esito": "TARGET GAIN COMPLETATO", "PnL ($)": round(pnl_lordo, 2), "Capitale ($)": round(capitale_corrente, 2)})
                             in_posizione = False
-                        # Uscita in Stop Loss sulla base della tazza/rounding
                         elif prezzo_low <= trade_corrente["sl"]:
                             pnl_lordo = (trade_corrente["sl"] - trade_corrente["prezzo_ingresso"]) * trade_corrente["taglia"]
                             capitale_corrente += pnl_lordo
                             trade_log.append({"Data Ingress": trade_corrente["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"), "Tipo": "LONG", "Esito": "STOP LOSS BASE", "PnL ($)": round(pnl_lordo, 2), "Capitale ($)": round(capitale_corrente, 2)})
                             in_posizione = False
-                        # Uscita in protezione da ATR (se scatta prima della base)
                         elif prezzo_low <= livello_trailing_atr:
                             pnl_lordo = (livello_trailing_atr - trade_corrente["prezzo_ingresso"]) * trade_corrente["taglia"]
                             capitale_corrente += pnl_lordo
@@ -620,9 +620,7 @@ with tab2:
                                 taglia_contratti = controvalore_esposizione / prezzo_apertura
                             
                             if taglia_contratti > 0:
-                                # Calcolo del Take Profit matematico fisso (Rapporto Rischio/Rendimento 1:3)
                                 livello_take_profit = prezzo_apertura + (3.0 * distanza_stop)
-                                
                                 trade_corrente = {
                                     "data": data_corrente.strftime("%d/%m/%Y"),
                                     "tipo": "LONG",
@@ -632,6 +630,7 @@ with tab2:
                                     "taglia": taglia_contratti
                                 }
                                 livello_trailing_atr = prezzo_apertura - (2.0 * atr_corrente)
+                                df_g.loc[data_corrente, "Linea_Protezione_ATR"] = livello_trailing_atr
                                 in_posizione = True
 
             linee_poc_geometriche = []
@@ -646,10 +645,10 @@ with tab2:
                         break
                 if not trovato_duplicato:
                     linee_poc_geometriche.append((data_start, valore_poc))
+
 # ==============================================================================
 # --- TAB 2: PARTE 3A - TRACCIAMENTO GRAFICO PRINCIPALE PLOTLY ---
 # ==============================================================================
-            # Rendering del grafico dei prezzi
             st.markdown(f"##### 📊 Grafico Strutturale con Linee di Resistenza ancorate al Massimo e Breakout Marubozu")
             fig_geo = grp.Figure()
             fig_geo.add_trace(grp.Candlestick(
@@ -660,7 +659,17 @@ with tab2:
             data_oggi = df_g.index[-1]
             p_attuale = float(close_series.iloc[-1])
             
-            # Rendering garantito delle linee bianche tratteggiate
+            # --- NUOVO: DISEGNO DELLA LINEA DI PROTEZIONE TRAILING ATR SUL GRAFICO Prezzi ---
+            if "Linea_Protezione_ATR" in df_g.columns and not df_g["Linea_Protezione_ATR"].isna().all():
+                fig_geo.add_trace(grp.Scatter(
+                    x=df_g.index,
+                    y=df_g["Linea_Protezione_ATR"],
+                    mode="lines",
+                    line=dict(color="#d946ef", width=2, dash="dot"),
+                    name="Protezione Trailing ATR (2.0x)"
+                ))
+            
+            # Rendering delle linee bianche di resistenza strutturale
             for idx, linea in enumerate(linee_bianche_proiettate):
                 mostra_in_legenda = True if idx == 0 else False
                 fig_geo.add_trace(grp.Scatter(
@@ -693,6 +702,7 @@ with tab2:
                     font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
                     bgcolor="rgba(15, 23, 42, 0.85)"
                 )
+
 # ==============================================================================
 # --- TAB 2: PARTE 3B - Z-SCORE OSCILLATOR & LEDGER PRESTAZIONI ---
 # ==============================================================================
