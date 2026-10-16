@@ -409,7 +409,7 @@ with tab1:
 # ==============================================================================
 with tab2:
     st.subheader("📐 Laboratorio Geometrico: Tracciamento POC su Impulso Continuato")
-    st.markdown("Rileva il cambio di momentum tramite lo Z-Score, traccia la resistenza dal massimo del segnale e attende il breakout di una candela Marubozu.")
+    st.markdown("Rileva il cambio di momentum tramite lo Z-Score, identifica il Massimo Assoluto del periodo e traccia la linea di resistenza fino al Breakout Marubozu.")
     
     # RIGA 1: Parametri di scansione dell'asset e dello storico
     g_col1, g_col2, g_col3 = st.columns(3)
@@ -432,7 +432,7 @@ with tab2:
 
     st.markdown("")
 # ==============================================================================
-# --- TAB 2: PARTE 2 - CORE ENGINE QUANTITATIVO E LOGICA MARUBOZU ---
+# --- TAB 2: PARTE 2 - CORE ENGINE QUANTITATIVO E LOGICA MASSIMO DI PERIODO ---
 # ==============================================================================
     if st.button("📐 Genera Struttura Geometrica POC", type="primary", key="geo_btn_start"):
         st.info(f"Elaborazione matriciale e calcolo profili per {geo_ticker}...")
@@ -470,13 +470,13 @@ with tab2:
             df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             df_g["Accelerazione_Geometrica"] = np.where(df_g["Z_Score"] >= geo_soglia, 1, 0)
             
-            # Calcolo dei Range Medi per identificare la Marubozu
+            # Parametri rolling dinamici per identificare la Marubozu
             corpi = (df_g["Close"].astype(float) - df_g["Open"].astype(float)).abs()
             range_totale = df_g["High"].astype(float) - df_g["Low"].astype(float)
             corpo_medio = corpi.rolling(window=20).mean().fillna(range_totale.mean())
             
             poc_grezzi = []
-            linee_bianche_proiettate = [] # Conterrà le coordinate delle linee da disegnare
+            linee_bianche_proiettate = [] 
             stato_precedente = 0
             
             for i in range(geo_finestra, n_punti):
@@ -486,39 +486,43 @@ with tab2:
                     start_idx = i
                     data_innesco = df_g.index[start_idx]
                     
-                    # Calcolo del Volume Profile associato
+                    # Calcolo del Volume Profile associato al segnale Z-Score
                     df_da_mom_a_oggi = df_g.iloc[start_idx:]
                     p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
                     if p_poc is not None:
                         poc_grezzi.append((data_innesco, float(p_poc)))
                     
-                    # LOGICA LINEA BIANCA: Prende il massimo del giorno del POC/Z-Score
-                    val_massimo_riferimento = float(df_g["High"].iloc[start_idx])
-                    data_fine_linea = df_g.index[-1] # Default: fino alla fine del grafico se non trova Marubozu
+                    # ==============================================================================
+                    # MODIFICA: RICERCA DEL VERO MASSIMO DI PERIODO (LOOKBACK DI 60 GIORNI)
+                    # ==============================================================================
+                    finestra_lookback = max(0, start_idx - 60)
+                    df_periodo_precedente = df_g.iloc[finestra_lookback : start_idx + 1]
+                    
+                    # Troviamo il valore del Massimo Assoluto del periodo e la sua data esatta
+                    val_massimo_riferimento = float(df_periodo_precedente["High"].max())
+                    idx_data_massimo = df_periodo_precedente["High"].idxmax()
+                    
+                    data_fine_linea = df_g.index[-1]
                     trovato_breakout = False
                     data_breakout_marubozu = None
                     
-                    # Scansione dei giorni successivi alla ricerca della Marubozu di rottura
-                    for j in range(start_idx + 1, n_punti):
+                    # Scansione in avanti dal momento del segnale Z-Score alla ricerca del Breakout Marubozu
+                    for j in range(start_idx, n_punti):
                         c_open = float(df_g["Open"].iloc[j])
                         c_close = float(df_g["Close"].iloc[j])
                         c_high = float(df_g["High"].iloc[j])
                         c_low = float(df_g["Low"].iloc[j])
                         
-                        # Definizione di Marubozu Rialzista: 
-                        # 1. Candela verde con corpo superiore alla media dei corpi precedenti
-                        # 2. Ombra superiore e inferiore inferiori al 15% del range totale della candela
                         dimensione_corpo = c_close - c_open
                         range_candela = c_high - c_low
                         
                         if range_candela > 0 and dimensione_corpo > 0:
-                            is_corpo_ampio = dimensione_corpo > (corpo_medio.iloc[j] * 1.2)
-                            senza_ombra_sup = (c_high - c_close) / range_candela <= 0.15
-                            senza_ombra_inf = (c_open - c_low) / range_candela <= 0.15
-                            
+                            is_corpo_ampio = dimensione_corpo > (corpo_medio.iloc[j] * 1.1)
+                            senza_ombra_sup = (c_high - c_close) / range_candela <= 0.20
+                            senza_ombra_inf = (c_open - c_low) / range_candela <= 0.20
                             is_marubozu = is_corpo_ampio and senza_ombra_sup and senza_ombra_inf
                             
-                            # Condizione: La Marubozu deve rompere e chiudere SOPRA la linea bianca di resistenza
+                            # Condizione: La Marubozu deve rompere e CHIUDERE sopra il Massimo del Periodo identificato
                             if is_marubozu and c_close > val_massimo_riferimento:
                                 trovato_breakout = True
                                 data_fine_linea = df_g.index[j]
@@ -526,7 +530,8 @@ with tab2:
                                 break
                                 
                     linee_bianche_proiettate.append({
-                        "data_inizio": data_innesco,
+                        "data_inizio": idx_data_massimo,      # La linea ora parte graficamente dal VERO MAX C..
+                        "data_innesco_z": data_innesco,
                         "data_fine": data_fine_linea,
                         "valore": val_massimo_riferimento,
                         "breakout": trovato_breakout,
@@ -535,7 +540,7 @@ with tab2:
                     
                 stato_precedente = stato_attuale
             
-            # Filtro dei POC duplicati
+            # Filtro per ripulire i POC sovrapposti
             linee_poc_geometriche = []
             tolleranza_filtro = 0.01  
             for data_start, valore_poc in poc_grezzi:
@@ -552,7 +557,7 @@ with tab2:
 # --- TAB 2: PARTE 3 - RENDERING GRAFICI PLOTLY & VISUALIZZAZIONE STRUTTURA ---
 # ==============================================================================
             # Rendering del grafico dei prezzi
-            st.markdown(f"##### 📊 Grafico Strutturale con Linee di Resistenza ed Evidenza Marubozu")
+            st.markdown(f"##### 📊 Grafico Strutturale con Linee di Resistenza ancorate al Massimo e Breakout Marubozu")
             fig_geo = grp.Figure()
             fig_geo.add_trace(grp.Candlestick(
                 x=df_g.index, open=df_g["Open"].astype(float), high=df_g["High"].astype(float),
@@ -562,30 +567,30 @@ with tab2:
             data_oggi = df_g.index[-1]
             p_attuale = float(close_series.iloc[-1])
             
-            # --- DISEGNO DELLE LINEE BIANCHE TRATTEGGIATE INTERROTTE DALLA MARUBOZU ---
-            for linea in linee_bianche_proiettate:
-                # 1. Tracciamento linea bianca tratteggiata dal segnale alla marubozu (o a oggi)
+            # --- DISEGNO DELLE LINEE TRATTEGGIATE DALL'EFFETTIVO MASSIMO ALLA MARUBOZU ---
+            # Per evitare il disordine visivo del grafico (visto nella legenda precedente), mostriamo una sola istanza pulita
+            for idx, linea in enumerate(linee_bianche_proiettate):
+                mostra_in_legenda = True if idx == 0 else False
+                
+                # Tracciamento linea bianca orizzontale che parte dal VERO MASSIMO DI PERIODO
                 fig_geo.add_trace(grp.Scatter(
                     x=[linea["data_inizio"], linea["data_fine"]], 
                     y=[linea["valore"], linea["valore"]],
                     mode="lines",
                     line=dict(color="#ffffff", width=2.5, dash="dash"),
-                    name="Resistenza Massimo Segnale"
+                    name="Resistenza Massimo Periodo",
+                    showlegend=mostra_in_legenda
                 ))
                 
-                # 2. Se è stata trovata la Marubozu, inserisce un marker visivo fucsia sul punto di rottura
+                # Se la Marubozu ha rotto la linea, posizioniamo il cerchio fucsia sul punto di rottura esatto
                 if linea["breakout"]:
                     fig_geo.add_trace(grp.Scatter(
                         x=[linea["data_breakout"]], y=[linea["valore"]],
                         mode="markers",
-                        marker=dict(color="#d946ef", size=11, symbol="circle-open", line=dict(width=3)),
-                        name="Breakout Marubozu Rilevato"
+                        marker=dict(color="#d946ef", size=12, symbol="circle-open", line=dict(width=3)),
+                        name="Breakout Marubozu Rilevato",
+                        showlegend=mostra_in_legenda
                     ))
-                    fig_geo.add_annotation(
-                        x=linea["data_breakout"], y=linea["valore"],
-                        text="Marubozu BO", showarrow=True, arrowhead=1,
-                        arrowcolor="#d946ef", bgcolor="rgba(217, 70, 239, 0.25)", yshift=15
-                    )
             
             # Tracciamento dei livelli GEO-POC calcolati dallo Z-Score
             for idx, (data_start, valore_poc) in enumerate(linee_poc_geometriche):
@@ -610,8 +615,8 @@ with tab2:
                 x=df_g.index, y=df_g["Z_Score"], mode="lines", 
                 name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ))
-            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
-            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
+            fig_zg.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
+            fig_zg.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
             
             fig_zg.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=20, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)"))
             st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
@@ -654,7 +659,7 @@ with tab2:
                     })
                 st.dataframe(pd.DataFrame(dati_tabella_geo), use_container_width=True)
                 
-            st.success("📐 Mappatura geometrica del livello di breakout completata. In attesa del prossimo innesco volumetrico...")
+            st.success("📐 Mappatura geometrica completata. La linea bianca orizzontale è ora ancorata al Massimo di Periodo corretto.")
         else:
             st.error("Dati storici non sufficienti per calcolare la regressione rolling.")
 
