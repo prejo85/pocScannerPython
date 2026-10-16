@@ -405,7 +405,7 @@ with tab1:
                     else: 
                         st.warning(f"Dati storici insufficienti per {ticker}.")
 # ==============================================================================
-# --- TAB 2: PARTE 1 - CONFIGURAZIONE INTERFACCIA UTENTE & INPUT ---
+# --- TAB 2: PARTE 1 - CONFIGURAZIONE INTERFACCIA UTENTE & COMPONENTI DE SCELTA ---
 # ==============================================================================
 with tab2:
     st.subheader("📐 Laboratorio Geometrico: Tracciamento e Backtest Quantitativo")
@@ -421,7 +421,7 @@ with tab2:
     with g_col3:
         geo_finestra = st.slider("Finestra Regressione Lineare (Giorni base):", min_value=20, max_value=100, value=50, step=5, key="geo_win_sl")
 
-    # RIGA 2: Soglia Z-Score e controlli di Risk Management per il dimensionamento
+    # RIGA 2: Controlli di Capitale e Parametri di Rischio
     g_col4, g_col5, g_col6 = st.columns(3)
     with g_col4:
         geo_soglia = st.slider("Soglia Z-Score per Cambio Momentum:", min_value=1.5, max_value=3.5, value=2.0, step=0.1, key="geo_z_sl")
@@ -430,9 +430,27 @@ with tab2:
     with g_col6:
         geo_rischio_pct = st.slider("Rischio scelto per Trade (%):", min_value=0.2, max_value=5.0, value=1.0, step=0.1, key="geo_risk_sl")
 
+    # RIGA 3: NUOVI PULSANTI DI SCELTA MODULARE
+    g_col7, g_col8 = st.columns(2)
+    with g_col7:
+        modello_size = st.radio(
+            "Seleziona Modello di Gestione Taglia (Position Sizing):",
+            ["Rischio Fisso Frazionario (Consigliato)", "Percentuale Fissa del Capitale", "Leva Finanziaria Costante"],
+            index=0,
+            key="geo_modello_size"
+        )
+    with g_col8:
+        quota_o_leva = st.number_input(
+            "Valore per Modello Alternativo (% Capitale o Moltiplicatore Leva):",
+            min_value=0.5,
+            value=25.0 if "Percentuale" in modello_size else 1.0,
+            step=1.0,
+            key="geo_quota_leva"
+        )
+
     st.markdown("")
 # ==============================================================================
-# --- TAB 2: PARTE 2A - CORE QUANT ENGINE & SÈGNALI Z-SCORE ---
+# --- TAB 2: PARTE 2A - RETE MATRICIALE & SEGNALI Z-SCORE ---
 # ==============================================================================
     if st.button("📐 Genera Struttura Geometrica & Avvia Backtest", type="primary", key="geo_btn_start"):
         st.info(f"Elaborazione matriciale e simulazione storica degli ordini per {geo_ticker}...")
@@ -581,18 +599,27 @@ with tab2:
                         distanza_stop = prezzo_apertura - dati_breakout["stop_loss_base"]
                         
                         if distanza_stop > 0:
-                            rischio_monetario = capitale_corrente * (geo_rischio_pct / 100)
-                            taglia_contratti = rischio_monetario / distanza_stop
+                            # CALCOLO MODULARE DEL POSITION SIZING SELEZIONATO
+                            if modello_size == "Rischio Fisso Frazionario (Consigliato)":
+                                rischio_monetario = capitale_corrente * (geo_rischio_pct / 100)
+                                taglia_contratti = rischio_monetario / distanza_stop
+                            elif modello_size == "Percentuale Fissa del Capitale":
+                                controvalore_destinato = capitale_corrente * (quota_o_leva / 100)
+                                taglia_contratti = controvalore_destinato / prezzo_apertura
+                            elif modello_size == "Leva Finanziaria Costante":
+                                controvalore_esposizione = capitale_corrente * quota_o_leva
+                                taglia_contratti = controvalore_esposizione / prezzo_apertura
                             
-                            trade_corrente = {
-                                "data": data_corrente.strftime("%d/%m/%Y"),
-                                "tipo": "LONG",
-                                "prezzo_ingresso": prezzo_apertura,
-                                "sl": dati_breakout["stop_loss_base"],
-                                "taglia": taglia_contratti
-                            }
-                            livello_trailing_atr = prezzo_apertura - (2.0 * atr_corrente)
-                            in_posizione = True
+                            if taglia_contratti > 0:
+                                trade_corrente = {
+                                    "data": data_corrente.strftime("%d/%m/%Y"),
+                                    "tipo": "LONG",
+                                    "prezzo_ingresso": prezzo_apertura,
+                                    "sl": dati_breakout["stop_loss_base"],
+                                    "taglia": taglia_contratti
+                                }
+                                livello_trailing_atr = prezzo_apertura - (2.0 * atr_corrente)
+                                in_posizione = True
 
             linee_poc_geometriche = []
             tolleranza_filtro = 0.01  
@@ -620,11 +647,9 @@ with tab2:
             data_oggi = df_g.index[-1]
             p_attuale = float(close_series.iloc[-1])
             
-            # --- RENDERING DELLE LINEE BIANCHE TRATTEGGIATE E MARKER DI BREAKOUT ---
+            # Rendering garantito delle linee bianche tratteggiate
             for idx, linea in enumerate(linee_bianche_proiettate):
                 mostra_in_legenda = True if idx == 0 else False
-                
-                # Disegno linea bianca continua/tratteggiata fino al breakout o a oggi
                 fig_geo.add_trace(grp.Scatter(
                     x=[linea["data_inizio"], linea["data_fine"]], 
                     y=[linea["valore"], linea["valore"]],
@@ -634,7 +659,6 @@ with tab2:
                     showlegend=mostra_in_legenda
                 ))
                 
-                # Se c'è stato il breakout evidenziamo la candela Marubozu con un cerchio fucsia
                 if linea["breakout"]:
                     fig_geo.add_trace(grp.Scatter(
                         x=[linea["data_breakout"]], y=[linea["valore"]],
@@ -662,21 +686,21 @@ with tab2:
             fig_geo.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=500, margin=dict(l=20, r=20, t=10, b=10))
             st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
             
-            # Sotto-grafico dell'oscillatore Z-Score dei Residui
+            # Sotto-grafico dell'oscillatore Z-Score
             st.markdown("##### 📉 Oscillatore Quantitativo: Z-Score dei Residui della Regressione")
             fig_zg = grp.Figure()
             fig_zg.add_trace(grp.Scatter(
                 x=df_g.index, y=df_g["Z_Score"], mode="lines", 
                 name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ))
-            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
-            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
-            
+            fig_zg.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
+            fig_zg.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
             fig_zg.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=20, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)"))
             st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
             
-            # --- RENDERING DEI RISULTATI FINANZIARI DEL SIMULATORE ---
+            # REPORT PRESTAZIONI DEL BACKTEST
             st.markdown("### 📊 Performance Ledger: Backtest Strategia Marubozu Breakout")
+            st.info(f"⚙️ **Modello di Taglia Attivo nel Simulatore:** {modello_size}")
             if trade_log:
                 df_report = pd.DataFrame(trade_log)
                 operazioni_vincenti = df_report[df_report["PnL ($)"] > 0]
@@ -693,9 +717,9 @@ with tab2:
                 
                 st.dataframe(df_report, use_container_width=True)
             else:
-                st.warning("⚠️ Nessun trade registrato nel periodo con questi filtri della candela Marubozu.")
+                st.warning("⚠️ Nessun trade registrato nel periodo con le impostazioni correnti.")
                 
-            # Tabella riassuntiva dei livelli GEO-POC calcolati
+            # Tabella riassuntiva dello stato dei nodi statici
             if linee_poc_geometriche:
                 st.markdown("##### 📋 Stato dei Livelli di Supporto/Resistenza Geometrici Rilevati")
                 dati_tabella_geo = []
@@ -710,7 +734,25 @@ with tab2:
                     })
                 st.dataframe(pd.DataFrame(dati_tabella_geo), use_container_width=True)
                 
-            st.success("📐 Mappatura e report del dimensionamento completati con successo. Dashboard Tab 2 aggiornata.")
+            # --- NOTA METODOLOGICA DIDATTICA COPIABILE ---
+            st.markdown("---")
+            st.markdown("### 🔏 Note Metodologiche sulla Gestione del Rischio e Position Sizing")
+            st.markdown(f"""
+            La dashboard implementa un motore matematico di **Risk Management frazionario avanzato**. Quando si avvia un trade, l'esposizione non è mai casuale ma risponde a regole quantitative precise dipendenti dal modello scelto:
+            
+            1. 📊 **Modello Rischio Fisso Frazionario (Consigliato):**
+               Il capitale allocato sul mercato è inversamente proporzionale all'ampiezza della struttura geometrica. 
+               * **Formula:** $\\text{{Contratti}} = \\frac{{\\text{{Capitale}} \\times \\text{{Rischio \\%}}}}{{\\text{{Prezzo Ingresso}} - \\text{{Stop Loss (Base Rounding)}}}}$
+               * *Effetto:* Se il rounding/scodella è stretto, il sistema compra più contratti; se è molto largo, ne compra pochissimi. In questo modo, l'eventuale perdita sul conto sarà sempre **esattamente pari al {geo_rischio_pct}\\% del capitale**, bloccando la varianza statistica del portafoglio.
+            
+            2. 💰 **Modello Percentuale Fissa del Capitale:**
+               Il sistema investe una frazione costante del portafoglio (es. il **{quota_o_leva if "Percentuale" in modello_size else 25.0}\\%**) sul valore nozionale del trade, indipendentemente da dove sia posizionato lo Stop Loss. La perdita monetaria varierà a seconda della volatilità dell'asset.
+            
+            3. ⚡ **Modello Leva Finanziaria Costante:**
+               Il controvalore totale del trade viene impostato come moltiplicatore lineare del capitale operativo disponibile (es. Leva **{quota_o_leva if "Leva" in modello_size else 1.0}x**). Permette di simulare l'esposizione costante tipica dei contratti Future o dei derivati marginati.
+            """)
+            
+            st.success("📐 Mappatura e report del dimensionamento completati con successo.")
         else:
             st.error("Dati storici non sufficienti per calcolare la regressione rolling.")
 
