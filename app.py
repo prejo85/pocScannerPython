@@ -409,7 +409,7 @@ with tab1:
 # ==============================================================================
 with tab2:
     st.subheader("📐 Laboratorio Geometrico: Tracciamento POC su Impulso Continuato")
-    st.markdown("Rileva il cambio di momentum tramite il distacco dello Z-Score dalla regressione ed estende i profili volumetrici da quel punto fino a oggi.")
+    st.markdown("Rileva il cambio di momentum tramite lo Z-Score, traccia la resistenza dal massimo del segnale e attende il breakout di una candela Marubozu.")
     
     # RIGA 1: Parametri di scansione dell'asset e dello storico
     g_col1, g_col2, g_col3 = st.columns(3)
@@ -432,7 +432,7 @@ with tab2:
 
     st.markdown("")
 # ==============================================================================
-# --- TAB 2: PARTE 2 - CORE ENGINE QUANTITATIVO E FILTRAGGIO CLUSTER ---
+# --- TAB 2: PARTE 2 - CORE ENGINE QUANTITATIVO E LOGICA MARUBOZU ---
 # ==============================================================================
     if st.button("📐 Genera Struttura Geometrica POC", type="primary", key="geo_btn_start"):
         st.info(f"Elaborazione matriciale e calcolo profili per {geo_ticker}...")
@@ -470,78 +470,89 @@ with tab2:
             df_g["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             df_g["Accelerazione_Geometrica"] = np.where(df_g["Z_Score"] >= geo_soglia, 1, 0)
             
-            # Liste per salvare i dati estratti dai segnali dello Z-Score
+            # Calcolo dei Range Medi per identificare la Marubozu
+            corpi = (df_g["Close"].astype(float) - df_g["Open"].astype(float)).abs()
+            range_totale = df_g["High"].astype(float) - df_g["Low"].astype(float)
+            corpo_medio = corpi.rolling(window=20).mean().fillna(range_totale.mean())
+            
             poc_grezzi = []
-            tazze_rilevate_da_zscore = [] # Salverà i dati delle tazze validate per il grafico
+            linee_bianche_proiettate = [] # Conterrà le coordinate delle linee da disegnare
             stato_precedente = 0
             
             for i in range(geo_finestra, n_punti):
                 stato_attuale = df_g["Accelerazione_Geometrica"].iloc[i]
                 
-                # Rileviamo il preciso istante del Breakout dello Z-Score (Transizione 0 -> 1)
                 if stato_attuale == 1 and stato_precedente == 0:
                     start_idx = i
                     data_innesco = df_g.index[start_idx]
-                    df_da_mom_a_oggi = df_g.iloc[start_idx:]
                     
-                    # 1. Calcolo del Volume Profile da questo punto a oggi
+                    # Calcolo del Volume Profile associato
+                    df_da_mom_a_oggi = df_g.iloc[start_idx:]
                     p_poc, _, _, _, _ = calc_vp(df_da_mom_a_oggi)
                     if p_poc is not None:
                         poc_grezzi.append((data_innesco, float(p_poc)))
                     
-                    # 2. VERIFICA GEOMETRICA DELLA TAZZA IN CORRISPONDENZA DI QUESTO SEGNALE Z-SCORE
-                    if len(df_da_mom_a_oggi) > 10:
-                        # Criterio A: Il Bordo Sinistro coincide con il massimo del giorno del segnale Z-Score
-                        val_bordo_sx = float(df_g["High"].iloc[start_idx])
+                    # LOGICA LINEA BIANCA: Prende il massimo del giorno del POC/Z-Score
+                    val_massimo_riferimento = float(df_g["High"].iloc[start_idx])
+                    data_fine_linea = df_g.index[-1] # Default: fino alla fine del grafico se non trova Marubozu
+                    trovato_breakout = False
+                    data_breakout_marubozu = None
+                    
+                    # Scansione dei giorni successivi alla ricerca della Marubozu di rottura
+                    for j in range(start_idx + 1, n_punti):
+                        c_open = float(df_g["Open"].iloc[j])
+                        c_close = float(df_g["Close"].iloc[j])
+                        c_high = float(df_g["High"].iloc[j])
+                        c_low = float(df_g["Low"].iloc[j])
                         
-                        # Criterio B: Cerchiamo il Fondo della Tazza (minimo assoluto nel sotto-periodo)
-                        idx_fondo_tazza = df_da_mom_a_oggi["Low"].idxmin()
-                        val_fondo_tazza = float(df_da_mom_a_oggi["Low"].min())
+                        # Definizione di Marubozu Rialzista: 
+                        # 1. Candela verde con corpo superiore alla media dei corpi precedenti
+                        # 2. Ombra superiore e inferiore inferiori al 15% del range totale della candela
+                        dimensione_corpo = c_close - c_open
+                        range_candela = c_high - c_low
                         
-                        # Criterio C: Cerchiamo il Bordo Destro (massimo registrato dopo il fondo della tazza)
-                        df_risalita = df_da_mom_a_oggi.loc[idx_fondo_tazza:]
-                        
-                        if len(df_risalita) > 2:
-                            idx_bordo_dx = df_risalita["High"].idxmax()
-                            val_bordo_dx = float(df_risalita["High"].max())
+                        if range_candela > 0 and dimensione_corpo > 0:
+                            is_corpo_ampio = dimensione_corpo > (corpo_medio.iloc[j] * 1.2)
+                            senza_ombra_sup = (c_high - c_close) / range_candela <= 0.15
+                            senza_ombra_inf = (c_open - c_low) / range_candela <= 0.15
                             
-                            # Validazione matematica dei criteri geometrici legati allo Z-Score
-                            distanza_bordi_pct = abs(val_bordo_sx - val_bordo_dx) / val_bordo_sx
-                            profondita_tazza_ok = val_fondo_tazza < min(val_bordo_sx, val_bordo_dx)
-                            coerenza_temporale = data_innesco < idx_fondo_tazza < idx_bordo_dx
+                            is_marubozu = is_corpo_ampio and senza_ombra_sup and senza_ombra_inf
                             
-                            # Se l'oscillazione dei prezzi successiva al segnale Z-Score disegna una tazza (tolleranza 25%)
-                            if distanza_bordi_pct <= 0.25 and profondita_tazza_ok and coerenza_temporale:
-                                tazze_rilevate_da_zscore.append({
-                                    "bordo_sx_data": data_innesco,
-                                    "bordo_sx_val": val_bordo_sx,
-                                    "fondo_data": idx_fondo_tazza,
-                                    "fondo_val": val_fondo_tazza,
-                                    "bordo_dx_data": idx_bordo_dx,
-                                    "bordo_dx_val": val_bordo_dx
-                                })
+                            # Condizione: La Marubozu deve rompere e chiudere SOPRA la linea bianca di resistenza
+                            if is_marubozu and c_close > val_massimo_riferimento:
+                                trovato_breakout = True
+                                data_fine_linea = df_g.index[j]
+                                data_breakout_marubozu = df_g.index[j]
+                                break
                                 
+                    linee_bianche_proiettate.append({
+                        "data_inizio": data_innesco,
+                        "data_fine": data_fine_linea,
+                        "valore": val_massimo_riferimento,
+                        "breakout": trovato_breakout,
+                        "data_breakout": data_breakout_marubozu
+                    })
+                    
                 stato_precedente = stato_attuale
             
-            # Logica di accorpamento e pulizia dei POC sovrapposti (Tolleranza 1.0%)
+            # Filtro dei POC duplicati
             linee_poc_geometriche = []
             tolleranza_filtro = 0.01  
-            
             for data_start, valore_poc in poc_grezzi:
                 trovato_duplicato = False
-                for i, (dt_saved, val_saved) in enumerate(linee_poc_geometriche):
+                for idx_s, (dt_saved, val_saved) in enumerate(linee_poc_geometriche):
                     if abs(valore_poc - val_saved) / val_saved <= tolleranza_filtro:
                         trovato_duplicato = True
                         if data_start > dt_saved:
-                            linee_poc_geometriche[i] = (data_start, valore_poc)
+                            linee_poc_geometriche[idx_s] = (data_start, valore_poc)
                         break
                 if not trovato_duplicato:
                     linee_poc_geometriche.append((data_start, valore_poc))
 # ==============================================================================
-# --- TAB 2: PARTE 3 - RENDERING GRAFICI PLOTLY & METRICHE POSITION SIZING ---
+# --- TAB 2: PARTE 3 - RENDERING GRAFICI PLOTLY & VISUALIZZAZIONE STRUTTURA ---
 # ==============================================================================
             # Rendering del grafico dei prezzi
-            st.markdown(f"##### 📊 Grafico Strutturale dei Prezzi con Livelli POC Statici e Tazze da Z-Score")
+            st.markdown(f"##### 📊 Grafico Strutturale con Linee di Resistenza ed Evidenza Marubozu")
             fig_geo = grp.Figure()
             fig_geo.add_trace(grp.Candlestick(
                 x=df_g.index, open=df_g["Open"].astype(float), high=df_g["High"].astype(float),
@@ -551,27 +562,30 @@ with tab2:
             data_oggi = df_g.index[-1]
             p_attuale = float(close_series.iloc[-1])
             
-            # --- DISEGNO DELLE TAZZE VALIDATE SUI SEGNALI Z-SCORE ---
-            for tazza in tazze_rilevate_da_zscore:
-                # Disegna la Neckline (Resistenza) che parte dal punto del segnale Z-Score al bordo destro
+            # --- DISEGNO DELLE LINEE BIANCHE TRATTEGGIATE INTERROTTE DALLA MARUBOZU ---
+            for linea in linee_bianche_proiettate:
+                # 1. Tracciamento linea bianca tratteggiata dal segnale alla marubozu (o a oggi)
                 fig_geo.add_trace(grp.Scatter(
-                    x=[tazza["bordo_sx_data"], tazza["bordo_dx_data"]], 
-                    y=[tazza["bordo_sx_val"], tazza["bordo_sx_val"]],
+                    x=[linea["data_inizio"], linea["data_fine"]], 
+                    y=[linea["valore"], linea["valore"]],
                     mode="lines",
-                    line=dict(color="rgba(248, 250, 252, 0.6)", width=1.5, dash="dash"),
-                    name="Neckline Z-Tazza",
-                    showlegend=False
+                    line=dict(color="#ffffff", width=2.5, dash="dash"),
+                    name="Resistenza Massimo Segnale"
                 ))
-                # Disegna la curva parabolica scheletrica della tazza unendo i 3 punti chiave identificati dal segnale
-                fig_geo.add_trace(grp.Scatter(
-                    x=[tazza["bordo_sx_data"], tazza["fondo_data"], tazza["bordo_dx_data"]], 
-                    y=[tazza["bordo_sx_val"], tazza["fondo_val"], tazza["bordo_dx_val"]],
-                    mode="lines+markers",
-                    line=dict(color="#38bdf8", width=2),
-                    marker=dict(size=7, color="#c084fc", symbol="circle"),
-                    name=f"Tazza da Z-Score ({tazza['bordo_sx_data'].strftime('%d/%m')})",
-                    showlegend=True
-                ))
+                
+                # 2. Se è stata trovata la Marubozu, inserisce un marker visivo fucsia sul punto di rottura
+                if linea["breakout"]:
+                    fig_geo.add_trace(grp.Scatter(
+                        x=[linea["data_breakout"]], y=[linea["valore"]],
+                        mode="markers",
+                        marker=dict(color="#d946ef", size=11, symbol="circle-open", line=dict(width=3)),
+                        name="Breakout Marubozu Rilevato"
+                    ))
+                    fig_geo.add_annotation(
+                        x=linea["data_breakout"], y=linea["valore"],
+                        text="Marubozu BO", showarrow=True, arrowhead=1,
+                        arrowcolor="#d946ef", bgcolor="rgba(217, 70, 239, 0.25)", yshift=15
+                    )
             
             # Tracciamento dei livelli GEO-POC calcolati dallo Z-Score
             for idx, (data_start, valore_poc) in enumerate(linee_poc_geometriche):
@@ -585,6 +599,7 @@ with tab2:
                     font=dict(color="#f29e1f", size=10, family="Plus Jakarta Sans", weight="bold"),
                     bgcolor="rgba(15, 23, 42, 0.85)"
                 )
+                
             fig_geo.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=500, margin=dict(l=20, r=20, t=10, b=10))
             st.plotly_chart(fig_geo, use_container_width=True, key="geo_pure_chart")
             
@@ -595,17 +610,13 @@ with tab2:
                 x=df_g.index, y=df_g["Z_Score"], mode="lines", 
                 name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ))
-            fig_zg.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
-            fig_zg.add_shape(type="line", x0=df_g.index, x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
+            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=geo_soglia, y1=geo_soglia, line=dict(color="#ef4444", width=1.5, dash="dot"))
+            fig_zg.add_shape(type="line", x0=df_g.index[0], x1=data_oggi, y0=0, y1=0, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dash"))
             
             fig_zg.update_layout(template="plotly_dark", height=200, margin=dict(l=20, r=20, t=10, b=20), yaxis=dict(title="Deviazioni Std (Z)"))
             st.plotly_chart(fig_zg, use_container_width=True, key="geo_z_pure_chart")
             
-            st.info(f"""
-            ℹ Honorariamente vincolato ai punti di innesco dello Z-Score: l'algoritmo calcola la tazza partendo esclusivamente dalle date dei segnali operativi volumetrici.
-            """)
-
-            # Calcolo automatico della taglia della posizione (Position Sizing)
+            # Calcolo automatico del Position Sizing monetario
             st.markdown("### 🎯 Matrice Operativa & Dimensionamento della Posizione")
             if linee_poc_geometriche:
                 riga_finale = df_g.iloc[-1]
@@ -642,10 +653,8 @@ with tab2:
                         "Stato Strutturale": stato_nodo
                     })
                 st.dataframe(pd.DataFrame(dati_tabella_geo), use_container_width=True)
-            else:
-                st.warning("⚠️ Nessun impulso balistico rilevato con l'attuale combinazione di filtri. Riduci la soglia o amplia l'orizzonte dati.")
                 
-            st.success("📐 Mappatura geometrica dei volumi e calcolo del dimensionamento completati con successo. In attesa di nuovi comandi...")
+            st.success("📐 Mappatura geometrica del livello di breakout completata. In attesa del prossimo innesco volumetrico...")
         else:
             st.error("Dati storici non sufficienti per calcolare la regressione rolling.")
 
