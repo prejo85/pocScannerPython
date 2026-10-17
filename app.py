@@ -1211,11 +1211,11 @@ with tab3:
             st.success("📐 Backtest e report completati. Tratteggi fini a +-2 sincronizzati in stile Tab 2.")
 
 # ==============================================================================
-# --- TAB 4: PARTE 1 - CONFIGURAZIONE INTERFACCIA UTENTE VERTICALE ---
+# --- TAB 4: PARTE 1 - CONFIGURAZIONE INTERFACCIA UTENTE CON SELETTORE SIZE ---
 # ==============================================================================
 with tab4:
     st.subheader("📐 Tab 4: Simulatore ad Oscillazione Estrema dello Z-Score")
-    st.markdown("Modello operativo puro basato sui livelli di ipercomprato/ipervenduto statistico: Ingresso a +2.0 e liquidazione a -2.0.")
+    st.markdown("Modello operativo bidirezionale basato sui livelli di ipercomprato/ipervenduto statistico con switch della taglia dinamica o costante.")
     
     # Due colonne verticali ordinate per scopo operativo per eliminare il caos visivo
     t4_col1, t4_col2 = st.columns(2)
@@ -1234,20 +1234,34 @@ with tab4:
         t4_tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[t4_tf_label]
     
     # --------------------------------------------------------------------------
-    # PANNELLO 2: PARAMETRI ALGORITMO OSCILLATORE
+    # PANNELLO 2: PARAMETRI ALGORITMO OSCILLATORE & GESTIONE CONTRATTI
     # --------------------------------------------------------------------------
     with t4_col2:
-        st.markdown("#### 📐 2. Algoritmo Z-Score & Rischio")
+        st.markdown("#### 📐 2. Algoritmo Z-Score & Gestione Size")
         t4_finestra = st.slider("Finestra Regressione (Candele base):", min_value=20, max_value=100, value=50, step=5, key="t4_win_sl")
-        t4_soglia_ingresso = 2.0  # Soglia fissa d'ingresso come da tua specifica
-        t4_soglia_uscita = -2.0   # Soglia fissa di uscita come da tua specifica
+        t4_soglia_ingresso = 2.0  
+        t4_soglia_uscita = -2.0   
         
         t4_capitale = st.number_input("Capitale Operativo ($):", min_value=100, value=10000, step=500, key="t4_cap_input")
-        t4_rischio_pct = st.slider("Rischio per singolo Trade (%):", min_value=0.2, max_value=5.0, value=1.0, step=0.1, key="t4_risk_sl")
+        
+        # NUOVO: Selettore modulare della modalità di calcolo della taglia
+        t4_tipo_size = st.radio(
+            "Seleziona Modalità Calcolo Pezzi:",
+            ["Rischio Fisso Frazionario (% Capitale)", "Numero Pezzi Fisso (Costante)"],
+            index=0, key="t4_size_mode"
+        )
+        
+        if t4_tipo_size == "Rischio Fisso Frazionario (% Capitale)":
+            t4_rischio_pct = st.slider("Rischio per singolo Trade (%):", min_value=0.2, max_value=5.0, value=1.0, step=0.1, key="t4_risk_sl")
+            t4_valore_size_fisso = 50 # Default di backup
+        else:
+            t4_valore_size_fisso = st.number_input("Quantità di Pezzi fissa per ogni trade (Pz):", min_value=1, value=50, step=5, key="t4_fixed_shares")
+            t4_rischio_pct = 1.0 # Default di backup
 
     st.markdown("---")
+
 # ==============================================================================
-# --- TAB 4: PARTE 2 - CORE ENGINE & SIMULATORE BIDIREZIONALE CON SIZE Pz ---
+# --- TAB 4: PARTE 2 - CORE ENGINE CON LOGICA SIZE COSTANTE O VARIABILE ---
 # ==============================================================================
     if st.button("📐 Avvia Backtest ad Oscillazione Z-Score", type="primary", key="t4_btn_start"):
         st.info(f"Elaborazione matriciale e calcolo oscillazioni per {t4_ticker}...")
@@ -1285,7 +1299,6 @@ with tab4:
             
             df_t4["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
             
-            # Liste per raccogliere i dati storici dei trade e i punti grafici di TP/SL
             trade_log_t4 = []
             punti_ingresso_long = []
             punti_ingresso_short = []
@@ -1294,7 +1307,6 @@ with tab4:
             capitale_corrente = float(t4_capitale)
             in_posizione = False
             
-            # Scansione storica candela per candela
             for idx_c in range(t4_finestra + 1, n_punti):
                 data_corrente = df_t4.index[idx_c]
                 z_ieri = df_t4["Z_Score"].iloc[idx_c - 1]
@@ -1304,10 +1316,8 @@ with tab4:
                 p_low = float(df_t4["Low"].iloc[idx_c])
                 p_high = float(df_t4["High"].iloc[idx_c])
                 
-                # 1. GESTIONE DELLA POSIZIONE APERTA (CONDIZIONI DI USCITA)
                 if in_posizione:
                     if trade_attuale["tipo"] == "LONG":
-                        # Condizione Uscita Target LONG: Z-Score raggiunge -2.0 (Take Profit)
                         if z_oggi <= t4_soglia_uscita:
                             pnl = (p_apertura - trade_attuale["ingresso"]) * trade_attuale["taglia"]
                             capitale_corrente += pnl
@@ -1318,7 +1328,6 @@ with tab4:
                             })
                             punti_uscita_grafico.append((data_corrente, p_apertura, "green_long"))
                             in_posizione = False
-                        # Condizione SL LONG: Il prezzo rompe al ribasso il minimo del pattern
                         elif p_low <= trade_attuale["sl"]:
                             pnl = (trade_attuale["sl"] - trade_attuale["ingresso"]) * trade_attuale["taglia"]
                             capitale_corrente += pnl
@@ -1331,7 +1340,6 @@ with tab4:
                             in_posizione = False
                             
                     elif trade_attuale["tipo"] == "SHORT":
-                        # Condizione Uscita Target SHORT: Z-Score raggiunge +2.0 (Take Profit)
                         if z_oggi >= t4_soglia_ingresso:
                             pnl = (trade_attuale["ingresso"] - p_apertura) * trade_attuale["taglia"]
                             capitale_corrente += pnl
@@ -1342,7 +1350,6 @@ with tab4:
                             })
                             punti_uscita_grafico.append((data_corrente, p_apertura, "green_short"))
                             in_posizione = False
-                        # Condizione SL SHORT: Il prezzo rompe al rialzo il massimo del pattern
                         elif p_high >= trade_attuale["sl"]:
                             pnl = (trade_attuale["ingresso"] - trade_attuale["sl"]) * trade_attuale["taglia"]
                             capitale_corrente += pnl
@@ -1354,17 +1361,18 @@ with tab4:
                             punti_uscita_grafico.append((data_corrente, trade_attuale["sl"], "red_short"))
                             in_posizione = False
                 
-                # 2. VERIFICA TRIGGER INGRESSO SE FUORI DAL MERCATO
                 if not in_posizione:
-                    # TRIGGER ENTRY LONG: Lo Z-Score incrocia al rialzo +2.0
+                    # TRIGGER ENTRY LONG
                     if z_ieri < t4_soglia_ingresso and z_oggi >= t4_soglia_ingresso:
                         val_stop_loss = float(df_t4["Low"].iloc[idx_c - 1])
                         distanza_stop = p_apertura - val_stop_loss
                         
-                        if distanza_stop > 0:
-                            rischio_monetario = capitale_corrente * (t4_rischio_pct / 100)
-                            taglia_posizione = rischio_monetario / distanza_stop
-                            
+                        if t4_tipo_size == "Rischio Fisso Frazionario (% Capitale)":
+                            taglia_posizione = (capitale_corrente * (t4_rischio_pct / 100)) / distanza_stop if distanza_stop > 0 else 0
+                        else:
+                            taglia_posizione = float(t4_valore_size_fisso)
+                        
+                        if taglia_posizione > 0:
                             trade_attuale = {
                                 "data": data_corrente.strftime("%d/%m/%Y"), "tipo": "LONG",
                                 "ingresso": p_apertura, "sl": val_stop_loss, "taglia": taglia_posizione
@@ -1372,15 +1380,17 @@ with tab4:
                             punti_ingresso_long.append((data_corrente, p_apertura))
                             in_posizione = True
                             
-                    # TRIGGER ENTRY SHORT: Lo Z-Score incrocia al ribasso -2.0
+                    # TRIGGER ENTRY SHORT
                     elif z_ieri > t4_soglia_uscita and z_oggi <= t4_soglia_uscita:
                         val_stop_loss = float(df_t4["High"].iloc[idx_c - 1])
                         distanza_stop = val_stop_loss - p_apertura
                         
-                        if distanza_stop > 0:
-                            rischio_monetario = capitale_corrente * (t4_rischio_pct / 100)
-                            taglia_posizione = rischio_monetario / distanza_stop
-                            
+                        if t4_tipo_size == "Rischio Fisso Frazionario (% Capitale)":
+                            taglia_posizione = (capitale_corrente * (t4_rischio_pct / 100)) / distanza_stop if distanza_stop > 0 else 0
+                        else:
+                            taglia_posizione = float(t4_valore_size_fisso)
+                        
+                        if taglia_posizione > 0:
                             trade_attuale = {
                                 "data": data_corrente.strftime("%d/%m/%Y"), "tipo": "SHORT",
                                 "ingresso": p_apertura, "sl": val_stop_loss, "taglia": taglia_posizione
@@ -1399,27 +1409,23 @@ with tab4:
             t4_data_fine = df_t4.index[-1]
             p_attuale = float(close_series.iloc[-1])
             
-            # 1. Candele prezzo (Riga 1)
             fig_t4.add_trace(grp.Candlestick(
                 x=df_t4.index, open=df_t4["Open"].astype(float), high=df_t4["High"].astype(float),
                 low=df_t4["Low"].astype(float), close=df_t4["Close"].astype(float), name=t4_ticker
             ), row=1, col=1)
             
-            # Marcatori Ingressi LONG (Frecce Verdi verso l'alto)
             for dt_in, val_in in punti_ingresso_long:
                 fig_t4.add_trace(grp.Scatter(
                     x=[dt_in], y=[val_in], mode="markers",
                     marker=dict(color="#22c55e", size=14, symbol="triangle-up"), showlegend=False
                 ), row=1, col=1)
                 
-            # Marcatori Ingressi SHORT (Frecce Rosse verso il basso)
             for dt_in, val_in in punti_ingresso_short:
                 fig_t4.add_trace(grp.Scatter(
                     x=[dt_in], y=[val_in], mode="markers",
                     marker=dict(color="#ef4444", size=14, symbol="triangle-down"), showlegend=False
                 ), row=1, col=1)
                 
-            # Marcatori Uscite Target/Stop (Cerchi)
             for dt_out, val_out, esito_out in punti_uscita_grafico:
                 colore_marker = "#22c55e" if "green" in esito_out else "#ef4444"
                 fig_t4.add_trace(grp.Scatter(
@@ -1427,18 +1433,14 @@ with tab4:
                     marker=dict(color=colore_marker, size=11, symbol="circle"), showlegend=False
                 ), row=1, col=1)
             
-            # 2. Oscillatore Z-Score (Riga 2)
             fig_t4.add_trace(grp.Scatter(
                 x=df_t4.index, y=df_t4["Z_Score"], mode="lines", name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ), row=2, col=1)
             
-            # --- APPLICAZIONE RIGIDE SOGLIE FINISSIME TRATTEGGIATE (yref="y2") ---
             fig_t4.add_shape(type="line", x0=t4_data_inizio, x1=t4_data_fine, y0=2.0, y1=2.0, 
                              line=dict(color="#22c55e", width=1.0, dash="dash"), row=2, col=1, yref="y2")
-            
             fig_t4.add_shape(type="line", x0=t4_data_inizio, x1=t4_data_fine, y0=0.0, y1=0.0, 
                              line=dict(color="rgba(255,255,255,0.2)", width=1.0, dash="solid"), row=2, col=1, yref="y2")
-            
             fig_t4.add_shape(type="line", x0=t4_data_inizio, x1=t4_data_fine, y0=-2.0, y1=-2.0, 
                              line=dict(color="#ef4444", width=1.0, dash="dash"), row=2, col=1, yref="y2")
             
@@ -1455,7 +1457,7 @@ with tab4:
             
             # --- CARD PERFORMANCE LEDGER AGGREGATO BIDIREZIONALE ---
             st.markdown("### 📊 Performance Ledger: Risultati Strategia ad Inversione Z-Score (Tab 4)")
-            st.info(f"⚙️ **Modello di Taglia Attivo nel Simulatore:** {modello_size}")
+            st.info(f"⚙️ **Modello di Taglia Attivo nel Simulatore:** {t4_tipo_size}")
             
             if trade_log_t4:
                 df_report_t4 = pd.DataFrame(trade_log_t4)
@@ -1465,18 +1467,17 @@ with tab4:
                 
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    st.metric("Ritorno Totale Algoritmo", f"{round(ritorno_percentuale, 2)} %", f"Netto: $ {round(capitale_corrente - t4_capitale, 2)}")
+                    st.metric("Ritorno Totale Algoritmo", f"{round(ritorno_percentuale, 2)} %", f"Netto: $ {round(capitale_corrente - t4_t4_capitale if 't4_t4_capitale' in locals() else capitale_corrente - t4_capitale, 2)}")
                 with c2:
                     st.metric("Affidabilità (Win Rate)", f"{round(win_rate, 2)} %", f"{len(operazioni_vincenti)} su {len(df_report_t4)} Operazioni Chiuse")
                 with c3:
                     st.metric("Capitale Finale di Bilancio", f"$ {round(capitale_corrente, 2)}", f"Iniziale: $ {t4_capitale}")
                     
-                # Mostra la tabella completa comprensiva della colonna della taglia in pezzi (Pz)
                 st.dataframe(df_report_t4, use_container_width=True)
             else:
                 st.warning("⚠️ Nessun trade registrato nel periodo storico selezionato con i parametri attuali.")
                 
-            st.success("📐 Backtest bidirezionale ad oscillazione concluso con successo. Numero di pezzi integrato a registro.")
+            st.success("📐 Backtest bidirezionale ad oscillazione concluso con successo. Modulo selettore taglia attivo.")
         else:
             st.error("Dati storici insufficienti per compilare l'oscillatore su questo orizzonte temporale.")
 
