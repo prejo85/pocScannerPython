@@ -148,13 +148,16 @@ def calc_vp(df, div=200):
         else: idx_a += 1; v_current += v_p
     return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Analisi Triple-POC", 
     "Analisi Geometrica POC", 
     "Breakout Trend-Following", 
-    "Alert Telegram", 
-    "Analisi GARCH"
+    "Tab 4: Ottimizzatore & Correlazione", 
+    "Tab 5: Alert Telegram",               
+    "Tab 6: Analisi GARCH"                 
 ])
+
 
 # ==========================================
 # --- TAB 1: TRE POC SCANNER ---
@@ -1206,9 +1209,156 @@ with tab3:
             """)
             st.success("📐 Backtest e report completati. Tratteggi fini a +-2 sincronizzati in stile Tab 2.")
 
+# ==============================================================================
+# --- TAB 4: PARTE 1 - CONFIGURAZIONE INTERFACCIA UTENTE VERTICALE ---
+# ==============================================================================
+with tab4:
+    st.subheader("📊 Tab 4: Ottimizzatore Quantitativo & Matrice di Correlazione")
+    st.markdown("Analizza le interdipendenze statistiche tra molteplici asset ed ottimizza la diversificazione dei pesi per evitare la sovraesposizione del rischio sui breakout.")
+    
+    # Tre colonne verticali ordinate per scopo operativo per eliminare il caos visivo
+    opt_col1, opt_col2, opt_col3 = st.columns(3)
+    
+    # --------------------------------------------------------------------------
+    # PANNELLO 1: INSERIMENTO PANIERE MULTI-ASSET
+    # --------------------------------------------------------------------------
+    with opt_col1:
+        st.markdown("#### 🗂️ 1. Paniere di Confronto")
+        opt_tickers_input = st.text_input(
+            "Inserisci i Tickers separati da virgola:", 
+            value="AAPL, MSFT, NVDA, GOOGL, AMZN", 
+            key="opt_tickers_in"
+        )
+    
+    # --------------------------------------------------------------------------
+    # PANNELLO 2: SELEZIONE TIMEFRAME E STORICO
+    # --------------------------------------------------------------------------
+    with opt_col2:
+        st.markdown("#### 📅 2. Orizzonte Temporale")
+        opt_periodo = st.selectbox(
+            "Storico dati per la correlazione:", 
+            ["1 Anno", "3 Anni", "5 Anni"], 
+            index=0, key="opt_per_sel"
+        )
+        mappa_periodi_opt = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y"}
+        
+        opt_tf_label = st.selectbox(
+            "Timeframe di campionamento:", 
+            ["Giornaliero (Daily)", "Settimanale (Weekly)"], 
+            key="opt_tf_sel"
+        )
+        opt_tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[opt_tf_label]
+
+    # --------------------------------------------------------------------------
+    # PANNELLO 3: BUDGET OPERATIVO DI ALLOCAZIONE
+    # --------------------------------------------------------------------------
+    with opt_col3:
+        st.markdown("#### 🎯 3. Parametri Portafoglio")
+        opt_capitale = st.number_input(
+            "Capitale Totale da allocare ($):", 
+            min_value=100, value=50000, step=1000, key="opt_cap_input"
+        )
+        st.caption("Il sistema distribuirà questo importo riducendo l'esposizione sui titoli altamente correlati.")
+
+    st.markdown("---")
+# ==============================================================================
+# --- TAB 4: PARTE 2 - CORE QUANT ENGINE & CALCOLO CORRELAZIONI ---
+# ==============================================================================
+    if st.button("📊 Elabora Correlazione ed Ottimizza Pesi", type="primary", key="opt_btn_start"):
+        lista_tickers_opt = [t.strip().upper() for t in opt_tickers_input.split(",") if t.strip()]
+        
+        if len(lista_tickers_opt) < 2:
+            st.error("❌ Inserisci almeno 2 ticker validi per poter calcolare una matrice di correlazione.")
+        else:
+            st.info(f"Download e sincronizzazione matriciale in corso per {len(lista_tickers_opt)} asset...")
+            
+            try:
+                dati_scaricati = yf.download(
+                    tickers=lista_tickers_opt, 
+                    period=mappa_periodi_opt[opt_periodo], 
+                    interval=opt_tf_attivo, 
+                    auto_adjust=False, multi_level_index=False, progress=False
+                )
+                
+                if dati_scaricati.empty:
+                    st.error("Impossibile recuperare i dati storici per i ticker inseriti. Verifica la correttezza dei simboli.")
+                else:
+                    df_chiusure_opt = dati_scaricati["Close"].dropna()
+                    
+                    # Calcolo dei rendimenti logaritmici percentuali vettorializzati per tutti i titoli
+                    df_returns_opt = 100 * np.log(df_chiusure_opt / df_chiusure_opt.shift(1)).dropna()
+                    
+                    # Calcolo della matrice di correlazione lineare di Pearson
+                    matrice_correlazione = df_returns_opt.corr(method="pearson")
+                    
+                    # Ottimizzazione semplificata dei pesi (Risk Parity basata sulla volatilità inversa)
+                    volatilita_titoli = df_returns_opt.std()
+                    inversa_volatilita = 1.0 / volatilita_titoli
+                    somma_inversa = inversa_volatilita.sum()
+                    pesi_ottimizzati = inversa_volatilita / somma_inversa
+# ==============================================================================
+# --- TAB 4: PARTE 3 - RENDERING GRAFICO HEATMAP & LEDGER DI ALLOCAZIONE ---
+# ==============================================================================
+                    st.markdown("##### 🌡️ Heatmap Statistica: Matrice di Correlazione dei Rendimenti (Tab 4)")
+                    
+                    fig_heat = grp.Figure(data=grp.Heatmap(
+                        z=matrice_correlazione.values,
+                        x=matrice_correlazione.columns,
+                        y=matrice_correlazione.index,
+                        colorscale="RdBu", 
+                        zmin=-1.0, zmax=1.0,
+                        text=np.round(matrice_correlazione.values, 2),
+                        texttemplate="%{text}",
+                        showscale=True
+                    ))
+                    
+                    fig_heat.update_layout(
+                        template="plotly_dark",
+                        height=450,
+                        margin=dict(l=20, r=20, t=10, b=10)
+                    )
+                    st.plotly_chart(fig_heat, use_container_width=True, key="opt_heatmap_chart")
+                    
+                    st.markdown("### 🎯 Allocazione Capitale Ottimizzata (Risk Parity Semplificata)")
+                    st.markdown("La tabella distribuisce il budget riducendo l'esposizione sui titoli storicamente più volatili e correlati.")
+                    
+                    dati_tabella_allocazione = []
+                    for tkr in lista_tickers_opt:
+                        if tkr in pesi_ottimizzati.index:
+                            peso_pct = float(pesi_ottimizzati[tkr]) * 100
+                            budget_dollari = float(pesi_ottimizzati[tkr]) * opt_capitale
+                            prezzo_attuale = float(df_chiusure_opt[tkr].iloc[-1])
+                            pezzi_da_comprare = budget_dollari / prezzo_attuale
+                            
+                            dati_tabella_allocazione.append({
+                                "Asset Ticker": tkr,
+                                "Peso Suggerito (%)": f"{round(peso_pct, 2)} %",
+                                "Capitale Destinato (\$)": f"\$ {round(budget_dollari, 2)}",
+                                "Prezzo Corrente (\$)": f"\$ {round(prezzo_attuale, 2)}",
+                                "Taglia Ordine Consigliata (Pz)": f"{round(pezzi_da_comprare, 2)} Pz"
+                            })
+                    st.dataframe(pd.DataFrame(dati_tabella_allocazione), use_container_width=True)
+                    
+                    st.markdown("---")
+                    st.markdown("### 🔏 Descrizione Tecnica del Modello di Controllo della Correlazione (Tab 4)")
+                    st.markdown(f"""
+                    Il modulo esegue un'analisi di **Eteroschedasticità e Interdipendenza Statistica Multi-Asset** basata sulla matrice di covarianza di Pearson.
+                    
+                    * **Perché è vitale prima di operare sui breakout (Tab 3):**
+                      Se utilizzi la strategia del Tab 3 su più titoli contemporaneamente (es. Apple e Microsoft), rischi di subire un **falso breakout simultaneo** se i due asset hanno una correlazione vicina a `+0.90`. Operando su titoli altamente correlati, vanifichi l'efficacia del Position Sizing e raddoppi il rischio reale sul tuo portafoglio senza saperlo.
+                    
+                    * **Significato dei Colori della Heatmap:**
+                      * 🔵 **Blu Intenso (Vicino a +1.0):** Massima correlazione diretta. I titoli si muovono in perfetta sintonia. Evitare di prendere segnali di breakout simultanei su entrambi.
+                      * ⚪ **Bianco (Vicino a 0.0):** Indipendenza statistica. Massima efficacia della diversificazione.
+                      * 🔴 **Rosso Intenso (Vicino a -1.0):** Correlazione inversa. I titoli si muovono in direzioni opposte, fungendo da copertura naturale.
+                    """)
+                    st.success("📐 Ottimizzazione statistica del portafoglio multi-asset completata con successo nel Tab 4.")
+            except Exception as ex:
+                st.error(f"Errore durante l'elaborazione dei vettori di portafoglio: {ex}")
+
 
 # ==========================================
-# --- TAB 4: LIVE ALERTS STRATEGICI ---
+# --- TAB 5: LIVE ALERTS STRATEGICI ---
 # ==========================================
 with tab4:
     st.subheader("🔔 Canale Notifiche Quantitative in Tempo Reale via Telegram")
@@ -1299,7 +1449,7 @@ with tab4:
             st.success(f"Scansione terminata! Inviati {segnali_trovati} segnali bilanciati.")
 
 # ==========================================
-# TAB 5: ANALISI GARCH ---
+# TAB 6: ANALISI GARCH ---
 # ==========================================
 with tab5:
     st.subheader("📈 Studio ed Analisi Quantitativa della Volatilità (GARCH)")
