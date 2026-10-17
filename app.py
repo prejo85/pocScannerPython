@@ -1490,11 +1490,10 @@ with tab4:
                 else:
                     st.info("⚪ **Nessun Segnale Operativo Live ad Oscillazione in questo momento.** (Modalità Taglia Costante)")
 
-            # --- CARD PERFORMANCE LEDGER AGGREGATO CORRETTO SENZA BACKSLASH ---
+            # --- CARD PERFORMANCE LEDGER AGGREGATO ---
             st.markdown("### 📊 Performance Ledger: Risultati Storici Strategia (Tab 4)")
             if trade_log_t4:
                 df_report_t4 = pd.DataFrame(trade_log_t4)
-                # CORREZIONE APPLICATA: Ricerca esatta della colonna 'PnL (\$)' pulita
                 operazioni_vincenti = df_report_t4[df_report_t4["PnL ($)"] > 0]
                 win_rate = (len(operazioni_vincenti) / len(df_report_t4)) * 100
                 ritorno_percentuale = ((capitale_corrente - t4_capitale) / t4_capitale) * 100
@@ -1511,16 +1510,17 @@ with tab4:
             else:
                 st.warning("⚠️ Nessun trade registrato nel periodo storico selezionato con i parametri attuali.")
                 
-            # --- INSERIMENTO NOTA METODOLOGICA DIDATTICA ---
+            # ==============================================================================
+            # --- MODIFICA FOTO 2: FIX STRINGA RAW PER FORMULA LATEX PERFETTA ---
+            # ==============================================================================
             st.markdown("---")
             st.markdown("### 📐 Nota sulla Formula Quantitativa della Taglia")
-            st.markdown(f"""
-            Ogni volta che si attiva un segnale nel simulatore (o nella matrice live qui sopra), l'algoritmo esegue questa divisione per determinare l'esposizione:
+            st.markdown("Ogni volta che si attiva un segnale nel simulatore (o nella matrice live qui sopra), l'algoritmo esegue questa divisione per determinare l'esposizione:")
             
-            \[\text{{Taglia Posizione (Pezzi)}} = \frac{{\text{{Capitale Corrente}} \times \text{{Percentuale Rischio}}}}{{\text{{Distanza d'Ingresso dallo Stop Loss Strutturale}}}}\]
+            # Utilizziamo la stringa grezza 'r' per impedire distorsioni nell'interprete di Streamlit
+            st.markdown(r"\[\text{Taglia Posizione (Pezzi)} = \frac{\text{Capitale Corrente} \times \text{Percentuale Rischio}}{\text{Distanza d'Ingresso dallo Stop Loss Strutturale}}\]")
             
-            Grazie a questa formula, **l'esito monetario finale in caso di perdita sarà sempre controllato ed identico sul conto** (perderai sempre esattamente l'1% o la percentuale impostata del tuo capitale corrente), indipendentemente dal fatto che l'algoritmo abbia comprato 10 azioni o 100 azioni.
-            """)
+            st.markdown("Grazie a questa formula, l'esito monetario finale in caso di perdita sarà sempre controllato ed identico sul conto (perderai sempre esattamente l'1% o la percentuale impostata del tuo capitale corrente), indipendentemente dal fatto che l'algoritmo abbia comprato 10 azioni o 100 azioni.")
             st.success("📐 Backtest ad oscillazione e modulo di calcolo real-time completati con successo.")
         else:
             st.error("Dati storici insufficienti per compilare l'oscillatore su questo orizzonte temporale.")
