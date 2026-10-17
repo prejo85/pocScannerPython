@@ -1495,7 +1495,7 @@ with tab4:
             if trade_log_t4:
                 df_report_t4 = pd.DataFrame(trade_log_t4)
                 # CORREZIONE APPLICATA: Ricerca esatta della colonna 'PnL (\$)' pulita
-                operazioni_vincenti = df_report_t4[df_report_t4["PnL (\$)"] > 0]
+                operazioni_vincenti = df_report_t4[df_report_t4["PnL ($)"] > 0]
                 win_rate = (len(operazioni_vincenti) / len(df_report_t4)) * 100
                 ritorno_percentuale = ((capitale_corrente - t4_capitale) / t4_capitale) * 100
                 
