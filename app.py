@@ -149,10 +149,11 @@ def calc_vp(df, div=200):
     return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
 
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 ,tab7 = st.tabs([
     "Analisi Triple-POC", 
     "Analisi Geometrica POC", 
-    "Breakout Trend-Following", 
+    "Breakout Trend-Following",
+    "Backtest ZScore",
     "Ottimizzatore & Correlazione", 
     "Alert Telegram",               
     "Analisi GARCH"                 
@@ -1210,9 +1211,17 @@ with tab3:
             st.success("📐 Backtest e report completati. Tratteggi fini a +-2 sincronizzati in stile Tab 2.")
 
 # ==============================================================================
-# --- TAB 4: PARTE 1 - CONFIGURAZIONE INTERFACCIA UTENTE VERTICALE ---
+# --- TAB 4: SPAZIO RISERVATO PER SVILUPPI FUTURI ---
 # ==============================================================================
 with tab4:
+    st.subheader("🚧 Tab 4: Modulo in Fase di Progettazione")
+    st.info("Spazio di sviluppo riservato. In attesa delle specifiche tecniche per l'iniezione del nuovo algoritmo quantitativo...")
+
+
+# ==============================================================================
+# --- TAB 5: PARTE 1 - CONFIGURAZIONE INTERFACCIA UTENTE VERTICALE ---
+# ==============================================================================
+with tab5:
     st.subheader("📊 Tab 4: Ottimizzatore Quantitativo & Matrice di Correlazione")
     st.markdown("Analizza le interdipendenze statistiche tra molteplici asset ed ottimizza la diversificazione dei pesi per evitare la sovraesposizione del rischio sui breakout.")
     
@@ -1358,9 +1367,9 @@ with tab4:
 
 
 # ==========================================
-# --- TAB 5: LIVE ALERTS STRATEGICI ---
+# --- TAB 6: LIVE ALERTS STRATEGICI ---
 # ==========================================
-with tab5:
+with tab6:
     st.subheader("🔔 Canale Notifiche Quantitative in Tempo Reale via Telegram")
     st.success("✅ Algoritmo di Strategia Bilanciata Integrato.")
     
@@ -1449,9 +1458,9 @@ with tab5:
             st.success(f"Scansione terminata! Inviati {segnali_trovati} segnali bilanciati.")
 
 # ==========================================
-# TAB 6: ANALISI GARCH ---
+# TAB 7: ANALISI GARCH ---
 # ==========================================
-with tab6:
+with tab7:
     st.subheader("📈 Studio ed Analisi Quantitativa della Volatilità (GARCH)")
     st.markdown("Configura i parametri sottostanti per modellare i cluster di volatilità sui rendimenti finanziari logaritmici.")
     
