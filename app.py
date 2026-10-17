@@ -1403,29 +1403,32 @@ with tab4:
 # ==============================================================================
             st.markdown(f"##### 📊 Grafico Sincronizzato con Esecuzione Ordini e Oscillatore Z-Score")
             
+            # Subplot unificato a due righe ad assi X condivisibili per lo shared zoom
             fig_t4 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.72, 0.28])
             
-            t4_data_inizio = df_t4.index
-            t4_data_fine = df_t4.index[-1]
             p_attuale = float(close_series.iloc[-1])
             
+            # 1. Candele prezzo (Riga 1)
             fig_t4.add_trace(grp.Candlestick(
                 x=df_t4.index, open=df_t4["Open"].astype(float), high=df_t4["High"].astype(float),
                 low=df_t4["Low"].astype(float), close=df_t4["Close"].astype(float), name=t4_ticker
             ), row=1, col=1)
             
+            # Marcatori Ingressi LONG (Frecce Verdi verso l'alto)
             for dt_in, val_in in punti_ingresso_long:
                 fig_t4.add_trace(grp.Scatter(
                     x=[dt_in], y=[val_in], mode="markers",
                     marker=dict(color="#22c55e", size=14, symbol="triangle-up"), showlegend=False
                 ), row=1, col=1)
                 
+            # Marcatori Ingressi SHORT (Frecce Rosse verso il basso)
             for dt_in, val_in in punti_ingresso_short:
                 fig_t4.add_trace(grp.Scatter(
                     x=[dt_in], y=[val_in], mode="markers",
                     marker=dict(color="#ef4444", size=14, symbol="triangle-down"), showlegend=False
                 ), row=1, col=1)
                 
+            # Marcatori Uscite Target/Stop (Cerchi)
             for dt_out, val_out, esito_out in punti_uscita_grafico:
                 colore_marker = "#22c55e" if "green" in esito_out else "#ef4444"
                 fig_t4.add_trace(grp.Scatter(
@@ -1433,16 +1436,28 @@ with tab4:
                     marker=dict(color=colore_marker, size=11, symbol="circle"), showlegend=False
                 ), row=1, col=1)
             
+            # 2. Oscillatore Z-Score (Riga 2)
             fig_t4.add_trace(grp.Scatter(
                 x=df_t4.index, y=df_t4["Z_Score"], mode="lines", name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ), row=2, col=1)
             
-            fig_t4.add_shape(type="line", x0=t4_data_inizio, x1=t4_data_fine, y0=2.0, y1=2.0, 
-                             line=dict(color="#22c55e", width=1.0, dash="dash"), row=2, col=1, yref="y2")
-            fig_t4.add_shape(type="line", x0=t4_data_inizio, x1=t4_data_fine, y0=0.0, y1=0.0, 
-                             line=dict(color="rgba(255,255,255,0.2)", width=1.0, dash="solid"), row=2, col=1, yref="y2")
-            fig_t4.add_shape(type="line", x0=t4_data_inizio, x1=t4_data_fine, y0=-2.0, y1=-2.0, 
-                             line=dict(color="#ef4444", width=1.0, dash="dash"), row=2, col=1, yref="y2")
+            # --- ANCORAGGIO ORIZZONTALE CERTIFICATO (xref="paper" e yref="y2") ---
+            # Questo metodo disegna le linee da sinistra a destra sul layout indipendentemente dal formato dell'indice delle date
+            # Linea tratteggiata VERDE SOTTILE fissa a +2 (Target Short / Innesco Long)
+            fig_t4.add_shape(type="line", x0=0, x1=1, y0=2.0, y1=2.0, xref="paper", yref="y2",
+                             line=dict(color="#22c55e", width=1.0, dash="dash"), row=2, col=1)
+            
+            # Linea centrale di equilibrio dello zero
+            fig_t4.add_shape(type="line", x0=0, x1=1, y0=0.0, y1=0.0, xref="paper", yref="y2",
+                             line=dict(color="rgba(255,255,255,0.2)", width=1.0, dash="solid"), row=2, col=1)
+            
+            # Linea tratteggiata ROSSA SOTTILE fissa a -2 (Target Long / Innesco Short)
+            fig_t4.add_shape(type="line", x0=0, x1=1, y0=-2.0, y1=-2.0, xref="paper", yref="y2",
+                             line=dict(color="#ef4444", width=1.0, dash="dash"), row=2, col=1)
+            
+            # Linea dinamica della soglia scelta (Se diversa da 2.0 per controllo visivo)
+            fig_t4.add_shape(type="line", x0=0, x1=1, y0=t4_soglia_ingresso, y1=t4_soglia_ingresso, xref="paper", yref="y2",
+                             line=dict(color="#ef4444", width=1.2, dash="dot"), row=2, col=1)
             
             fig_t4.update_layout(
                 template="plotly_dark", height=700, margin=dict(l=20, r=20, t=10, b=10),
@@ -1467,7 +1482,8 @@ with tab4:
                 
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    st.metric("Ritorno Totale Algoritmo", f"{round(ritorno_percentuale, 2)} %", f"Netto: $ {round(capitale_corrente - t4_t4_capitale if 't4_t4_capitale' in locals() else capitale_corrente - t4_capitale, 2)}")
+                    # Rimosso definitivamente il bug di sintassi 't4_t4_capitale' per sbloccare l'eseguibile di Plotly
+                    st.metric("Ritorno Totale Algoritmo", f"{round(ritorno_percentuale, 2)} %", f"Netto: $ {round(capitale_corrente - t4_capitale, 2)}")
                 with c2:
                     st.metric("Affidabilità (Win Rate)", f"{round(win_rate, 2)} %", f"{len(operazioni_vincenti)} su {len(df_report_t4)} Operazioni Chiuse")
                 with c3:
@@ -1477,9 +1493,8 @@ with tab4:
             else:
                 st.warning("⚠️ Nessun trade registrato nel periodo storico selezionato con i parametri attuali.")
                 
-            st.success("📐 Backtest bidirezionale ad oscillazione concluso con successo. Modulo selettore taglia attivo.")
-        else:
-            st.error("Dati storici insufficienti per compilare l'oscillatore su questo orizzonte temporale.")
+            st.success("📐 Backtest bidirezionale ad oscillazione concluso con successo. Linee fisse orizzontali stabili a schermo.")
+
 
 # ==============================================================================
 # --- TAB 5: PARTE 1 - CONFIGURAZIONE INTERFACCIA UTENTE VERTICALE ---
