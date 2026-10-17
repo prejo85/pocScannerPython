@@ -1342,19 +1342,21 @@ with tab4:
                         in_posizione = True
 
 # ==============================================================================
-# --- TAB 4: PARTE 3 - SHARED GRAPHIC & REPORT FINANZIARIO CORRETTO ---
+# --- TAB 4: PARTE 3 - SHARED GRAPHIC & REPORT FINANZIARIO DEFINITIVO ---
 # ==============================================================================
             st.markdown(f"##### 📊 Grafico Sincronizzato con Esecuzione Ordini e Oscillatore Z-Score")
             
-            # Subplot unificato a due righe ad assi X condivisibili
+            # Subplot unificato a due righe ad assi X condivisibili per lo shared zoom
             fig_t4 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.72, 0.28])
-            data_oggi = df_t4.index[-1]
-            data_inizio_str = df_t4.index.strftime("%Y-%m-%d")
-            data_fine_str = df_t4.index[-1].strftime("%Y-%m-%d")
             
-            # 1. Candele riga 1
+            # Punti di confine temporali stabili estratti dall'indice nativo del DataFrame
+            t4_data_inizio = df_t4.index
+            t4_data_fine = df_t4.index[-1]
+            p_attuale = float(close_series.iloc[-1])
+            
+            # 1. Grafico superiore a candele (Riga 1)
             fig_t4.add_trace(grp.Candlestick(
-                x=df_t4.index, open=df_t4["Open"].astype(float), high=df_t4["High"].astype(float),
+                x=df_t4.index, open=df_t4["Open"].astype(float), high=df_bt["High"].astype(float),
                 low=df_t4["Low"].astype(float), close=df_t4["Close"].astype(float), name=t4_ticker
             ), row=1, col=1)
             
@@ -1373,35 +1375,50 @@ with tab4:
                     name="EXIT POSITION", showlegend=False
                 ), row=1, col=1)
             
-            # 2. Z-Score riga 2
+            # 2. Grafico inferiore dell'oscillatore Z-Score (Riga 2)
             fig_t4.add_trace(grp.Scatter(
-                x=df_t4.index, y=df_t4["Z_Score"], mode="lines", name="Z-Score", line=dict(color="#38bdf8", width=1.5)
+                x=df_t4.index, y=df_t4["Z_Score"], mode="lines", name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ), row=2, col=1)
             
             # --- APPLICAZIONE RIGIDE SOGLIE FINISSIME ORIZZONTALI (yref="y2") ---
-            # Linea tratteggiata VERDE SOTTILE a +2 (Innesco d'acquisto e target TP opposto)
-            fig_t4.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=2.0, y1=2.0, 
-                             line=dict(color="#22c55e", width=1.0, dash="dash"), row=2, col=1, yref="y2")
+            # Linea della soglia utente dinamica (Innesco accelerazione)
+            fig_t4.add_shape(type="line", x0=t4_data_inizio, x1=t4_data_fine, y0=t4_soglia_ingresso, y1=t4_soglia_ingresso, 
+                             line=dict(color="#ef4444", width=1.5, dash="dash"), row=2, col=1, yref="y2")
             
-            # Linea centrale dello zero
-            fig_t4.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=0, y1=0, 
+            # Linea tratteggiata VERDE SOTTILE fissa a +2
+            fig_t4.add_shape(type="line", x0=t4_data_inizio, x1=t4_data_fine, y0=2.0, y1=2.0, 
+                             line=dict(color="#22c55e", width=1.2, dash="dash"), row=2, col=1, yref="y2")
+            
+            # Linea centrale di equilibrio dello zero
+            fig_t4.add_shape(type="line", x0=t4_data_inizio, x1=t4_data_fine, y0=0.0, y1=0.0, 
                              line=dict(color="rgba(255,255,255,0.2)", width=1.0, dash="solid"), row=2, col=1, yref="y2")
             
-            # Linea tratteggiata ROSSA SOTTILE a -2 (Filtro di uscita in Take Profit)
-            fig_t4.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=-2.0, y1=-2.0, 
-                             line=dict(color="#ef4444", width=1.0, dash="dash"), row=2, col=1, yref="y2")
+            # Linea tratteggiata ROSSA SOTTILE fissa a -2
+            fig_t4.add_shape(type="line", x0=t4_data_inizio, x1=t4_data_fine, y0=-2.0, y1=-2.0, 
+                             line=dict(color="#ef4444", width=1.2, dash="dash"), row=2, col=1, yref="y2")
             
-            # LAYOUT E CORREZIONE RIGIDA DEI RIFERIMENTI: Convertito fig_bt in fig_t4 nelle update degli assi X
-            fig_t4.update_layout(template="plotly_dark", height=680, margin=dict(l=20, r=20, t=10, b=10), showlegend=False)
+            # Configurazione del layout unico: disattiviamo i range slider nativi per lo shared zoom
+            fig_t4.update_layout(
+                template="plotly_dark", 
+                height=700, 
+                margin=dict(l=20, r=20, t=10, b=10),
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            
+            # Configurazione e allineamento degli assi Y e X
             fig_t4.update_yaxes(title_text=f"Prezzo {t4_ticker} ($)", row=1, col=1)
             fig_t4.update_yaxes(title_text="Deviazioni Std (Z)", range=[-5.5, 5.5], row=2, col=1)
             fig_t4.update_xaxes(rangeslider_visible=False, row=1, col=1)
             fig_t4.update_xaxes(rangeslider_visible=False, row=2, col=1)
             
+            # Rendering del grafico combinato su Streamlit
             st.plotly_chart(fig_t4, use_container_width=True, key="t4_shared_zoom_pure_chart")
             
-            # CARD RIASSUNTIVE RISULTATI ECONOMICHE DEL BACKTEST AD OSCILLAZIONE
+            # --- CARD RIASSUNTIVE RISULTATI ECONOMICHE DEL BACKTEST ---
             st.markdown("### 📊 Performance Ledger: Risultati Strategia ad Inversione Z-Score (Tab 4)")
+            st.info(f"⚙️ **Modello di Taglia Attivo nel Simulatore:** {modello_size}")
+            
             if trade_log_t4:
                 df_report_t4 = pd.DataFrame(trade_log_t4)
                 operazioni_vincenti = df_report_t4[df_report_t4["PnL ($)"] > 0]
@@ -1420,8 +1437,7 @@ with tab4:
             else:
                 st.warning("⚠️ Nessun trade concluso registrato nel periodo con questa configurazione dello Z-Score.")
                 
-            st.success("📐 Backtest ad oscillazione concluso con successo. Assi X linkati operativi.")
-
+            st.success("📐 Backtest ad oscillazione concluso con successo. Assi X linkati operativi e linee fisse operative.")
 
 
 # ==============================================================================
@@ -1477,7 +1493,7 @@ with tab5:
 
     st.markdown("---")
 # ==============================================================================
-# --- TAB 4: PARTE 2 - CORE QUANT ENGINE & CALCOLO CORRELAZIONI ---
+# --- TAB 5: PARTE 2 - CORE QUANT ENGINE & CALCOLO CORRELAZIONI ---
 # ==============================================================================
     if st.button("📊 Elabora Correlazione ed Ottimizza Pesi", type="primary", key="opt_btn_start"):
         lista_tickers_opt = [t.strip().upper() for t in opt_tickers_input.split(",") if t.strip()]
@@ -1512,7 +1528,7 @@ with tab5:
                     somma_inversa = inversa_volatilita.sum()
                     pesi_ottimizzati = inversa_volatilita / somma_inversa
 # ==============================================================================
-# --- TAB 4: PARTE 3 - RENDERING GRAFICO HEATMAP & LEDGER DI ALLOCAZIONE ---
+# --- TAB 5: PARTE 3 - RENDERING GRAFICO HEATMAP & LEDGER DI ALLOCAZIONE ---
 # ==============================================================================
                     st.markdown("##### 🌡️ Heatmap Statistica: Matrice di Correlazione dei Rendimenti (Tab 4)")
                     
