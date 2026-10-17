@@ -1247,7 +1247,7 @@ with tab4:
 
     st.markdown("---")
 # ==============================================================================
-# --- TAB 4: PARTE 2 - CORE ENGINE & SIMULATORE AD OSCILLAZIONE ---
+# --- TAB 4: PARTE 2 - CORE ENGINE & SIMULATORE AD OSCILLAZIONE CORRETTO ---
 # ==============================================================================
     if st.button("📐 Avvia Backtest ad Oscillazione Z-Score", type="primary", key="t4_btn_start"):
         st.info(f"Elaborazione matriciale e calcolo oscillazioni per {t4_ticker}...")
@@ -1315,7 +1315,7 @@ with tab4:
                     
                     # Condizione B: Il prezzo abbatte lo Stop Loss iniziale impostato alla base del pattern
                     elif p_low <= trade_attuale["sl"]:
-                        pnl = (trade_attuale["sl"] - trade_attuale["prezzo_ingresso"]) * trade_attuale["taglia"] if (trade_attuale["sl"] - trade_attuale["prezzo_ingresso"]) != 0 else 0
+                        # CORREZIONE BUG DI CHIAVE: Allineamento coerente su 'ingresso' per evitare KeyError
                         pnl = (trade_attuale["sl"] - trade_attuale["ingresso"]) * trade_attuale["taglia"]
                         capitale_corrente += pnl
                         trade_log_t4.append({"Data Ingress": trade_attuale["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"), "Tipo": "LONG", "Esito": "STOP LOSS BASE", "PnL ($)": round(pnl, 2), "Capitale ($)": round(capitale_corrente, 2)})
@@ -1340,6 +1340,7 @@ with tab4:
                         }
                         punti_ingresso_grafico.append((data_corrente, p_apertura))
                         in_posizione = True
+
 # ==============================================================================
 # --- TAB 4: PARTE 3 - SHARED GRAPHIC & REPORT FINANZIARIO ---
 # ==============================================================================
