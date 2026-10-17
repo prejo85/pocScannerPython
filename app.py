@@ -1399,7 +1399,7 @@ with tab4:
                             in_posizione = True
 
 # ==============================================================================
-# --- TAB 4: PARTE 3 - SHARED GRAPHIC & RIPRISTINO ASSE TEMPORALE ---
+# --- TAB 4: PARTE 3 - SHARED GRAPHIC, LIVE SEGNALI & NOTA METODOLOGICA ---
 # ==============================================================================
             st.markdown(f"##### 📊 Grafico Sincronizzato con Esecuzione Ordini e Oscillatore Z-Score")
             
@@ -1407,9 +1407,7 @@ with tab4:
             fig_t4 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.72, 0.28])
             
             p_attuale = float(close_series.iloc[-1])
-            
-            # Estrazione esatta dei punti temporali di inizio e fine per evitare il bug del 1970
-            t4_inizio_reale = df_t4.index[0]
+            t4_inizio_reale = df_t4.index
             t4_fine_reale = df_t4.index[-1]
             
             # 1. Candele prezzo (Riga 1)
@@ -1446,53 +1444,87 @@ with tab4:
             ), row=2, col=1)
             
             # --- TRACCIAMENTO RIGHE DI SOGLIA ORIZZONTALI CON DATE REALI ---
-            # Linea tratteggiata VERDE SOTTILE fissa a +2
-            fig_t4.add_shape(type="line", x0=t4_inizio_reale, x1=t4_fine_reale, y0=2.0, y1=2.0, 
-                             line=dict(color="#22c55e", width=1.0, dash="dash"), row=2, col=1)
+            fig_t4.add_shape(type="line", x0=t4_inizio_reale, x1=t4_fine_reale, y0=2.0, y1=2.0, line=dict(color="#22c55e", width=1.0, dash="dash"), row=2, col=1)
+            fig_t4.add_shape(type="line", x0=t4_inizio_reale, x1=t4_fine_reale, y0=0.0, y1=0.0, line=dict(color="rgba(255,255,255,0.2)", width=1.0, dash="solid"), row=2, col=1)
+            fig_t4.add_shape(type="line", x0=t4_inizio_reale, x1=t4_fine_reale, y0=-2.0, y1=-2.0, line=dict(color="#ef4444", width=1.0, dash="dash"), row=2, col=1)
             
-            # Linea centrale di equilibrio dello zero
-            fig_t4.add_shape(type="line", x0=t4_inizio_reale, x1=t4_fine_reale, y0=0.0, y1=0.0, 
-                             line=dict(color="rgba(255,255,255,0.2)", width=1.0, dash="solid"), row=2, col=1)
-            
-            # Linea tratteggiata ROSSA SOTTILE fissa a -2
-            fig_t4.add_shape(type="line", x0=t4_inizio_reale, x1=t4_fine_reale, y0=-2.0, y1=-2.0, 
-                             line=dict(color="#ef4444", width=1.0, dash="dash"), row=2, col=1)
-                       
-            fig_t4.update_layout(
-                template="plotly_dark", height=700, margin=dict(l=20, r=20, t=10, b=10),
-                showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
-            fig_t4.update_yaxes(title_text=f"Prezzo {t4_ticker} ($)", row=1, col=1)
+            fig_t4.update_layout(template="plotly_dark", height=700, margin=dict(l=20, r=20, t=10, b=10), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+            fig_t4.update_yaxes(title_text=f"Prezzo {t4_ticker} (\$)", row=1, col=1)
             fig_t4.update_yaxes(title_text="Deviazioni Std (Z)", range=[-5.5, 5.5], row=2, col=1)
             fig_t4.update_xaxes(rangeslider_visible=False, row=1, col=1)
             fig_t4.update_xaxes(rangeslider_visible=False, row=2, col=1)
             
             st.plotly_chart(fig_t4, use_container_width=True, key="t4_shared_zoom_pure_chart")
             
-            # --- CARD PERFORMANCE LEDGER AGGREGATO BIDIREZIONALE ---
-            st.markdown("### 📊 Performance Ledger: Risultati Strategia ad Inversione Z-Score (Tab 4)")
-            st.info(f"⚙️ **Modello di Taglia Attivo nel Simulatore:** {t4_tipo_size}")
+            # ==============================================================================
+            # --- NUOVO: SEZIONE OPERATIVITÀ IN TEMPO REALE (SEGNALE ADESSO) ---
+            # ==============================================================================
+            st.markdown("### 🎯 Matrice Operativa Real-Time (Operare Adesso)")
+            z_attuale = float(df_t4["Z_Score"].iloc[-1])
+            prezzo_last = float(df_t4["Close"].iloc[-1])
             
+            st.write(f"**Stato Corrente dello Z-Score:** `{round(z_attuale, 2)}` | **Ultimo Prezzo:** `{round(prezzo_last, 2)} $`")
+            
+            if t4_tipo_size == "Rischio Fisso Frazionario (% Capitale)":
+                rischio_dollari = capitale_corrente * (t4_rischio_pct / 100)
+                
+                if z_attuale >= 2.0:
+                    sl_live = float(df_t4["Low"].iloc[-1])
+                    dist_sl_live = prezzo_last - sl_live
+                    pezzi_live = rischio_dollari / dist_sl_live if dist_sl_live > 0 else 0
+                    if pezzi_live > 0:
+                        st.success(f"🟢 **SEGNALE ALGORITMICO IN CORSO: INGRESSO LONG ADESSO**\n* **Azione Consigliata:** Compra **{round(pezzi_live, 2)} Pz** di {t4_ticker}\n* **Prezzo Ingresso Stimato:** {round(prezzo_last, 2)} \$\n* **Stop Loss Tassativo (Base Pattern):** {round(sl_live, 2)} \((Rischio Totale: {round(rischio_dollari, 2)}\))")
+                elif z_attuale <= -2.0:
+                    sl_live = float(df_t4["High"].iloc[-1])
+                    dist_sl_live = sl_live - prezzo_last
+                    pezzi_live = rischio_dollari / dist_sl_live if dist_sl_live > 0 else 0
+                    if pezzi_live > 0:
+                        st.error(f"🔴 **SEGNALE ALGORITMICO IN CORSO: INGRESSO SHORT ADESSO**\n* **Azione Consigliata:** Vendi allo Scoperto **{round(pezzi_live, 2)} Pz** di {t4_ticker}\n* **Prezzo Ingresso Stimato:** {round(prezzo_last, 2)} \$\n* **Stop Loss Tassativo (Base Pattern):** {round(sl_live, 2)} \((Rischio Totale: {round(rischio_dollari, 2)}\))")
+                else:
+                    st.info("⚪ **Nessun Segnale Operativo Live ad Oscillazione in questo momento.** Lo Z-Score si trova all'interno delle bande di stabilità cartesiana.")
+            else:
+                if z_attuale >= 2.0:
+                    st.success(f"🟢 **SEGNALE ALGORITMICO IN CORSO: INGRESSO LONG ADESSO**\n* **Azione Consigliata:** Compra **{t4_valore_size_fisso} Pz** (Taglia Costante Fissa)")
+                elif z_attuale <= -2.0:
+                    st.error(f"🔴 **SEGNALE ALGORITMICO IN CORSO: INGRESSO SHORT ADESSO**\n* **Azione Consigliata:** Vendi allo Scoperto **{t4_valore_size_fisso} Pz** (Taglia Costante Fissa)")
+                else:
+                    st.info("⚪ **Nessun Segnale Operativo Live ad Oscillazione in questo momento.** (Modalità Taglia Costante)")
+
+            # --- CARD PERFORMANCE LEDGER AGGREGATO ---
+            st.markdown("### 📊 Performance Ledger: Risultati Storici Strategia (Tab 4)")
             if trade_log_t4:
                 df_report_t4 = pd.DataFrame(trade_log_t4)
-                operazioni_vincenti = df_report_t4[df_report_t4["PnL ($)"] > 0]
+                operazioni_vincenti = df_report_t4[df_report_t4["PnL (\$)"] > 0]
                 win_rate = (len(operazioni_vincenti) / len(df_report_t4)) * 100
                 ritorno_percentuale = ((capitale_corrente - t4_capitale) / t4_capitale) * 100
                 
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    st.metric("Ritorno Totale Algoritmo", f"{round(ritorno_percentuale, 2)} %", f"Netto: $ {round(capitale_corrente - t4_capitale, 2)}")
+                    st.metric("Ritorno Totale Algoritmo", f"{round(ritorno_percentuale, 2)} %", f"Netto: \$ {round(capitale_corrente - t4_capitale, 2)}")
                 with c2:
                     st.metric("Affidabilità (Win Rate)", f"{round(win_rate, 2)} %", f"{len(operazioni_vincenti)} su {len(df_report_t4)} Operazioni Chiuse")
                 with c3:
-                    st.metric("Capitale Finale di Bilancio", f"$ {round(capitale_corrente, 2)}", f"Iniziale: $ {t4_capitale}")
+                    st.metric("Capitale Finale di Bilancio", f"\( {round(capitale_corrente, 2)}", f"Iniziale: \) {t4_capitale}")
                     
                 st.dataframe(df_report_t4, use_container_width=True)
             else:
                 st.warning("⚠️ Nessun trade registrato nel periodo storico selezionato con i parametri attuali.")
                 
-            st.success("📐 Asse temporale ripristinato. Le candele e le linee fisse orizzontali sono ora perfettamente coordinate.")
-
+            # ==============================================================================
+            # --- NUOVO: INSERIMENTO NOTA METODOLOGICA DIDATTICA (RICHIESTA) ---
+            # ==============================================================================
+            st.markdown("---")
+            st.markdown("### 📐 Nota sulla Formula Quantitativa della Taglia")
+            st.markdown(f"""
+            Ogni volta che si attiva un segnale nel simulatore (o nella matrice live qui sopra), l'algoritmo esegue questa divisione per determinare l'esposizione:
+            
+            \[\text{{Taglia Posizione (Pezzi)}} = \frac{{\text{{Capitale Corrente}} \times \text{{Percentuale Rischio}}}}{{\text{{Distanza d'Ingresso dallo Stop Loss Strutturale}}}}\]
+            
+            Grazie a questa formula, **l'esito monetario finale in caso di perdita sarà sempre controllato ed identico sul conto** (perderai sempre esattamente l'1% o la percentuale impostata del tuo capitale corrente), indipendentemente dal fatto che l'algoritmo abbia comprato 10 azioni o 100 azioni.
+            """)
+            st.success("📐 Backtest ad oscillazione e modulo di calcolo real-time completati con successo.")
+        else:
+            st.error("Dati storici insufficienti per compilare l'oscillatore su questo orizzonte temporale.")
 
 
 # ==============================================================================
