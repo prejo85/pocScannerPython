@@ -1342,7 +1342,7 @@ with tab4:
                         in_posizione = True
 
 # ==============================================================================
-# --- TAB 4: PARTE 3 - SHARED GRAPHIC & REPORT FINANZIARIO DEFINITIVO ---
+# --- TAB 4: PARTE 3 - SHARED GRAPHIC & REPORT FINANZIARIO CORRETTO ---
 # ==============================================================================
             st.markdown(f"##### 📊 Grafico Sincronizzato con Esecuzione Ordini e Oscillatore Z-Score")
             
@@ -1354,10 +1354,14 @@ with tab4:
             t4_data_fine = df_t4.index[-1]
             p_attuale = float(close_series.iloc[-1])
             
-            # 1. Grafico superiore a candele (Riga 1)
+            # 1. Grafico superiore a candele (Riga 1) - CORRETTO df_bt in df_t4 su high
             fig_t4.add_trace(grp.Candlestick(
-                x=df_t4.index, open=df_t4["Open"].astype(float), high=df_bt["High"].astype(float),
-                low=df_t4["Low"].astype(float), close=df_t4["Close"].astype(float), name=t4_ticker
+                x=df_t4.index, 
+                open=df_t4["Open"].astype(float), 
+                high=df_t4["High"].astype(float),
+                low=df_t4["Low"].astype(float), 
+                close=df_t4["Close"].astype(float), 
+                name=t4_ticker
             ), row=1, col=1)
             
             # PLOT DELLE OPERAZIONI EFFETTUATE SUL PREZZO (Frecce Ingressi / Cerchi Uscite)
@@ -1382,19 +1386,19 @@ with tab4:
             
             # --- APPLICAZIONE RIGIDE SOGLIE FINISSIME ORIZZONTALI (yref="y2") ---
             # Linea della soglia utente dinamica (Innesco accelerazione)
-            fig_t4.add_shape(type="line", x0=t4_data_inizio, x1=t4_data_fine, y0=t4_soglia_ingresso, y1=t4_soglia_ingresso, 
+            fig_t4.add_shape(type="line", x0=t4_data_inizio[0], x1=t4_data_fine, y0=t4_soglia_ingresso, y1=t4_soglia_ingresso, 
                              line=dict(color="#ef4444", width=1.5, dash="dash"), row=2, col=1, yref="y2")
             
             # Linea tratteggiata VERDE SOTTILE fissa a +2
-            fig_t4.add_shape(type="line", x0=t4_data_inizio, x1=t4_data_fine, y0=2.0, y1=2.0, 
+            fig_t4.add_shape(type="line", x0=t4_data_inizio[0], x1=t4_data_fine, y0=2.0, y1=2.0, 
                              line=dict(color="#22c55e", width=1.2, dash="dash"), row=2, col=1, yref="y2")
             
             # Linea centrale di equilibrio dello zero
-            fig_t4.add_shape(type="line", x0=t4_data_inizio, x1=t4_data_fine, y0=0.0, y1=0.0, 
+            fig_t4.add_shape(type="line", x0=t4_data_inizio[0], x1=t4_data_fine, y0=0.0, y1=0.0, 
                              line=dict(color="rgba(255,255,255,0.2)", width=1.0, dash="solid"), row=2, col=1, yref="y2")
             
             # Linea tratteggiata ROSSA SOTTILE fissa a -2
-            fig_t4.add_shape(type="line", x0=t4_data_inizio, x1=t4_data_fine, y0=-2.0, y1=-2.0, 
+            fig_t4.add_shape(type="line", x0=t4_data_inizio[0], x1=t4_data_fine, y0=-2.0, y1=-2.0, 
                              line=dict(color="#ef4444", width=1.2, dash="dash"), row=2, col=1, yref="y2")
             
             # Configurazione del layout unico: disattiviamo i range slider nativi per lo shared zoom
@@ -1438,7 +1442,6 @@ with tab4:
                 st.warning("⚠️ Nessun trade concluso registrato nel periodo con questa configurazione dello Z-Score.")
                 
             st.success("📐 Backtest ad oscillazione concluso con successo. Assi X linkati operativi e linee fisse operative.")
-
 
 # ==============================================================================
 # --- TAB 5: PARTE 1 - CONFIGURAZIONE INTERFACCIA UTENTE VERTICALE ---
