@@ -1504,7 +1504,7 @@ with tab4:
                 with c2:
                     st.metric("Affidabilità (Win Rate)", f"{round(win_rate, 2)} %", f"{len(operazioni_vincenti)} su {len(df_report_t4)} Operazioni Chiuse")
                 with c3:
-                    st.metric("Capitale Finale di Bilancio", f"\( {round(capitale_corrente, 2)}", f"Iniziale: \) {t4_capitale}")
+                    st.metric("Capitale Finale di Bilancio", f" {round(capitale_corrente, 2)}", f"Iniziale: {t4_capitale}")
                     
                 st.dataframe(df_report_t4, use_container_width=True)
             else:
@@ -1518,7 +1518,7 @@ with tab4:
             st.markdown("Ogni volta che si attiva un segnale nel simulatore (o nella matrice live qui sopra), l'algoritmo esegue questa divisione per determinare l'esposizione:")
             
             # Utilizziamo la stringa grezza 'r' per impedire distorsioni nell'interprete di Streamlit
-            st.markdown(r"\[\text{Taglia Posizione (Pezzi)} = \frac{\text{Capitale Corrente} \times \text{Percentuale Rischio}}{\text{Distanza d'Ingresso dallo Stop Loss Strutturale}}\]")
+            st.markdown(r"\[{Taglia Posizione (Pezzi)} = \frac{{Capitale Corrente} \times {Percentuale Rischio}}{{Distanza d'Ingresso dallo Stop Loss Strutturale}}\]")
             
             st.markdown("Grazie a questa formula, l'esito monetario finale in caso di perdita sarà sempre controllato ed identico sul conto (perderai sempre esattamente l'1% o la percentuale impostata del tuo capitale corrente), indipendentemente dal fatto che l'algoritmo abbia comprato 10 azioni o 100 azioni.")
             st.success("📐 Backtest ad oscillazione e modulo di calcolo real-time completati con successo.")
