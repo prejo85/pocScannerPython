@@ -1211,11 +1211,171 @@ with tab3:
             st.success("📐 Backtest e report completati. Tratteggi fini a +-2 sincronizzati in stile Tab 2.")
 
 # ==============================================================================
-# --- TAB 4: SPAZIO RISERVATO PER SVILUPPI FUTURI ---
+# --- TAB 4: PARTE 1 - INTERFACCIA GRAFICA PURA A DUE PANNELLI ---
 # ==============================================================================
 with tab4:
-    st.subheader("🚧 Tab 4: Modulo in Fase di Progettazione")
-    st.info("Spazio di sviluppo riservato. In attesa delle specifiche tecniche per l'iniezione del nuovo algoritmo quantitativo...")
+    st.subheader("📐 Tab 4: Laboratorio Geometrico e Studio del Momentum")
+    st.markdown("Analisi pura del distacco balistico dei prezzi tramite Z-Score dei residui su retta di regressione, senza moduli operativi di portafoglio.")
+    
+    # Organizzazione rigorosa in due colonne per i soli criteri di input richiesti
+    col_pure1, col_pure2 = st.columns(2)
+    
+    # --------------------------------------------------------------------------
+    # PANNELLO 1: CONFIGURAZIONE ASSET, STORICO E TIMEFRAME
+    # --------------------------------------------------------------------------
+    with col_pure1:
+        st.markdown("#### 🗂️ 1. Dati & Timeframe")
+        t4_ticker = st.text_input("Asset Ticker da scansionare:", value="AAPL", key="t4_tk_input")
+        
+        t4_periodo = st.selectbox("Orizzonte storico dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], index=0, key="t4_per_sel")
+        mappa_periodi_t4 = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
+        
+        t4_tf_label = st.selectbox("Timeframe delle Candele:", ["Giornaliero (Daily)", "Settimanale (Weekly)", "Mensile (Monthly)"], key="t4_tf_sel")
+        t4_tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk", "Mensile (Monthly)": "1mo"}[t4_tf_label]
+    
+    # --------------------------------------------------------------------------
+    # PANNELLO 2: PARAMETRI ALGORITMO Z-SCORE
+    # --------------------------------------------------------------------------
+    with col_pure2:
+        st.markdown("#### 📐 2. Algoritmo Z-Score")
+        t4_finestra = st.slider("Finestra Regressione (Candele base):", min_value=20, max_value=100, value=50, step=5, key="t4_win_sl")
+        t4_soglia = st.slider("Soglia di Riferimento Segnale:", min_value=1.5, max_value=3.5, value=2.0, step=0.1, key="t4_z_sl")
+        st.caption("Determina il livello critico di deviazione standard per monitorare le accelerazioni dinamiche.")
+    
+    st.markdown("---")
+# ==============================================================================
+# --- TAB 4: PARTE 2 - CORE QUANT ENGINE VETTORIZZATO ---
+# ==============================================================================
+    if st.button("📐 Avvia Scansione Geometrica", type="primary", key="t4_btn_start"):
+        st.info(f"Calcolo matriciale in corso per {t4_ticker} in timeframe {t4_tf_label}...")
+        
+        df_t4 = yf.download(tickers=t4_ticker, period=mappa_periodi_t4[t4_periodo], interval=t4_tf_attivo, auto_adjust=False, multi_level_index=False, progress=False)
+        
+        if df_t4 is not None and len(df_bt := df_t4) > t4_finestra:
+            df_t4.columns = [str(c).strip() for c in df_t4.columns]
+            close_series = pd.Series(df_t4["Close"].values.flatten(), index=df_t4.index).astype(float)
+            n_punti = len(df_t4)
+            
+            # Algoritmo Vettorizzato Rolling per la retta di regressione e lo Z-Score
+            n = t4_finestra
+            x = np.arange(n)
+            sum_x, sum_x2 = x.sum(), (x**2).sum()
+            denominatore = n * sum_x2 - (sum_x**2)
+            
+            sum_y = close_series.rolling(window=n).sum()
+            sum_y2 = (close_series**2).rolling(window=n).sum()
+            
+            xy_conv = np.convolve(close_series.values, x[::-1], mode='valid')
+            sum_xy = pd.Series(np.nan, index=close_series.index)
+            sum_xy.iloc[n-1:] = xy_conv
+            
+            m_series = (n * sum_xy - sum_x * sum_y) / denominatore
+            q_series = (sum_x2 * sum_y - sum_x * sum_xy) / denominatore
+            prezzi_teorici_series = m_series * n + q_series
+            
+            mean_x, var_x = sum_x / n, sum_x2 / n - ((sum_x / n)**2)
+            mean_y, var_y = sum_y / n, sum_y2 / n - ((sum_y / n)**2)
+            cov_xy = sum_xy / n - (mean_x * mean_y)
+            
+            var_residui = var_y - (2 * m_series * cov_xy) + (m_series**2 * var_x)
+            std_residui_series = np.sqrt(np.clip(var_residui, 0.00001, None))
+            
+            df_t4["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
+            df_t4["Accelerazione_Geometrica"] = np.where(df_t4["Z_Score"] >= t4_soglia, 1, 0)
+            
+            # Calcolo dei punti di massimo di periodo per il disegno delle resistenze bianche
+            linee_bianche_proiettate = []
+            stato_precedente = 0
+            
+            for i in range(t4_finestra, n_punti):
+                stato_attuale = df_t4["Accelerazione_Geometrica"].iloc[i]
+                if stato_attuale == 1 and stato_precedente == 0:
+                    start_idx = i
+                    data_innesco = df_t4.index[start_idx]
+                    
+                    finestra_lookback = max(0, start_idx - 65)
+                    df_periodo_precedente = df_t4.iloc[finestra_lookback : start_idx + 1]
+                    val_massimo_riferimento = float(df_periodo_precedente["High"].max())
+                    idx_data_massimo = df_periodo_precedente["High"].idxmax()
+                    
+                    linee_bianche_proiettate.append({
+                        "data_inizio": idx_data_massimo,
+                        "data_fine": df_t4.index[-1],
+                        "valore": val_massimo_riferimento
+                    })
+                stato_precedente = stato_attuale
+# ==============================================================================
+# --- TAB 4: PARTE 3 - PLOTLY SHARED ZOOM & DETTAGLIO RIGHE SOTTILI ---
+# ==============================================================================
+            st.markdown(f"##### 📊 Studio del Momentum: Candele Prezzi vs Oscillatore Z-Score")
+            
+            # Generazione del subplot unificato a 2 righe con asse X condiviso
+            fig_t4 = make_subplots(
+                rows=2, cols=1, 
+                shared_xaxes=True, 
+                vertical_spacing=0.07, 
+                row_heights=[0.72, 0.28]
+            )
+            
+            data_oggi = df_t4.index[-1]
+            data_inizio_str = df_t4.index[0].strftime("%Y-%m-%d")
+            data_fine_str = df_t4.index[-1].strftime("%Y-%m-%d")
+            
+            # 1. Grafico superiore a candele (Riga 1)
+            fig_t4.add_trace(grp.Candlestick(
+                x=df_t4.index, open=df_t4["Open"].astype(float), high=df_t4["High"].astype(float),
+                low=df_t4["Low"].astype(float), close=df_t4["Close"].astype(float), name=t4_ticker
+            ), row=1, col=1)
+            
+            # Disegno continuo delle linee bianche tratteggiate sui massimi strutturali rilevati
+            for idx, linea in enumerate(linee_bianche_proiettate):
+                mostra_leg = True if idx == 0 else False
+                fig_t4.add_trace(grp.Scatter(
+                    x=[linea["data_inizio"], linea["data_fine"]], y=[linea["valore"], linea["valore"]],
+                    mode="lines", line=dict(color="#ffffff", width=2.2, dash="dash"),
+                    name="Resistenza Massimo Strutturale", showlegend=mostra_leg
+                ), row=1, col=1)
+            
+            # 2. Grafico inferiore dell'oscillatore Z-Score (Riga 2)
+            fig_t4.add_trace(grp.Scatter(
+                x=df_t4.index, y=df_t4["Z_Score"], mode="lines", name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
+            ), row=2, col=1)
+            
+            # --- APPLICAZIONE RIGIDE DELLE RIGHE DI SOGLIA SOTTILI ED ORIZZONTALI (yref="y2") ---
+            # Linea della soglia scelta dall'utente sul pannello
+            fig_t4.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=t4_soglia, y1=t4_soglia, 
+                             line=dict(color="#ef4444", width=1.5, dash="dash"), row=2, col=1, yref="y2")
+            
+            # Linea tratteggiata VERDE FINISSIMA a +2
+            fig_t4.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=2, y1=2, 
+                             line=dict(color="#22c55e", width=1.0, dash="dash"), row=2, col=1, yref="y2")
+            
+            # Linea centrale di equilibrio dello zero
+            fig_t4.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=0, y1=0, 
+                             line=dict(color="rgba(255,255,255,0.2)", width=1.0, dash="solid"), row=2, col=1, yref="y2")
+            
+            # Linea tratteggiata ROSSA FINISSIMA a -2
+            fig_t4.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=-2, y1=-2, 
+                             line=dict(color="#ef4444", width=1.0, dash="dash"), row=2, col=1, yref="y2")
+            
+            # Configurazione finale layout ed eliminazione range slider per mantenere il blocco zoom sincronizzato
+            fig_t4.update_layout(
+                template="plotly_dark", 
+                height=680, 
+                margin=dict(l=20, r=20, t=10, b=10), 
+                showlegend=True, 
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            
+            fig_t4.update_yaxes(title_text=f"Prezzo {t4_ticker} ($)", row=1, col=1)
+            fig_t4.update_yaxes(title_text="Deviazioni Std (Z)", range=[-5.5, 5.5], row=2, col=1)
+            fig_t4.update_xaxes(rangeslider_visible=False, row=1, col=1)
+            fig_t4.update_xaxes(rangeslider_visible=False, row=2, col=1)
+            
+            st.plotly_chart(fig_t4, use_container_width=True, key="t4_shared_zoom_pure_chart")
+            st.success("📐 Elaborazione e rendering statistico completati con successo nel Tab 4. Assi X linkati.")
+        else:
+            st.error("Dati storici insufficienti per calcolare la regressione sul timeframe selezionato.")
 
 
 # ==============================================================================
