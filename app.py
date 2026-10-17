@@ -1211,52 +1211,55 @@ with tab3:
             st.success("📐 Backtest e report completati. Tratteggi fini a +-2 sincronizzati in stile Tab 2.")
 
 # ==============================================================================
-# --- TAB 4: PARTE 1 - INTERFACCIA GRAFICA PURA A DUE PANNELLI ---
+# --- TAB 4: PARTE 1 - CONFIGURAZIONE INTERFACCIA UTENTE VERTICALE ---
 # ==============================================================================
 with tab4:
-    st.subheader("📐 Tab 4: Laboratorio Geometrico e Studio del Momentum")
-    st.markdown("Analisi pura del distacco balistico dei prezzi tramite Z-Score dei residui su retta di regressione, senza moduli operativi di portafoglio.")
+    st.subheader("📐 Tab 4: Simulatore ad Oscillazione Estrema dello Z-Score")
+    st.markdown("Modello operativo puro basato sui livelli di ipercomprato/ipervenduto statistico: Ingresso a +2.0 e liquidazione a -2.0.")
     
-    # Organizzazione rigorosa in due colonne per i soli criteri di input richiesti
-    col_pure1, col_pure2 = st.columns(2)
+    # Due colonne verticali ordinate per scopo operativo per eliminare il caos visivo
+    t4_col1, t4_col2 = st.columns(2)
     
     # --------------------------------------------------------------------------
     # PANNELLO 1: CONFIGURAZIONE ASSET, STORICO E TIMEFRAME
     # --------------------------------------------------------------------------
-    with col_pure1:
+    with t4_col1:
         st.markdown("#### 🗂️ 1. Dati & Timeframe")
-        t4_ticker = st.text_input("Asset Ticker da scansionare:", value="AAPL", key="t4_tk_input")
+        t4_ticker = st.text_input("Asset Ticker da analizzare (Tab 4):", value="AAPL", key="t4_tk_input")
         
-        t4_periodo = st.selectbox("Orizzonte storico dati:", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], index=0, key="t4_per_sel")
+        t4_periodo = st.selectbox("Orizzonte storico dati (Tab 4):", ["1 Anno", "3 Anni", "5 Anni", "Storico Massimo"], index=1, key="t4_per_sel")
         mappa_periodi_t4 = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "Storico Massimo": "max"}
         
-        t4_tf_label = st.selectbox("Timeframe delle Candele:", ["Giornaliero (Daily)", "Settimanale (Weekly)", "Mensile (Monthly)"], key="t4_tf_sel")
-        t4_tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk", "Mensile (Monthly)": "1mo"}[t4_tf_label]
+        t4_tf_label = st.selectbox("Timeframe delle Candele (Tab 4):", ["Giornaliero (Daily)", "Settimanale (Weekly)"], key="t4_tf_sel")
+        t4_tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[t4_tf_label]
     
     # --------------------------------------------------------------------------
-    # PANNELLO 2: PARAMETRI ALGORITMO Z-SCORE
+    # PANNELLO 2: PARAMETRI ALGORITMO OSCILLATORE
     # --------------------------------------------------------------------------
-    with col_pure2:
-        st.markdown("#### 📐 2. Algoritmo Z-Score")
+    with t4_col2:
+        st.markdown("#### 📐 2. Algoritmo Z-Score & Rischio")
         t4_finestra = st.slider("Finestra Regressione (Candele base):", min_value=20, max_value=100, value=50, step=5, key="t4_win_sl")
-        t4_soglia = st.slider("Soglia di Riferimento Segnale:", min_value=1.5, max_value=3.5, value=2.0, step=0.1, key="t4_z_sl")
-        st.caption("Determina il livello critico di deviazione standard per monitorare le accelerazioni dinamiche.")
-    
+        t4_soglia_ingresso = 2.0  # Soglia fissa d'ingresso come da tua specifica
+        t4_soglia_uscita = -2.0   # Soglia fissa di uscita come da tua specifica
+        
+        t4_capitale = st.number_input("Capitale Operativo ($):", min_value=100, value=10000, step=500, key="t4_cap_input")
+        t4_rischio_pct = st.slider("Rischio per singolo Trade (%):", min_value=0.2, max_value=5.0, value=1.0, step=0.1, key="t4_risk_sl")
+
     st.markdown("---")
 # ==============================================================================
-# --- TAB 4: PARTE 2 - CORE QUANT ENGINE VETTORIZZATO ---
+# --- TAB 4: PARTE 2 - CORE ENGINE & SIMULATORE AD OSCILLAZIONE ---
 # ==============================================================================
-    if st.button("📐 Avvia Scansione Geometrica", type="primary", key="t4_btn_start"):
-        st.info(f"Calcolo matriciale in corso per {t4_ticker} in timeframe {t4_tf_label}...")
+    if st.button("📐 Avvia Backtest ad Oscillazione Z-Score", type="primary", key="t4_btn_start"):
+        st.info(f"Elaborazione matriciale e calcolo oscillazioni per {t4_ticker}...")
         
         df_t4 = yf.download(tickers=t4_ticker, period=mappa_periodi_t4[t4_periodo], interval=t4_tf_attivo, auto_adjust=False, multi_level_index=False, progress=False)
         
-        if df_t4 is not None and len(df_bt := df_t4) > t4_finestra:
+        if df_t4 is not None and len(df_t4) > t4_finestra:
             df_t4.columns = [str(c).strip() for c in df_t4.columns]
             close_series = pd.Series(df_t4["Close"].values.flatten(), index=df_t4.index).astype(float)
             n_punti = len(df_t4)
             
-            # Algoritmo Vettorizzato Rolling per la retta di regressione e lo Z-Score
+            # Algoritmo Vettorizzato per la Regressione e lo Z-Score dei Residui
             n = t4_finestra
             x = np.arange(n)
             sum_x, sum_x2 = x.sum(), (x**2).sum()
@@ -1281,101 +1284,144 @@ with tab4:
             std_residui_series = np.sqrt(np.clip(var_residui, 0.00001, None))
             
             df_t4["Z_Score"] = ((close_series - prezzi_teorici_series) / std_residui_series).fillna(0)
-            df_t4["Accelerazione_Geometrica"] = np.where(df_t4["Z_Score"] >= t4_soglia, 1, 0)
             
-            # Calcolo dei punti di massimo di periodo per il disegno delle resistenze bianche
-            linee_bianche_proiettate = []
-            stato_precedente = 0
+            # Liste per raccogliere i dati storici dei trade e i punti grafici di TP/SL
+            trade_log_t4 = []
+            punti_ingresso_grafico = []
+            punti_uscita_grafico = []
             
-            for i in range(t4_finestra, n_punti):
-                stato_attuale = df_t4["Accelerazione_Geometrica"].iloc[i]
-                if stato_attuale == 1 and stato_precedente == 0:
-                    start_idx = i
-                    data_innesco = df_t4.index[start_idx]
+            capitale_corrente = float(t4_capitale)
+            in_posizione = False
+            
+            # Scansione storica candela per candela
+            for idx_c in range(t4_finestra + 1, n_punti):
+                data_corrente = df_t4.index[idx_c]
+                z_ieri = df_t4["Z_Score"].iloc[idx_c - 1]
+                z_oggi = df_t4["Z_Score"].iloc[idx_c]
+                
+                p_apertura = float(df_t4["Open"].iloc[idx_c])
+                p_low = float(df_t4["Low"].iloc[idx_c])
+                p_high = float(df_t4["High"].iloc[idx_c])
+                
+                # 1. GESTIONE DELLA POSIZIONE APERTA (CONDIZIONE DI USCITA)
+                if in_posizione:
+                    # Condizione A: Lo Z-Score scende sotto il valore estremo di -2.0 (TAKE PROFIT)
+                    if z_oggi <= t4_soglia_uscita:
+                        pnl = (p_apertura - trade_attuale["ingresso"]) * trade_attuale["taglia"]
+                        capitale_corrente += pnl
+                        trade_log_t4.append({"Data Ingress": trade_attuale["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"), "Tipo": "LONG", "Esito": "TAKE PROFIT Z <= -2", "PnL ($)": round(pnl, 2), "Capitale ($)": round(capitale_corrente, 2)})
+                        punti_uscita_grafico.append((data_corrente, p_apertura, "green"))
+                        in_posizione = False
                     
-                    finestra_lookback = max(0, start_idx - 65)
-                    df_periodo_precedente = df_t4.iloc[finestra_lookback : start_idx + 1]
-                    val_massimo_riferimento = float(df_periodo_precedente["High"].max())
-                    idx_data_massimo = df_periodo_precedente["High"].idxmax()
+                    # Condizione B: Il prezzo abbatte lo Stop Loss iniziale impostato alla base del pattern
+                    elif p_low <= trade_attuale["sl"]:
+                        pnl = (trade_attuale["sl"] - trade_attuale["prezzo_ingresso"]) * trade_attuale["taglia"] if (trade_attuale["sl"] - trade_attuale["prezzo_ingresso"]) != 0 else 0
+                        pnl = (trade_attuale["sl"] - trade_attuale["ingresso"]) * trade_attuale["taglia"]
+                        capitale_corrente += pnl
+                        trade_log_t4.append({"Data Ingress": trade_attuale["data"], "Data Uscita": data_corrente.strftime("%d/%m/%Y"), "Tipo": "LONG", "Esito": "STOP LOSS BASE", "PnL ($)": round(pnl, 2), "Capitale ($)": round(capitale_corrente, 2)})
+                        punti_uscita_grafico.append((data_corrente, trade_attuale["sl"], "red"))
+                        in_posizione = False
+                
+                # 2. VERIFICA TRIGGER DI INGRESSO (Z-SCORE INTERSECA AL RIALZO +2.0)
+                if not in_posizione and z_ieri < t4_soglia_ingresso and z_oggi >= t4_soglia_ingresso:
+                    # Lo Stop Loss strutturale si posiziona sotto il minimo della candela precedente di innesco
+                    val_stop_loss = float(df_t4["Low"].iloc[idx_c - 1])
+                    distanza_stop = p_apertura - val_stop_loss
                     
-                    linee_bianche_proiettate.append({
-                        "data_inizio": idx_data_massimo,
-                        "data_fine": df_t4.index[-1],
-                        "valore": val_massimo_riferimento
-                    })
-                stato_precedente = stato_attuale
+                    if distanza_stop > 0:
+                        rischio_monetario = capitale_corrente * (t4_rischio_pct / 100)
+                        taglia_posizione = rischio_monetario / distanza_stop
+                        
+                        trade_attuale = {
+                            "data": data_corrente.strftime("%d/%m/%Y"),
+                            "ingresso": p_apertura,
+                            "sl": val_stop_loss,
+                            "taglia": taglia_posizione
+                        }
+                        punti_ingresso_grafico.append((data_corrente, p_apertura))
+                        in_posizione = True
 # ==============================================================================
-# --- TAB 4: PARTE 3 - PLOTLY SHARED ZOOM & DETTAGLIO RIGHE SOTTILI ---
+# --- TAB 4: PARTE 3 - SHARED GRAPHIC & REPORT FINANZIARIO ---
 # ==============================================================================
-            st.markdown(f"##### 📊 Studio del Momentum: Candele Prezzi vs Oscillatore Z-Score")
+            st.markdown(f"##### 📊 Grafico Sincronizzato con Esecuzione Ordini e Oscillatore Z-Score")
             
-            # Generazione del subplot unificato a 2 righe con asse X condiviso
-            fig_t4 = make_subplots(
-                rows=2, cols=1, 
-                shared_xaxes=True, 
-                vertical_spacing=0.07, 
-                row_heights=[0.72, 0.28]
-            )
-            
+            # Subplot unificato a due righe ad assi X condivisibili
+            fig_t4 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.72, 0.28])
             data_oggi = df_t4.index[-1]
-            data_inizio_str = df_t4.index[0].strftime("%Y-%m-%d")
+            data_inizio_str = df_t4.index.strftime("%Y-%m-%d")
             data_fine_str = df_t4.index[-1].strftime("%Y-%m-%d")
             
-            # 1. Grafico superiore a candele (Riga 1)
+            # 1. Candele riga 1
             fig_t4.add_trace(grp.Candlestick(
                 x=df_t4.index, open=df_t4["Open"].astype(float), high=df_t4["High"].astype(float),
                 low=df_t4["Low"].astype(float), close=df_t4["Close"].astype(float), name=t4_ticker
             ), row=1, col=1)
             
-            # Disegno continuo delle linee bianche tratteggiate sui massimi strutturali rilevati
-            for idx, linea in enumerate(linee_bianche_proiettate):
-                mostra_leg = True if idx == 0 else False
+            # PLOT DELLE OPERAZIONI EFFETTUATE SUL PREZZO (Frecce Ingressi / Cerchi Uscite)
+            for dt_in, val_in in punti_ingresso_grafico:
                 fig_t4.add_trace(grp.Scatter(
-                    x=[linea["data_inizio"], linea["data_fine"]], y=[linea["valore"], linea["valore"]],
-                    mode="lines", line=dict(color="#ffffff", width=2.2, dash="dash"),
-                    name="Resistenza Massimo Strutturale", showlegend=mostra_leg
+                    x=[dt_in], y=[val_in], mode="markers",
+                    marker=dict(color="#22c55e", size=14, symbol="triangle-up"),
+                    name="ENTRY LONG (Z >= 2)", showlegend=False
+                ), row=1, col=1)
+                
+            for dt_out, val_out, col_out in punti_uscita_grafico:
+                fig_t4.add_trace(grp.Scatter(
+                    x=[dt_out], y=[val_out], mode="markers",
+                    marker=dict(color="#22c55e" if col_out == "green" else "#ef4444", size=11, symbol="circle"),
+                    name="EXIT POSITION", showlegend=False
                 ), row=1, col=1)
             
-            # 2. Grafico inferiore dell'oscillatore Z-Score (Riga 2)
+            # 2. Z-Score riga 2
             fig_t4.add_trace(grp.Scatter(
-                x=df_t4.index, y=df_t4["Z_Score"], mode="lines", name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
+                x=df_t4.index, y=df_t4["Z_Score"], mode="lines", name="Z-Score", line=dict(color="#38bdf8", width=1.5)
             ), row=2, col=1)
             
-            # --- APPLICAZIONE RIGIDE DELLE RIGHE DI SOGLIA SOTTILI ED ORIZZONTALI (yref="y2") ---
-            # Linea della soglia scelta dall'utente sul pannello
-            fig_t4.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=t4_soglia, y1=t4_soglia, 
-                             line=dict(color="#ef4444", width=1.5, dash="dash"), row=2, col=1, yref="y2")
-            
-            # Linea tratteggiata VERDE FINISSIMA a +2
-            fig_t4.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=2, y1=2, 
+            # --- APPLICAZIONE RIGIDE SOGLIE FINISSIME ORIZZONTALI (yref="y2") ---
+            # Linea tratteggiata VERDE SOTTILE a +2 (Innesco d'acquisto e target TP opposto)
+            fig_t4.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=2.0, y1=2.0, 
                              line=dict(color="#22c55e", width=1.0, dash="dash"), row=2, col=1, yref="y2")
             
-            # Linea centrale di equilibrio dello zero
+            # Linea centrale dello zero
             fig_t4.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=0, y1=0, 
                              line=dict(color="rgba(255,255,255,0.2)", width=1.0, dash="solid"), row=2, col=1, yref="y2")
             
-            # Linea tratteggiata ROSSA FINISSIMA a -2
-            fig_t4.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=-2, y1=-2, 
+            # Linea tratteggiata ROSSA SOTTILE a -2 (Filtro di uscita in Take Profit)
+            fig_t4.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=-2.0, y1=-2.0, 
                              line=dict(color="#ef4444", width=1.0, dash="dash"), row=2, col=1, yref="y2")
             
-            # Configurazione finale layout ed eliminazione range slider per mantenere il blocco zoom sincronizzato
-            fig_t4.update_layout(
-                template="plotly_dark", 
-                height=680, 
-                margin=dict(l=20, r=20, t=10, b=10), 
-                showlegend=True, 
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
-            
+            fig_t4.update_layout(template="plotly_dark", height=680, margin=dict(l=20, r=20, t=10, b=10), showlegend=False)
             fig_t4.update_yaxes(title_text=f"Prezzo {t4_ticker} ($)", row=1, col=1)
             fig_t4.update_yaxes(title_text="Deviazioni Std (Z)", range=[-5.5, 5.5], row=2, col=1)
             fig_t4.update_xaxes(rangeslider_visible=False, row=1, col=1)
+            fig_bt.update_xaxes(rangeslider_visible=False, row=2, col=1)
             fig_t4.update_xaxes(rangeslider_visible=False, row=2, col=1)
             
             st.plotly_chart(fig_t4, use_container_width=True, key="t4_shared_zoom_pure_chart")
-            st.success("📐 Elaborazione e rendering statistico completati con successo nel Tab 4. Assi X linkati.")
+            
+            # CARD RIASSUNTIVE RISULTATI ECONOMICHE DEL BACKTEST AD OSCILLAZIONE
+            st.markdown("### 📊 Performance Ledger: Risultati Strategia ad Inversione Z-Score (Tab 4)")
+            if trade_log_t4:
+                df_report_t4 = pd.DataFrame(trade_log_t4)
+                operazioni_vincenti = df_report_t4[df_report_t4["PnL ($)"] > 0]
+                win_rate = (len(operazioni_vincenti) / len(df_report_t4)) * 100
+                ritorno_percentuale = ((capitale_corrente - t4_capitale) / t4_capitale) * 100
+                
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.metric("Ritorno Totale Algoritmo", f"{round(ritorno_percentuale, 2)} %", f"Netto: $ {round(capitale_corrente - t4_capitale, 2)}")
+                with c2:
+                    st.metric("Affidabilità (Win Rate)", f"{round(win_rate, 2)} %", f"{len(operazioni_vincenti)} su {len(df_report_t4)} Operazioni Chiuse")
+                with c3:
+                    st.metric("Capitale Finale di Bilancio", f"$ {round(capitale_corrente, 2)}", f"Iniziale: $ {t4_capitale}")
+                    
+                st.dataframe(df_report_t4, use_container_width=True)
+            else:
+                st.warning("⚠️ Nessun trade concluso registrato nel periodo con questa configurazione dello Z-Score.")
+                
+            st.success("📐 Backtest ad oscillazione concluso con successo. Assi X linkati operativi.")
         else:
-            st.error("Dati storici insufficienti per calcolare la regressione sul timeframe selezionato.")
+            st.error("Dati storici insufficienti per calcolare l'oscillatore su questo orizzonte temporale.")
 
 
 # ==============================================================================
