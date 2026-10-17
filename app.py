@@ -1399,7 +1399,7 @@ with tab4:
                             in_posizione = True
 
 # ==============================================================================
-# --- TAB 4: PARTE 3 - SHARED GRAPHIC & REPORT FINANZIARIO CORRETTO ---
+# --- TAB 4: PARTE 3 - SHARED GRAPHIC & RIPRISTINO ASSE TEMPORALE ---
 # ==============================================================================
             st.markdown(f"##### 📊 Grafico Sincronizzato con Esecuzione Ordini e Oscillatore Z-Score")
             
@@ -1407,6 +1407,10 @@ with tab4:
             fig_t4 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.72, 0.28])
             
             p_attuale = float(close_series.iloc[-1])
+            
+            # Estrazione esatta dei punti temporali di inizio e fine per evitare il bug del 1970
+            t4_inizio_reale = df_t4.index[0]
+            t4_fine_reale = df_t4.index[-1]
             
             # 1. Candele prezzo (Riga 1)
             fig_t4.add_trace(grp.Candlestick(
@@ -1441,22 +1445,21 @@ with tab4:
                 x=df_t4.index, y=df_t4["Z_Score"], mode="lines", name="Z-Score Momentum", line=dict(color="#38bdf8", width=1.5)
             ), row=2, col=1)
             
-            # --- ANCORAGGIO ORIZZONTALE CERTIFICATO (xref="paper" e yref="y2") ---
-            # Questo metodo disegna le linee da sinistra a destra sul layout indipendentemente dal formato dell'indice delle date
-            # Linea tratteggiata VERDE SOTTILE fissa a +2 (Target Short / Innesco Long)
-            fig_t4.add_shape(type="line", x0=0, x1=1, y0=2.0, y1=2.0, xref="paper", yref="y2",
+            # --- TRACCIAMENTO RIGHE DI SOGLIA ORIZZONTALI CON DATE REALI ---
+            # Linea tratteggiata VERDE SOTTILE fissa a +2
+            fig_t4.add_shape(type="line", x0=t4_inizio_reale, x1=t4_fine_reale, y0=2.0, y1=2.0, 
                              line=dict(color="#22c55e", width=1.0, dash="dash"), row=2, col=1)
             
             # Linea centrale di equilibrio dello zero
-            fig_t4.add_shape(type="line", x0=0, x1=1, y0=0.0, y1=0.0, xref="paper", yref="y2",
+            fig_t4.add_shape(type="line", x0=t4_inizio_reale, x1=t4_fine_reale, y0=0.0, y1=0.0, 
                              line=dict(color="rgba(255,255,255,0.2)", width=1.0, dash="solid"), row=2, col=1)
             
-            # Linea tratteggiata ROSSA SOTTILE fissa a -2 (Target Long / Innesco Short)
-            fig_t4.add_shape(type="line", x0=0, x1=1, y0=-2.0, y1=-2.0, xref="paper", yref="y2",
+            # Linea tratteggiata ROSSA SOTTILE fissa a -2
+            fig_t4.add_shape(type="line", x0=t4_inizio_reale, x1=t4_fine_reale, y0=-2.0, y1=-2.0, 
                              line=dict(color="#ef4444", width=1.0, dash="dash"), row=2, col=1)
             
-            # Linea dinamica della soglia scelta (Se diversa da 2.0 per controllo visivo)
-            fig_t4.add_shape(type="line", x0=0, x1=1, y0=t4_soglia_ingresso, y1=t4_soglia_ingresso, xref="paper", yref="y2",
+            # Linea dinamica della soglia scelta dal pannello
+            fig_t4.add_shape(type="line", x0=t4_inizio_reale, x1=t4_fine_reale, y0=t4_soglia_ingresso, y1=t4_soglia_ingresso, 
                              line=dict(color="#ef4444", width=1.2, dash="dot"), row=2, col=1)
             
             fig_t4.update_layout(
@@ -1482,7 +1485,6 @@ with tab4:
                 
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    # Rimosso definitivamente il bug di sintassi 't4_t4_capitale' per sbloccare l'eseguibile di Plotly
                     st.metric("Ritorno Totale Algoritmo", f"{round(ritorno_percentuale, 2)} %", f"Netto: $ {round(capitale_corrente - t4_capitale, 2)}")
                 with c2:
                     st.metric("Affidabilità (Win Rate)", f"{round(win_rate, 2)} %", f"{len(operazioni_vincenti)} su {len(df_report_t4)} Operazioni Chiuse")
@@ -1493,7 +1495,8 @@ with tab4:
             else:
                 st.warning("⚠️ Nessun trade registrato nel periodo storico selezionato con i parametri attuali.")
                 
-            st.success("📐 Backtest bidirezionale ad oscillazione concluso con successo. Linee fisse orizzontali stabili a schermo.")
+            st.success("📐 Asse temporale ripristinato. Le candele e le linee fisse orizzontali sono ora perfettamente coordinate.")
+
 
 
 # ==============================================================================
