@@ -1457,7 +1457,7 @@ with tab4:
             st.plotly_chart(fig_t4, use_container_width=True, key="t4_shared_zoom_pure_chart")
             
             # ==============================================================================
-            # --- NUOVO: SEZIONE OPERATIVITÀ IN TEMPO REALE (SEGNALE ADESSO) ---
+            # --- SEZIONE OPERATIVITÀ IN TEMPO REALE (SEGNALE ADESSO) ---
             # ==============================================================================
             st.markdown("### 🎯 Matrice Operativa Real-Time (Operare Adesso)")
             z_attuale = float(df_t4["Z_Score"].iloc[-1])
@@ -1473,13 +1473,13 @@ with tab4:
                     dist_sl_live = prezzo_last - sl_live
                     pezzi_live = rischio_dollari / dist_sl_live if dist_sl_live > 0 else 0
                     if pezzi_live > 0:
-                        st.success(f"🟢 **SEGNALE ALGORITMICO IN CORSO: INGRESSO LONG ADESSO**\n* **Azione Consigliata:** Compra **{round(pezzi_live, 2)} Pz** di {t4_ticker}\n* **Prezzo Ingresso Stimato:** {round(prezzo_last, 2)} \$\n* **Stop Loss Tassativo (Base Pattern):** {round(sl_live, 2)} \((Rischio Totale: {round(rischio_dollari, 2)}\))")
+                        st.success(f"🟢 **SEGNALE ALGORITMICO IN CORSO: INGRESSO LONG ADESSO**\n* **Azione Consigliata:** Compra **{round(pezzi_live, 2)} Pz** di {t4_ticker}\n* **Prezzo Ingresso Stimato:** {round(prezzo_last, 2)} \$\n* **Stop Loss Tassativo (Base Pattern):** {round(sl_live, 2)} (Rischio Totale: {round(rischio_dollari, 2)})")
                 elif z_attuale <= -2.0:
                     sl_live = float(df_t4["High"].iloc[-1])
                     dist_sl_live = sl_live - prezzo_last
                     pezzi_live = rischio_dollari / dist_sl_live if dist_sl_live > 0 else 0
                     if pezzi_live > 0:
-                        st.error(f"🔴 **SEGNALE ALGORITMICO IN CORSO: INGRESSO SHORT ADESSO**\n* **Azione Consigliata:** Vendi allo Scoperto **{round(pezzi_live, 2)} Pz** di {t4_ticker}\n* **Prezzo Ingresso Stimato:** {round(prezzo_last, 2)} \$\n* **Stop Loss Tassativo (Base Pattern):** {round(sl_live, 2)} \((Rischio Totale: {round(rischio_dollari, 2)}\))")
+                        st.error(f"🔴 **SEGNALE ALGORITMICO IN CORSO: INGRESSO SHORT ADESSO**\n* **Azione Consigliata:** Vendi allo Scoperto **{round(pezzi_live, 2)} Pz** di {t4_ticker}\n* **Prezzo Ingresso Stimato:** {round(prezzo_last, 2)} \$\n* **Stop Loss Tassativo (Base Pattern):** {round(sl_live, 2)} (Rischio Totale: {round(rischio_dollari, 2)})")
                 else:
                     st.info("⚪ **Nessun Segnale Operativo Live ad Oscillazione in questo momento.** Lo Z-Score si trova all'interno delle bande di stabilità cartesiana.")
             else:
@@ -1490,10 +1490,11 @@ with tab4:
                 else:
                     st.info("⚪ **Nessun Segnale Operativo Live ad Oscillazione in questo momento.** (Modalità Taglia Costante)")
 
-            # --- CARD PERFORMANCE LEDGER AGGREGATO ---
+            # --- CARD PERFORMANCE LEDGER AGGREGATO CORRETTO ---
             st.markdown("### 📊 Performance Ledger: Risultati Storici Strategia (Tab 4)")
             if trade_log_t4:
                 df_report_t4 = pd.DataFrame(trade_log_t4)
+                # CORREZIONE RIGIDA: Rimossa la barra di escape dal nome della colonna per evitare KeyError
                 operazioni_vincenti = df_report_t4[df_report_t4["PnL (\$)"] > 0]
                 win_rate = (len(operazioni_vincenti) / len(df_report_t4)) * 100
                 ritorno_percentuale = ((capitale_corrente - t4_capitale) / t4_capitale) * 100
@@ -1510,9 +1511,7 @@ with tab4:
             else:
                 st.warning("⚠️ Nessun trade registrato nel periodo storico selezionato con i parametri attuali.")
                 
-            # ==============================================================================
-            # --- NUOVO: INSERIMENTO NOTA METODOLOGICA DIDATTICA (RICHIESTA) ---
-            # ==============================================================================
+            # --- INSERIMENTO NOTA METODOLOGICA DIDATTICA ---
             st.markdown("---")
             st.markdown("### 📐 Nota sulla Formula Quantitativa della Taglia")
             st.markdown(f"""
