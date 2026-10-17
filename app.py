@@ -1457,11 +1457,7 @@ with tab4:
             # Linea tratteggiata ROSSA SOTTILE fissa a -2
             fig_t4.add_shape(type="line", x0=t4_inizio_reale, x1=t4_fine_reale, y0=-2.0, y1=-2.0, 
                              line=dict(color="#ef4444", width=1.0, dash="dash"), row=2, col=1)
-            
-            # Linea dinamica della soglia scelta dal pannello
-            fig_t4.add_shape(type="line", x0=t4_inizio_reale, x1=t4_fine_reale, y0=t4_soglia_ingresso, y1=t4_soglia_ingresso, 
-                             line=dict(color="#ef4444", width=1.2, dash="dot"), row=2, col=1)
-            
+                       
             fig_t4.update_layout(
                 template="plotly_dark", height=700, margin=dict(l=20, r=20, t=10, b=10),
                 showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
