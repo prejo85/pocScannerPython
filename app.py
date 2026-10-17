@@ -1342,7 +1342,7 @@ with tab4:
                         in_posizione = True
 
 # ==============================================================================
-# --- TAB 4: PARTE 3 - SHARED GRAPHIC & REPORT FINANZIARIO ---
+# --- TAB 4: PARTE 3 - SHARED GRAPHIC & REPORT FINANZIARIO CORRETTO ---
 # ==============================================================================
             st.markdown(f"##### 📊 Grafico Sincronizzato con Esecuzione Ordini e Oscillatore Z-Score")
             
@@ -1391,11 +1391,11 @@ with tab4:
             fig_t4.add_shape(type="line", x0=data_inizio_str, x1=data_fine_str, y0=-2.0, y1=-2.0, 
                              line=dict(color="#ef4444", width=1.0, dash="dash"), row=2, col=1, yref="y2")
             
+            # LAYOUT E CORREZIONE RIGIDA DEI RIFERIMENTI: Convertito fig_bt in fig_t4 nelle update degli assi X
             fig_t4.update_layout(template="plotly_dark", height=680, margin=dict(l=20, r=20, t=10, b=10), showlegend=False)
             fig_t4.update_yaxes(title_text=f"Prezzo {t4_ticker} ($)", row=1, col=1)
             fig_t4.update_yaxes(title_text="Deviazioni Std (Z)", range=[-5.5, 5.5], row=2, col=1)
             fig_t4.update_xaxes(rangeslider_visible=False, row=1, col=1)
-            fig_bt.update_xaxes(rangeslider_visible=False, row=2, col=1)
             fig_t4.update_xaxes(rangeslider_visible=False, row=2, col=1)
             
             st.plotly_chart(fig_t4, use_container_width=True, key="t4_shared_zoom_pure_chart")
@@ -1421,8 +1421,7 @@ with tab4:
                 st.warning("⚠️ Nessun trade concluso registrato nel periodo con questa configurazione dello Z-Score.")
                 
             st.success("📐 Backtest ad oscillazione concluso con successo. Assi X linkati operativi.")
-        else:
-            st.error("Dati storici insufficienti per calcolare l'oscillatore su questo orizzonte temporale.")
+
 
 
 # ==============================================================================
