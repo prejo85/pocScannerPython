@@ -153,9 +153,9 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Analisi Triple-POC", 
     "Analisi Geometrica POC", 
     "Breakout Trend-Following", 
-    "Tab 4: Ottimizzatore & Correlazione", 
-    "Tab 5: Alert Telegram",               
-    "Tab 6: Analisi GARCH"                 
+    "Ottimizzatore & Correlazione", 
+    "Alert Telegram",               
+    "Analisi GARCH"                 
 ])
 
 
