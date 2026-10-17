@@ -1360,7 +1360,7 @@ with tab4:
 # ==========================================
 # --- TAB 5: LIVE ALERTS STRATEGICI ---
 # ==========================================
-with tab4:
+with tab5:
     st.subheader("🔔 Canale Notifiche Quantitative in Tempo Reale via Telegram")
     st.success("✅ Algoritmo di Strategia Bilanciata Integrato.")
     
@@ -1451,7 +1451,7 @@ with tab4:
 # ==========================================
 # TAB 6: ANALISI GARCH ---
 # ==========================================
-with tab5:
+with tab6:
     st.subheader("📈 Studio ed Analisi Quantitativa della Volatilità (GARCH)")
     st.markdown("Configura i parametri sottostanti per modellare i cluster di volatilità sui rendimenti finanziari logaritmici.")
     
